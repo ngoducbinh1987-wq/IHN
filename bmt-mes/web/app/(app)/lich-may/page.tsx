@@ -131,7 +131,7 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
   const start = cal.days[Math.max(0, Math.min(kh.todayIdx, cal.days.length - 1))] ?? cal.base;
   const eom = (d: string) => { const x = new Date(d.slice(0, 7) + '-01T00:00:00Z'); x.setUTCMonth(x.getUTCMonth() + 1); x.setUTCDate(0); return x.toISOString().slice(0, 10); };
   let end = eom(start);
-  if (workdaysBetween(start, addDays(end, 1)) < 10) end = eom(addDays(end, 1));
+  if (workdaysBetween(start, addDays(end, 1), cal.wd) < 10) end = eom(addDays(end, 1));
   const d0 = Math.max(0, dayIndex(cal, start)), d1 = dayIndex(cal, addDays(end, 1));
   const nDays = Math.max(1, d1 - d0), t0 = d0 * cal.SPD * view.sch.S, t1 = d1 * cal.SPD * view.sch.S;
   const capMin = nDays * cal.SPD * view.sch.S;

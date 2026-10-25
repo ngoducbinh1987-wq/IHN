@@ -95,3 +95,22 @@ join plan.production_plans pp on pp.id = l.plan_id
 join master.products p on p.id = l.product_id
 join master.product_specs s on s.id = l.spec_id
 left join master.core_types ct on ct.set_id = s.param_set_id and ct.code = s.core_code;
+
+-- 5. Dùng chung với module Quản lý máy (migration 20261025002300_machines):
+--    ngày làm việc trong tuần lấy từ mfg.machine_setting('shift') (Giám đốc sửa ở Cài đặt máy);
+--    máy con (in, đo OD… gắn vào dây chuyền) không xếp lịch riêng
+create or replace view app.v_kh_config with (security_invoker = true) as
+select c.*, (select jsonb_agg(to_jsonb(s) order by s.code) from master.shifts s) as shifts,
+       (select jsonb_agg(to_jsonb(r) order by r.sort) from master.machine_rates r) as rates,
+       (select jsonb_agg(to_jsonb(x) order by x.sort) from master.changeover_rules x) as changeovers,
+       coalesce(mfg.machine_setting('shift') -> 'workdays', '[1,2,3,4,5,6]'::jsonb) as workdays
+from master.planning_config c where c.id = 1;
+
+create or replace view app.v_kh_machines with (security_invoker = true) as
+select m.id, m.code, m.name, m.machine_type, m.protocol, m.data_mode, m.active,
+       (select count(*) from iot.machine_tags t where t.machine_id = m.id) as tag_count,
+       (select max(s.ts) from iot.machine_state s where s.machine_id = m.id) as last_seen,
+       coalesce((select array_agg(k.operator_code order by k.operator_code) from master.operator_skills k
+                 where k.machine_code = m.code and k.level = 'MAIN'), '{}') as operators
+from master.machines m
+where m.machine_type in ('BUNCHER','EXTRUDER_SI','TWISTER','EXTRUDER_TP') and m.active and m.inline_with is null;

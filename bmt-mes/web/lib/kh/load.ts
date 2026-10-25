@@ -42,6 +42,7 @@ export async function loadConfig(db: Db) {
     shifts: (c.shifts ?? []).map((s: Record<string, unknown>) => ({ ...s, start_time: String(s.start_time).slice(0, 5), end_time: String(s.end_time).slice(0, 5), break_min: Number(s.break_min) })),
     rates: (c.rates ?? []).map((r: Record<string, unknown>) => ({ ...r, rate_small: Number(r.rate_small), rate_large: Number(r.rate_large) })),
     changeovers: (c.changeovers ?? []).map((r: Record<string, unknown>) => ({ ...r, minutes: Number(r.minutes) })),
+    workdays: Array.isArray(c.workdays) && c.workdays.length ? (c.workdays as number[]).map(Number) : null,
   } as Config;
   const ORDER = ['BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02'];
   const machines = ((m ?? []) as MachineInfo[]).map((x) => ({ ...x, tag_count: Number(x.tag_count) }))
@@ -76,7 +77,7 @@ export const metaOf = (o: Order): OrderMeta => ({ group: o.group, size: o.size, 
 export type VersionRow = {
   id: string; plan_id: string; version: number; is_current: boolean; base_date: string; created_at: string; created_by_name: string | null;
   reason: string; change_no: string | null;
-  params: { S: number; SPD: number; RUN: number; fill_pct: number; frozen_days: number; machines_per_operator: number; plan_no?: string; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
+  params: { S: number; SPD: number; RUN: number; fill_pct: number; frozen_days: number; machines_per_operator: number; plan_no?: string; workdays?: number[]; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
 };
 
 export type Kh = Awaited<ReturnType<typeof loadKh>>;
@@ -127,7 +128,7 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
   let sch: Schedule | null = null;
   if (version) {
     const p = version.params;
-    cal = makeCalendar({ fill_pct: p.fill_pct, shifts: p.shifts.map((s) => ({ ...s, active: true })) }, version.base_date);
+    cal = makeCalendar({ fill_pct: p.fill_pct, shifts: p.shifts.map((s) => ({ ...s, active: true })), workdays: p.workdays ?? base.cfg.workdays }, version.base_date);
     cal.S = p.S; cal.SPD = p.SPD; cal.RUN = p.RUN;
     const slots: Slot[] = ((slotRows ?? []) as Record<string, unknown>[]).map((r) => ({
       id: String(r.id), key: `${r.plan_line_id}|${r.op_code}|${r.color ?? ''}`, lineId: String(r.plan_line_id), op: r.op_code as Op,
@@ -144,7 +145,7 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
     for (const o of orders) if (!inSched.has(o.id)) for (const op of o.route) opDone.get(o.id + '|' + op)!.left = 1;
     sch = { slots, byMachine, opDone, unplaced: [], S: p.S, SPD: p.SPD, RUN: p.RUN };
   } else {
-    cal = makeCalendar(base.cfg, nextWorkday(schedStart && schedStart > now.date ? schedStart : now.date));
+    cal = makeCalendar(base.cfg, nextWorkday(schedStart && schedStart > now.date ? schedStart : now.date, base.cfg.workdays ?? undefined));
   }
   const fin = sch ? finishInfo(sch, cal, orders) : new Map();
 
@@ -163,6 +164,7 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
   const lastParamAt = (lastLog?.[0]?.at as string | undefined) ?? null;
   const dirty = Boolean(version && (cfgCal.S !== version.params.S || cfgCal.SPD !== version.params.SPD
     || base.cfg.machines_per_operator !== Number(version.params.machines_per_operator)
+    || cfgCal.wd.join() !== cal.wd.join()
     || (lastParamAt && lastParamAt > version.created_at)));
   const missing = version ? orders.filter((o) => !sch!.slots.some((s) => s.lineId === o.id)) : [];
 

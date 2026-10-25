@@ -4,7 +4,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
 import { bobbins, dayChecks, dayData, slipLines, type SlipLine } from '@/lib/kh/day';
 import { ROLE, hasRole, loadKh } from '@/lib/kh/load';
-import { UNIT, addDays, isWorkday, opName } from '@/lib/kh/scheduler';
+import { UNIT, addDays, isWorkday, opName, prevWorkday as prevWd } from '@/lib/kh/scheduler';
 import { df, nf } from '@/lib/format';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -17,8 +17,6 @@ type Release = {
   slip_id: string | null; slip_no: string | null; slip_lines: SlipLine[] | null; slip_status: string | null; approved_at: string | null; approved_by_name: string | null;
 };
 
-const prevWorkday = (d: string) => { let x = addDays(d, -1); while (!isWorkday(x)) x = addDays(x, -1); return x; };
-const nextWd = (d: string, n: number) => { let x = d; for (let i = 0; i < n; i++) { x = addDays(x, 1); while (!isWorkday(x)) x = addDays(x, 1); } return x; };
 
 export default async function LenhNgay({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
@@ -26,7 +24,10 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
   const db = await createClient();
   const kh = await loadKh(db, { plan: sp.plan, roles: me.roles });
   const today = kh.now.date;
-  const todayW = isWorkday(today) ? today : nextWd(today, 1);
+  const wdays = kh.cal.wd;
+  const prevWorkday = (d: string) => prevWd(d, wdays);
+  const nextWd = (d: string, n: number) => { let x = d; for (let i = 0; i < n; i++) { x = addDays(x, 1); for (let j = 0; j < 14 && !isWorkday(x, wdays); j++) x = addDays(x, 1); } return x; };
+  const todayW = isWorkday(today, wdays) ? today : nextWd(today, 1);
   const date = sp.d && /^\d{4}-\d{2}-\d{2}$/.test(sp.d) ? sp.d : todayW;
   const chips = [prevWorkday(todayW), todayW, nextWd(todayW, 1), nextWd(todayW, 2), nextWd(todayW, 3), nextWd(todayW, 4)];
   const { data: rel } = await db.schema('app').from('v_kh_releases').select('*').eq('plan_id', kh.planId ?? '').eq('work_date', date).order('revision', { ascending: false });

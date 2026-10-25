@@ -12,7 +12,7 @@ export type ChangeoverCfg = { code: string; op_code: string; label: string; minu
 export type Config = {
   fill_pct: number; frozen_days: number; cutoff_time: string; downtime_reason_min: number; plc_dev_pct: number;
   auto_shifts: number; plc_loss_min: number; machines_per_operator: number;
-  shifts: ShiftCfg[]; rates: RateCfg[]; changeovers: ChangeoverCfg[];
+  shifts: ShiftCfg[]; rates: RateCfg[]; changeovers: ChangeoverCfg[]; workdays?: number[] | null;
 };
 export type MachineInfo = { code: string; name: string; machine_type: string; data_mode: string; tag_count: number; operators: string[] };
 export type OperatorInfo = { code: string; job: string; extra: string | null; is_deputy: boolean; keeps_fg: boolean; skills: string[]; learning: string[] };
@@ -56,35 +56,40 @@ export const toMin = (h: string) => { const [a, b] = h.slice(0, 5).split(':').ma
 export const shiftRun = (s: Pick<ShiftCfg, 'start_time' | 'end_time' | 'break_min'>) =>
   (((toMin(s.end_time) - toMin(s.start_time)) + 1440) % 1440 || 1440) - Number(s.break_min);
 
-export type Calendar = { S: number; SPD: number; RUN: number; shifts: ShiftCfg[]; base: string; days: string[] };
+export type Calendar = { S: number; SPD: number; RUN: number; shifts: ShiftCfg[]; base: string; days: string[]; wd: number[] };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const parse = (s: string) => new Date(s + 'T00:00:00Z');
 export const addDays = (s: string, n: number) => { const d = parse(s); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
-export const isWorkday = (s: string) => parse(s).getUTCDay() !== 0; // nghỉ Chủ nhật
-export const nextWorkday = (s: string) => { let d = s; while (!isWorkday(d)) d = addDays(d, 1); return d; };
+// Ngày làm việc trong tuần theo ISO: 1 = thứ 2 … 7 = Chủ nhật (Giám đốc đặt ở Cài đặt máy; mặc định nghỉ Chủ nhật)
+export const DEFAULT_WD = [1, 2, 3, 4, 5, 6];
+const isoDow = (s: string) => { const d = parse(s).getUTCDay(); return d === 0 ? 7 : d; };
+export const isWorkday = (s: string, wd: number[] = DEFAULT_WD) => wd.includes(isoDow(s));
+export const nextWorkday = (s: string, wd: number[] = DEFAULT_WD) => { let d = s; for (let i = 0; i < 14 && !isWorkday(d, wd); i++) d = addDays(d, 1); return d; };
+export const prevWorkday = (s: string, wd: number[] = DEFAULT_WD) => { let d = addDays(s, -1); for (let i = 0; i < 14 && !isWorkday(d, wd); i++) d = addDays(d, -1); return d; };
 // Số ngày làm việc trong [a, b)
-export function workdaysBetween(a: string, b: string): number {
+export function workdaysBetween(a: string, b: string, wd: number[] = DEFAULT_WD): number {
   if (b <= a) return 0;
   let n = 0;
-  for (let d = a; d < b; d = addDays(d, 1)) if (isWorkday(d)) n++;
+  for (let d = a; d < b; d = addDays(d, 1)) if (isWorkday(d, wd)) n++;
   return n;
 }
 
-export function makeCalendar(cfg: Pick<Config, 'fill_pct' | 'shifts'>, base: string, horizon = 260): Calendar {
+export function makeCalendar(cfg: Pick<Config, 'fill_pct' | 'shifts'> & { workdays?: number[] | null }, base: string, horizon = 260): Calendar {
   const shifts = cfg.shifts.filter((s) => s.active).sort((a, b) => a.code.localeCompare(b.code));
   const used = shifts.length ? shifts : cfg.shifts.filter((s) => s.code === 'A');
   const SPD = used.length;
   const RUN = Math.round(used.reduce((a, s) => a + shiftRun(s), 0) / SPD);
   const S = Math.round(RUN * Number(cfg.fill_pct) / 100);
+  const wd = cfg.workdays?.length ? cfg.workdays.map(Number) : DEFAULT_WD;
   const days: string[] = [];
-  for (let d = nextWorkday(base); days.length < horizon; d = addDays(d, 1)) if (isWorkday(d)) days.push(d);
-  return { S, SPD, RUN, shifts: used, base: days[0], days };
+  for (let d = nextWorkday(base, wd); days.length < horizon; d = addDays(d, 1)) if (isWorkday(d, wd)) days.push(d);
+  return { S, SPD, RUN, shifts: used, base: days[0], days, wd };
 }
 // Chỉ số ngày làm việc của một ngày (ngày nghỉ → ngày làm việc kế tiếp); trước ngày gốc → số âm
 export function dayIndex(cal: Calendar, date: string): number {
-  if (date < cal.base) return -workdaysBetween(date, cal.base);
-  return workdaysBetween(cal.base, date);
+  if (date < cal.base) return -workdaysBetween(date, cal.base, cal.wd);
+  return workdaysBetween(cal.base, date, cal.wd);
 }
 export const shiftDate = (cal: Calendar, s: number) => cal.days[Math.min(Math.max(0, Math.floor(s / cal.SPD)), cal.days.length - 1)];
 export const shiftCode = (cal: Calendar, s: number) => cal.shifts[((s % cal.SPD) + cal.SPD) % cal.SPD].code;

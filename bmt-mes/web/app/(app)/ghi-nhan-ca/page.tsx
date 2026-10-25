@@ -57,7 +57,7 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
           {code && <input type="hidden" name="m" value={code} />}
           <button className="btn btn-sm">Xem</button>
         </form>} />
-      <div className="mt-3 text-[13px] text-muted">Màn hình tại máy · {sh ? `${sh.start_time} – ${sh.end_time}` : ''}{!isWorkday(date) ? ' · Chủ nhật: không có kế hoạch' : ''}{kh.version ? ` · lịch máy phiên bản ${kh.version.version}` : ''}</div>
+      <div className="mt-3 text-[13px] text-muted">Màn hình tại máy · {sh ? `${sh.start_time} – ${sh.end_time}` : ''}{!isWorkday(date, kh.cal.wd) ? ' · ngày nghỉ: không có kế hoạch' : ''}{kh.version ? ` · lịch máy phiên bản ${kh.version.version}` : ''}</div>
       <div className="mt-3"><Flash ok={sp.ok} err={sp.err} /></div>
       {!kh.version && <Alert tone="info">Chưa có lịch máy: chưa có kế hoạch ca. Vẫn ghi được dừng máy, phế phẩm nếu máy chạy việc khác.</Alert>}
 
