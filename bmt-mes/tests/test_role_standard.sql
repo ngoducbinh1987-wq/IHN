@@ -144,59 +144,70 @@ select pg_temp.as_user('R_SXTP');
 select pg_temp.fails($$select inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'))$$, 'chưa phát lệnh', 'Lệnh chưa phát thì không lĩnh');
 select mfg.release_wo((select id from mfg.work_orders where wo_no = 'R-LSX-1'));
 select pg_temp.fails($$select mfg.release_wo((select id from mfg.work_orders where wo_no = 'R-LSX-1'))$$, 'trạng thái RELEASED', 'Không phát lệnh lại lệnh đã phát');
+-- Phiếu lĩnh theo định mức (module kho 2400–2600: inv.requisitions, cấp bằng quét QR ở trang Cấp NVL)
 insert into t select 'iss1', inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'), 1000);
-select pg_temp.ok((select abs(dl.qty - s.std_qty * 1000 / 3500) < 0.0001
-  from inv.stock_doc_lines dl join inv.lots l on l.id = dl.lot_id
-  join mfg.wo_std_materials((select id from mfg.work_orders where wo_no = 'R-LSX-1')) s on s.material_id = l.material_id
-  where dl.doc_id = (select v from t where k = 'iss1') and l.lot_no = 'R-CU-1'),
-  'Phiếu lĩnh ca 1.000 m: đồng = định mức lệnh × 1.000/3.500, lấy từ lô Đạt QC');
-select pg_temp.ok((select note like '%1.000 m%Thiếu:%' and note not like '% thiếu 0;%' and ref_type = 'WO' from inv.stock_docs where id = (select v from t where k = 'iss1')),
-  'Phiếu lĩnh ghi rõ vật tư kho không đủ');
-select inv.post_doc((select v from t where k = 'iss1'));
+select pg_temp.ok((select rq.kind = 'NORM' and rq.status = 'APPROVED' and rq.qty_m = 1000 from inv.requisitions rq where rq.id = (select v from t where k = 'iss1')),
+  'Phiếu lĩnh ca 1.000 m tạo theo định mức, sẵn sàng cấp');
 insert into t select 'iss2', inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'));
-select inv.post_doc((select v from t where k = 'iss2'));
-select pg_temp.ok((select abs(i.qty - s.std_qty) < 0.0002
-  from inv.wo_issued((select id from mfg.work_orders where wo_no = 'R-LSX-1')) i
-  join mfg.wo_std_materials((select id from mfg.work_orders where wo_no = 'R-LSX-1')) s using (material_id)
-  join master.materials m on m.id = i.material_id where m.code = 'CU-024'), 'Hai phiếu lĩnh cộng lại đúng định mức đồng của lệnh');
-select pg_temp.fails($$select inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'))$$, 'thiếu', 'Lĩnh lần 3: chỉ còn vật tư kho không có, không tạo phiếu rỗng');
+select pg_temp.ok((select abs(sum(rl.qty_norm) - max(s.std_qty)) < 0.002
+  from inv.requisition_lines rl join master.materials m on m.id = rl.material_id and m.code = 'CU-024'
+  join mfg.wo_std_materials((select id from mfg.work_orders where wo_no = 'R-LSX-1')) s on s.material_id = rl.material_id
+  where rl.req_id in ((select v from t where k = 'iss1'), (select v from t where k = 'iss2'))), 'Hai phiếu lĩnh cộng lại đúng định mức đồng của lệnh');
+select pg_temp.fails($$select inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'))$$, 'đã lĩnh đủ định mức', 'Lĩnh lần 3: lệnh đã lĩnh đủ định mức');
 insert into inv.stock_docs (doc_no, doc_type, warehouse_id, ref_type, ref_id)
 select 'R-IS-X', 'ISSUE_WO', id, 'WO', (select id from mfg.work_orders where wo_no = 'R-LSX-1') from inv.warehouses where code = 'KNL';
-insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id from inv.stock_docs where doc_no = 'R-IS-X'), 1, id, 1 from inv.lots where lot_no = 'R-CU-1';
-select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'R-IS-X'))$$, 'Vượt định mức', 'Thủ kho tự thêm 1 kg ngoài định mức: bị chặn');
+insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty)
+select (select id from inv.stock_docs where doc_no = 'R-IS-X'), 1, l.id, s.std_qty + 1 from inv.lots l
+  join mfg.wo_std_materials((select id from mfg.work_orders where wo_no = 'R-LSX-1')) s on s.material_id = l.material_id where l.lot_no = 'R-CU-1';
+select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'R-IS-X'))$$, 'Vượt định mức', 'Thủ kho tự xuất quá định mức lệnh: bị chặn');
 insert into inv.stock_docs (doc_no, doc_type, warehouse_id) select 'R-IS-NOWO', 'ISSUE_WO', id from inv.warehouses where code = 'KNL';
 insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id from inv.stock_docs where doc_no = 'R-IS-NOWO'), 1, id, 1 from inv.lots where lot_no = 'R-CU-1';
 select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'R-IS-NOWO'))$$, 'phải gắn lệnh sản xuất', 'Phiếu xuất sản xuất không gắn lệnh SX: bị chặn');
 select pg_temp.as_user('R_KHO5');
-select pg_temp.fails($$select inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'))$$, 'không được giao kho', 'NV5 (chỉ kho thành phẩm) không lĩnh ở kho nguyên liệu');
+select pg_temp.fails($$select inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'), 100)$$, 'không được giao kho', 'NV5 (chỉ kho thành phẩm) không lĩnh ở kho nguyên liệu');
 
--- Cấp bổ sung vượt định mức: Quản lý SX xin, TP Kỹ thuật/QA duyệt, rồi mới ghi sổ
+-- Cấp bổ sung vượt định mức: Quản lý SX lập phiếu lĩnh bổ sung, TP Kỹ thuật/QA duyệt, rồi mới cấp
 select pg_temp.as_user('R_SXTP');
-insert into t select 'req_extra', wf.submit('EXTRA_ISSUE', (select id from inv.stock_docs where doc_no = 'R-IS-X'), 'R-IS-X', 'Bù đứt dây');
+select pg_temp.fails($$select wf.submit('EXTRA_ISSUE', (select id from inv.stock_docs where doc_no = 'R-IS-X'), 'R-IS-X')$$, 'Không tìm thấy phiếu lĩnh bổ sung',
+  'Không gửi duyệt thẳng phiếu xuất: phải lập phiếu lĩnh bổ sung');
+insert into t select 'rx', inv.create_extra_requisition((select id from mfg.work_orders where wo_no = 'R-LSX-1'), '[{"material_code":"CU-024","qty":1}]', 'EX_SCRAP', 'Bù đứt dây');
+insert into t select 'req_extra', (select id from wf.approval_requests where doc_id = (select v from t where k = 'rx'));
 select pg_temp.ok(pg_temp.steps((select v from t where k = 'req_extra')) = 'TP Kỹ thuật/QA duyệt cấp vượt định mức', 'Cấp vượt định mức do TP Kỹ thuật/QA duyệt');
 select pg_temp.as_user('R_KTTP'); select wf.act((select v from t where k = 'req_extra'), 'APPROVE');
-select pg_temp.as_user('R_SXTP'); select inv.post_doc((select id from inv.stock_docs where doc_no = 'R-IS-X'));
-select pg_temp.ok((select status from inv.stock_docs where doc_no = 'R-IS-X') = 'POSTED', 'Phiếu cấp bổ sung đã duyệt thì ghi sổ được');
+select pg_temp.as_user('R_SXTP');
+update inv.stock_doc_lines set qty = 1 where doc_id = (select id from inv.stock_docs where doc_no = 'R-IS-X');
+update inv.stock_docs set requisition_id = (select v from t where k = 'rx') where doc_no = 'R-IS-X';
+select inv.post_doc((select id from inv.stock_docs where doc_no = 'R-IS-X'));
+select pg_temp.ok((select status from inv.stock_docs where doc_no = 'R-IS-X') = 'POSTED'
+  and (select status from inv.requisitions where id = (select v from t where k = 'rx')) = 'DONE', 'Phiếu lĩnh bổ sung đã duyệt thì cấp được, cấp đủ thì đóng');
+select pg_temp.as_user('R_KTKHO');
 select pg_temp.fails($$select wf.submit('STOCK_ADJ', (select id from inv.stock_docs where doc_no = 'R-GR-2'), 'R-GR-2')$$, 'không thuộc quy trình',
   'Không dùng quy trình kiểm kê để duyệt phiếu nhập mua');
 
 -- TP Kỹ thuật/QA tự xin cấp bổ sung: không ai khác giữ vai trò → chuyển Giám đốc
-insert into inv.stock_docs (doc_no, doc_type, warehouse_id, ref_type, ref_id)
-select 'R-IS-KT', 'ISSUE_WO', id, 'WO', (select id from mfg.work_orders where wo_no = 'R-LSX-1') from inv.warehouses where code = 'KNL';
-insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id from inv.stock_docs where doc_no = 'R-IS-KT'), 1, id, 1 from inv.lots where lot_no = 'R-CU-1';
+insert into core.user_roles (user_id, role_code) values (pg_temp.uid('R_KTTP'), 'SX_KH') on conflict do nothing;
 select pg_temp.as_user('R_KTTP');
-insert into t select 'req_kt', wf.submit('EXTRA_ISSUE', (select id from inv.stock_docs where doc_no = 'R-IS-KT'), 'R-IS-KT');
+insert into t select 'rx_kt', inv.create_extra_requisition((select id from mfg.work_orders where wo_no = 'R-LSX-1'), '[{"material_code":"CU-024","qty":1}]', 'EX_SCRAP', null);
+insert into t select 'req_kt', (select id from wf.approval_requests where doc_id = (select v from t where k = 'rx_kt'));
 select pg_temp.ok((select (s ->> 'role') = 'BGD' and (s ->> 'label') like '%chuyển Giám đốc'
   from wf.approval_requests q, jsonb_array_elements(q.flow_snapshot -> 'steps') s where q.id = (select v from t where k = 'req_kt')),
   'Người duyệt duy nhất là người lập: bước tự chuyển Giám đốc');
 
 -- ================================================================ F. Kế toán SX đánh dấu "Đã kiểm"
+insert into inv.stock_docs (doc_no, doc_type, warehouse_id, ref_type, ref_id)
+select 'R-IS-OK', 'ISSUE_WO', id, 'WO', (select id from mfg.work_orders where wo_no = 'R-LSX-1') from inv.warehouses where code = 'KNL';
+insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty)   -- phần còn lại của định mức đồng (đã cấp bổ sung 1 kg)
+select (select id from inv.stock_docs where doc_no = 'R-IS-OK'), 1, l.id, s.std_qty - 1 from inv.lots l
+  join mfg.wo_std_materials((select id from mfg.work_orders where wo_no = 'R-LSX-1')) s on s.material_id = l.material_id where l.lot_no = 'R-CU-1';
 select pg_temp.as_user('R_SXTP');
+select inv.post_doc((select id from inv.stock_docs where doc_no = 'R-IS-OK'));
+update t set v = (select id from inv.stock_docs where doc_no = 'R-IS-OK') where k = 'iss1';
+update t set v = (select id from inv.stock_docs where doc_no = 'R-IS-X') where k = 'iss2';
 select pg_temp.fails($$select app.review_stock_docs(array[(select v from t where k = 'iss1')])$$, 'Chỉ Kế toán kho', 'Thủ kho không tự đánh dấu đã kiểm');
 select pg_temp.as_user('R_KTKHO');
 select pg_temp.ok(app.review_stock_docs(array[(select v from t where k = 'iss1'), (select v from t where k = 'iss2'),
   (select id from inv.stock_docs where doc_no = 'R-IS-NOWO')]) = 2, 'Kế toán SX kiểm 2 phiếu đã ghi sổ (bỏ qua phiếu chưa ghi sổ)');
-select pg_temp.ok((select reviewed_by_name is not null and wo_no = 'R-LSX-1' from app.v_stock_docs where id = (select v from t where k = 'iss1')),
+select pg_temp.ok((select reviewed_by_name is not null and wo_no = 'R-LSX-1' and review_status = 'CONFIRMED' from app.v_stock_docs where id = (select v from t where k = 'iss1')),
   'Danh sách phiếu hiện người kiểm và số lệnh SX');
 
 -- ================================================================ G. Cân bằng đồng
@@ -226,19 +237,19 @@ insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id
 insert into inv.stock_docs (doc_no, doc_type, warehouse_id, reason_code) select 'R-ADJ-2', 'ADJ', id, 'ADJ_COUNT' from inv.warehouses where code = 'KNL';
 insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id from inv.stock_docs where doc_no = 'R-ADJ-2'), 1, id, -1 from inv.lots where lot_no = 'R-CU-1';
 select pg_temp.as_user('R_SXTP');
+select pg_temp.fails($$select wf.submit('STOCK_ADJ', (select id from inv.stock_docs where doc_no = 'R-ADJ-1'), 'R-ADJ-1')$$, 'cần vai trò', 'Thủ kho không tự lập biên bản điều chỉnh kiểm kê');
+select pg_temp.as_user('R_KTKHO');
 insert into t select 'adj1', wf.submit('STOCK_ADJ', (select id from inv.stock_docs where doc_no = 'R-ADJ-1'), 'R-ADJ-1');
 insert into t select 'adj2', wf.submit('STOCK_ADJ', (select id from inv.stock_docs where doc_no = 'R-ADJ-2'), 'R-ADJ-2');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'adj1')) = 'Kế toán SX kiểm tra | Kế toán trưởng duyệt', 'Kiểm kê: Kế toán SX kiểm tra → Kế toán trưởng duyệt');
-select pg_temp.as_user('R_KTKHO');
-select wf.act((select v from t where k = 'adj1'), 'APPROVE'); select wf.act((select v from t where k = 'adj2'), 'APPROVE');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'adj1')) = 'Kế toán trưởng duyệt chênh lệch kiểm kê', 'Kiểm kê: Kế toán SX lập biên bản → Kế toán trưởng duyệt');
 select pg_temp.as_user('R_BGD');
 select pg_temp.fails($$select wf.act((select v from t where k = 'adj1'), 'APPROVE')$$, 'cần vai trò', 'Chưa quá hạn: Giám đốc chưa duyệt thay Kế toán trưởng');
 update wf.approval_requests set step_started_at = now() - interval '25 hours' where id in ((select v from t where k = 'adj1'), (select v from t where k = 'adj2'));
 select pg_temp.ok((select my_turn from app.v_approvals where id = (select v from t where k = 'adj1')), 'Quá hạn: phiếu hiện trong việc chờ của Giám đốc');
 select wf.act((select v from t where k = 'adj1'), 'APPROVE', 'Đã đối chiếu');
-select pg_temp.ok((select status from inv.stock_docs where doc_no = 'R-ADJ-1') = 'APPROVED'
+select pg_temp.ok((select status from inv.stock_docs where doc_no = 'R-ADJ-1') = 'POSTED'
   and (select comment from wf.approval_actions where request_id = (select v from t where k = 'adj1') order by id desc limit 1) like '[Duyệt thay do quá hạn]%',
-  'Quá hạn: Giám đốc duyệt thay, ghi rõ "duyệt thay do quá hạn"');
+  'Quá hạn: Giám đốc duyệt thay, ghi rõ "duyệt thay do quá hạn"; duyệt xong tự ghi sổ');
 reset role;
 select wf.check_sla();
 select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('R_BGD') and title = 'Có thể duyệt thay: R-ADJ-2'),

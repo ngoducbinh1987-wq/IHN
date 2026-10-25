@@ -1,4 +1,4 @@
--- BMT MES · 2300 · Module Kho (phần 2): nghiệp vụ kho theo Quy chuẩn vai trò nhân sự BMT
+-- BMT MES · 2500 · Module Kho (phần 2): nghiệp vụ kho theo Quy chuẩn vai trò nhân sự BMT
 --   Phiếu lĩnh theo định mức · cấp/trả bằng quét QR + cân · nhận hàng · QC giải phóng lô · chuyển vị trí · tách bobin ·
 --   hạ cấp · hàng trả lại · tồn đầu kỳ · phế · bán phế · lệnh giao hàng · kiểm kê · hậu kiểm Kế toán SX · phiếu đảo ·
 --   ghi đầu ra sản xuất tự sinh phiếu kho · cảnh báo hằng ngày

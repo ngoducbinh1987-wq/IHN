@@ -164,10 +164,13 @@ insert into inv.stock_docs (doc_no, doc_type, warehouse_id, ref_type, ref_id)
 select 'IS-T1', 'ISSUE_WO', id, 'WO', (select id from mfg.work_orders where wo_no = 'LSX-T1') from inv.warehouses where code = 'KNL';
 insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id from inv.stock_docs where doc_no = 'IS-T1'), 1, id, 100 from inv.lots where lot_no = 'CU24-T1';
 select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'IS-T1'))$$, 'Vượt định mức', 'Xuất 100 kg đồng vượt định mức LSX bị chặn');
-insert into t select 'req_extra', wf.submit('EXTRA_ISSUE', (select id from inv.stock_docs where doc_no = 'IS-T1'), 'IS-T1', 'Cấp bù đồng');
+select pg_temp.fails($$select wf.submit('EXTRA_ISSUE', (select id from inv.stock_docs where doc_no = 'IS-T1'), 'IS-T1')$$, 'Không tìm thấy phiếu lĩnh bổ sung',
+  'Cấp vượt định mức phải lập phiếu lĩnh bổ sung, không gửi duyệt thẳng phiếu xuất');
 select pg_temp.as_user('U_SXTP');
-select pg_temp.fails($$select wf.act((select v from t where k='req_extra'), 'APPROVE')$$, 'cần vai trò', 'Quản lý SX không duyệt cấp vượt định mức');
-select pg_temp.as_user('U_KTTP'); select wf.act((select v from t where k='req_extra'), 'APPROVE');
+insert into t select 'req_extra', inv.create_extra_requisition((select id from mfg.work_orders where wo_no = 'LSX-T1'), '[{"material_code":"CU-024","qty":100}]', 'EX_SCRAP', 'Cấp bù đồng');
+select pg_temp.fails($$select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k='req_extra')), 'APPROVE')$$, 'cần vai trò', 'Quản lý SX không duyệt cấp vượt định mức');
+select pg_temp.as_user('U_KTTP'); select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k='req_extra')), 'APPROVE');
+update inv.stock_docs set requisition_id = (select v from t where k = 'req_extra') where doc_no = 'IS-T1';
 select pg_temp.as_user('U_KHO');
 select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'IS-T1'))$$, 'chưa đạt QC', 'Lô Chờ QC không được xuất SX');
 select pg_temp.as_user('U_QC');

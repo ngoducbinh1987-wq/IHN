@@ -1,4 +1,4 @@
--- BMT MES · 2200 · Module Kho (phần 1): danh mục, tồn theo đơn vị chứa (ống/bao/bobin), ghi sổ
+-- BMT MES · 2400 · Module Kho (phần 1): danh mục, tồn theo đơn vị chứa (ống/bao/bobin), ghi sổ
 -- Theo tài liệu "BMT MES – Phân tích nghiệp vụ Quản lý kho" và "Quy chuẩn vai trò & nhiệm vụ nhân sự nhà máy BMT" (25/10/2026):
 --   · Kho NVL, BTP, phế do Quản lý SX giữ (vai trò Thủ kho); kho thành phẩm do NV5 giữ (vai trò NV kho)
 --   · Kế toán SX duyệt (hậu kiểm) phiếu nhập/xuất trong ngày; Kế toán trưởng duyệt kiểm kê
@@ -20,7 +20,7 @@ create table if not exists inv.settings (
   updated_by uuid
 );
 insert into inv.settings (key, label, num_value, text_value, unit, owner_role, sort) values
-  ('copper_tol_pct',   'Lệch cân bằng đồng cho phép theo lệnh SX', 1, null, '%', 'KT_TP', 1),
+  ('copper_tol_pct',   'Lệch cân bằng đồng cho phép theo lệnh SX', 2, null, '%', 'KT_TP', 1),
   ('material_tol_pct', 'Tiêu hao vượt định mức cho phép trước khi cảnh báo', 3, null, '%', 'KT_TP', 2),
   ('giveaway_tol_pct', 'Vượt dày cho phép (kg/km thực so với lý thuyết)', 2, null, '%', 'KT_TP', 3),
   ('remnant_min_m',    'Chiều dài tối thiểu cuộn thành phẩm (ngắn hơn là đoạn lẻ)', 100, null, 'm', 'KT_TP', 4),
@@ -154,6 +154,10 @@ language plpgsql stable security definer set search_path = pg_catalog, public as
 declare v_mode text := inv.keeper_mode(p_wh); v_code text;
 begin
   select w.code into v_code from inv.warehouses w where w.id = p_wh;
+  -- Phạm vi kho được giao (Quản trị → Người dùng, migration 2200); không giao kho nào = mọi kho
+  if not core.can_use_warehouse(p_wh) then
+    raise exception 'Bạn không được giao kho %', v_code;
+  end if;
   if v_mode is null then
     raise exception 'Bạn không phải người giữ kho % (Quy chuẩn: kho NVL, BTP, phế – Quản lý SX; kho thành phẩm – NV5)', v_code;
   end if;
@@ -582,7 +586,7 @@ revoke execute on function inv._post(uuid) from public, anon, authenticated;
 -- Ghi sổ một chứng từ đã lập (người giữ kho của kho xuất và kho nhận)
 create or replace function inv.post_doc(p_doc uuid) returns void
 language plpgsql security definer set search_path = pg_catalog, public as $$
-declare d inv.stock_docs;
+declare d inv.stock_docs; x record;
 begin
   select * into d from inv.stock_docs where id = p_doc;
   if not found then raise exception 'Không tìm thấy chứng từ kho'; end if;
@@ -591,5 +595,49 @@ begin
   if d.to_warehouse_id is not null and d.to_warehouse_id <> d.warehouse_id then
     perform inv.require_keeper(d.to_warehouse_id, d.witness_id);
   end if;
+  -- Xuất cho sản xuất: phải gắn lệnh SX; ngoài phiếu lĩnh đã duyệt thì không vượt định mức cả lệnh (2200)
+  if d.doc_type = 'ISSUE_WO' then
+    if d.ref_type is distinct from 'WO' or d.ref_id is null then
+      raise exception 'Phiếu xuất sản xuất % phải gắn lệnh sản xuất', d.doc_no;
+    end if;
+    if d.requisition_id is not null then
+      if not exists (select 1 from inv.requisitions rq where rq.id = d.requisition_id and rq.wo_id = d.ref_id and rq.status in ('APPROVED', 'PARTIAL')) then
+        raise exception 'Phiếu lĩnh của chứng từ % chưa được duyệt hoặc đã cấp xong', d.doc_no;
+      end if;
+      select m.code, coalesce(rl.qty_req - rl.qty_issued + rl.qty_returned, 0) as remain, t.qty as this_qty into x
+      from (select lt.material_id, sum(dl.qty) as qty from inv.stock_doc_lines dl join inv.lots lt on lt.id = dl.lot_id
+            where dl.doc_id = p_doc and lt.item_kind = 'MAT' group by lt.material_id) t
+      join master.materials m on m.id = t.material_id
+      left join inv.requisition_lines rl on rl.req_id = d.requisition_id and rl.material_id = t.material_id
+      where t.qty > coalesce(rl.qty_req - rl.qty_issued + rl.qty_returned, 0) + 0.0001
+      order by m.code limit 1;
+      if found then
+        raise exception 'Vượt phiếu lĩnh (%): còn được cấp %, phiếu này %', x.code, core.vn_num(x.remain), core.vn_num(x.this_qty);
+      end if;
+    else
+      select m.code, coalesce(sm.std_qty, 0) as std, coalesce(i.qty, 0) as issued, t.qty as this_qty into x
+      from (select lt.material_id, sum(dl.qty) as qty from inv.stock_doc_lines dl join inv.lots lt on lt.id = dl.lot_id
+            where dl.doc_id = p_doc and lt.item_kind = 'MAT' group by lt.material_id) t
+      join master.materials m on m.id = t.material_id
+      left join mfg.wo_std_materials(d.ref_id) sm on sm.material_id = t.material_id
+      left join inv.wo_issued(d.ref_id) i on i.material_id = t.material_id
+      where coalesce(i.qty, 0) + t.qty > coalesce(sm.std_qty, 0) + 0.0001
+      order by m.code limit 1;
+      if found then
+        raise exception 'Vượt định mức (%): định mức %, đã xuất %, phiếu này %. Lập phiếu lĩnh bổ sung để TP Kỹ thuật/QA duyệt',
+          x.code, core.vn_num(x.std), core.vn_num(x.issued), core.vn_num(x.this_qty);
+      end if;
+    end if;
+  end if;
   perform inv._post(p_doc);
+  -- Cấp theo phiếu lĩnh: cộng số đã cấp, đóng phiếu khi đủ
+  if d.doc_type = 'ISSUE_WO' and d.requisition_id is not null then
+    update inv.requisition_lines rl set qty_issued = rl.qty_issued + t.qty
+      from (select lt.material_id, sum(dl.qty) as qty from inv.stock_doc_lines dl join inv.lots lt on lt.id = dl.lot_id
+            where dl.doc_id = p_doc and lt.item_kind = 'MAT' group by lt.material_id) t
+     where rl.req_id = d.requisition_id and rl.material_id = t.material_id;
+    update inv.requisitions rq set status = case when exists (
+             select 1 from inv.requisition_lines rl where rl.req_id = rq.id and rl.qty_issued - rl.qty_returned < rl.qty_req) then 'PARTIAL' else 'DONE' end
+     where rq.id = d.requisition_id;
+  end if;
 end $$;

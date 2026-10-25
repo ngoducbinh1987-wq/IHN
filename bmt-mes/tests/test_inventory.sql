@@ -61,6 +61,7 @@ select pg_temp.fails($$select app.admin_upsert_user(pg_temp.uid('KTT'), 'X', 'KT
   'Kế toán trưởng + Kế toán kho', 'Không gán Kế toán trưởng + Kế toán kho');
 
 -- ================================================================ 1. Chuẩn bị: spec phát hành, PO đã duyệt
+select set_config('bmt.wf_release', 'on', true);   -- chạy thử: phát hành spec như khi luồng duyệt hoàn tất
 select master.release_spec(current_spec_id) from master.products where code = 'PFR-2C-1p5';
 insert into core.partners (code, name, is_supplier, partner_type) values ('NCC-T', 'NCC thử', true, 'SUPPLIER');
 insert into purchase.purchase_orders (po_no, supplier_id, status) select 'PO-K1', id, 'APPROVED' from core.partners where code = 'NCC-T';
@@ -138,6 +139,7 @@ insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pa
 select 'LSX-K1', p.id, p.current_spec_id, h.id, 1000, 500, 'Bobin gỗ', 'KAVIX'
 from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1p5';
 select mfg.release_wo((select id from mfg.work_orders where wo_no = 'LSX-K1'));
+select set_config('bmt.wf_release', 'off', true);
 select pg_temp.as_user('NV1');
 select pg_temp.fails($$select inv.create_requisition((select id from mfg.work_orders where wo_no='LSX-K1'), 1000)$$, 'Chỉ Quản lý SX', 'Vận hành không lập phiếu lĩnh');
 select pg_temp.as_user('QLSX');
@@ -245,7 +247,13 @@ select pg_temp.ok((select count(*) > 0 from app.loss_wo_materials((select id fro
   'Tiêu hao vật tư theo lệnh: CU-024 ròng 27,5 kg');
 select pg_temp.ok((select sum(kg) = 4 from app.loss_scrap(current_date, current_date)), 'Pareto phế: tổng 4 kg');
 
--- ================================================================ 11. Chuyển vị trí (đúng người giữ kho)
+-- ================================================================ 11. Chuyển vị trí (đúng người giữ kho, đúng phạm vi kho được giao)
+select pg_temp.as_user('ADM');
+select app.admin_set_warehouses(pg_temp.uid('QLSX'), array['KBTP','KPL']);
+select pg_temp.as_user('QLSX');
+select pg_temp.fails($$select inv.move_hu((select v from t where k = 'hu2'), inv.loc('KNL-CU'))$$, 'không được giao kho', 'Thủ kho chỉ thao tác kho được giao (phạm vi kho)');
+select pg_temp.as_user('ADM');
+select app.admin_set_warehouses(pg_temp.uid('QLSX'), '{}');   -- không giao riêng = mọi kho
 select pg_temp.as_user('QLSX');
 select inv.move_hu((select v from t where k = 'hu2'), inv.loc('KNL-CU'));
 select pg_temp.ok((select location_id = inv.loc('KNL-CU') from inv.handling_units where id = (select v from t where k = 'hu2')), 'Quét ống + quét vị trí → đổi vị trí');
@@ -301,7 +309,7 @@ delete from core.delegations;
 select pg_temp.as_user('QLSX');
 insert into t select 'rx', inv.create_extra_requisition((select id from mfg.work_orders where wo_no = 'LSX-K1'), '[{"material_code":"CU-024","qty":5}]', 'EX_SCRAP', 'Đứt dây nhiều');
 select pg_temp.ok((select status = 'PENDING_APPROVAL' from inv.requisitions where id = (select v from t where k = 'rx')), 'Phiếu lĩnh bổ sung chờ duyệt');
-select pg_temp.fails($$select wf.act((select id from wf.approval_requests where doc_id=(select v from t where k='rx')), 'APPROVE')$$, 'cần vai trò KT_TP', 'Quản lý SX (TP sản xuất) không duyệt lĩnh bổ sung: phải TP Kỹ thuật/QA');
+select pg_temp.fails($$select wf.act((select id from wf.approval_requests where doc_id=(select v from t where k='rx')), 'APPROVE')$$, 'cần vai trò Trưởng phòng Kỹ thuật/QA', 'Quản lý SX (TP sản xuất) không duyệt lĩnh bổ sung: phải TP Kỹ thuật/QA');
 select pg_temp.as_user('TPKT'); select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k = 'rx')), 'APPROVE');
 select pg_temp.ok((select status = 'APPROVED' from inv.requisitions where id = (select v from t where k = 'rx')), 'TP Kỹ thuật/QA duyệt → được cấp');
 

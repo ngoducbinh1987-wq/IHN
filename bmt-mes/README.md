@@ -12,7 +12,7 @@ Phương án đã duyệt ngày 25/10/2026:
 
 | Thư mục | Nội dung |
 |---|---|
-| `supabase/migrations/` | 22 migration, chạy theo thứ tự tên file |
+| `supabase/migrations/` | 27 migration, chạy theo thứ tự tên file (2200 có hai file: production_planning, role_standard) |
 | `web/` | Web app Next.js giai đoạn 1 |
 | `dev/` | Môi trường thử cục bộ giống Supabase |
 | `docs/BA_BMT_MES_v1.html` | Tài liệu BA kèm mockup giao diện |
@@ -21,7 +21,8 @@ Phương án đã duyệt ngày 25/10/2026:
 | `tests/test_flows.sql` | 47 kiểm thử luồng nghiệp vụ, chạy trong transaction rồi rollback |
 | `tests/test_plan_mrp_flow.sql` | 34 kiểm thử: sửa dòng kế hoạch, đóng gói, điều chỉnh MRP, cài đặt quy trình, cảnh báo quá hạn (rollback) |
 | `tests/test_machines.sql` | 83 kiểm thử module Quản lý máy: quyền, khai báo máy, tốc độ, bảo dưỡng, nhắc lịch, hỏng máy, checklist, năng lực, báo cáo tháng, lịch làm việc dùng chung (rollback) |
-| `tests/test_role_standard.sql` | 52 kiểm thử quy chuẩn vai trò: xung đột vai trò, phạm vi kho, hạn mức PO, chuyển Giám đốc, duyệt thay quá hạn, phiếu lĩnh theo định mức, cân bằng đồng (rollback, chạy được trên Supabase) |
+| `tests/test_inventory.sql` | 97 kiểm thử module Kho theo Quy chuẩn vai trò: người giữ kho, phạm vi kho, ủy quyền + chứng kiến, phiếu lĩnh theo định mức, FEFO, cấp/trả theo QR, QC giải phóng lô, kiểm kê đếm mù, hậu kiểm Kế toán SX, khóa kỳ, lệnh giao, phế, báo cáo hao hụt (rollback) |
+| `tests/test_role_standard.sql` | 53 kiểm thử quy chuẩn vai trò: xung đột vai trò, phạm vi kho, hạn mức PO, chuyển Giám đốc, duyệt thay quá hạn, phiếu lĩnh theo định mức, cân bằng đồng (rollback, chạy được trên Supabase) |
 | `scripts/apply_local.sh` | Dựng database trên PostgreSQL cục bộ |
 | `scripts/deploy_supabase.sh` | Đẩy lên Supabase qua Management API |
 
@@ -42,6 +43,9 @@ Phương án đã duyệt ngày 25/10/2026:
 | `1800_app_views` | Schema `app` cho web app: view màn hình, `me()`, khởi tạo quản trị, quản trị người dùng, nhập pilot |
 | `2300_machines` | Module Quản lý máy: dây chuyền + máy con, thông số, linh kiện, dải hoạt động, tốc độ theo sản phẩm (duyệt), người đứng máy, tài liệu; bảo dưỡng (kế hoạch, phiếu BD/SC, checklist đầu ca, nhắc lịch), nhật ký trạng thái, kiểm tra năng lực, báo cáo tháng; quyền `machine`; lịch pg_cron |
 | `2200_role_standard` | Áp dụng Quy chuẩn vai trò & nhiệm vụ nhân sự (25/10/2026): xem mục bên dưới |
+| `2400_inventory_core` | Kho (1): cài đặt kho, người giữ kho, 20 vị trí, bobin trung gian, bảng bì, tồn theo đơn vị chứa (QR), phiếu lĩnh, kiểm kê, ghi sổ lõi (khóa kỳ, khóa kiểm kê, FEFO/QC/HSD), `inv.post_doc` |
+| `2500_inventory_ops` | Kho (2): phiếu lĩnh theo định mức + bổ sung, cấp/trả quét QR, nhận hàng, QC giải phóng lô, chuyển vị trí, cắt bobin, đổi mã, hàng trả, tồn đầu kỳ, phế, bán phế, lệnh giao, kiểm kê, hậu kiểm, phiếu đảo, in tem, ghi đầu ra công đoạn |
+| `2600_inventory_app` | Kho (3): luồng duyệt kho (gộp với 2200), cảnh báo hằng ngày (pg_cron `bmt_inv_daily_alerts`), view cho web, nhập–xuất–tồn, báo cáo hao hụt 5 nhóm + cân bằng đồng |
 | `1000`–`1600_seed_*` | Từ Excel: 51 vật tư, 59 tham số, 10 mã lõi, 78 SKU, spec v1, kết quả định mức, 1.358 dòng BOM (chia nhỏ < 65 KB/file) |
 
 ## Quy chuẩn vai trò (migration 2200)
@@ -54,10 +58,10 @@ Phương án đã duyệt ngày 25/10/2026:
 | PR | Giám đốc duyệt nhu cầu; NV mua hàng được sinh PR từ MRP |
 | PO theo hạn mức | Dưới 20 tr: Giám đốc; từ 20 tr / NCC mới / nhập khẩu / thiết bị: thêm TP mua hàng; trên 200 tr / nhập khẩu / thiết bị: thêm Chủ tịch HĐQT |
 | Spec | TP Kỹ thuật/QA lập → Quản lý SX xác nhận → Giám đốc phát hành; đã bỏ quy trình "thay đổi nhỏ" |
-| Cấp NVL vượt định mức | TP Kỹ thuật/QA duyệt; phiếu lĩnh tự tạo theo định mức (`inv.create_wo_issue`), xuất vượt bị chặn |
-| Kiểm kê / chốt giá thành | Kế toán SX kiểm tra → Kế toán trưởng duyệt; quá 24 giờ Giám đốc được duyệt thay |
+| Cấp NVL vượt định mức | TP Kỹ thuật/QA duyệt phiếu lĩnh bổ sung; phiếu lĩnh theo định mức (`inv.create_requisition`, `inv.create_wo_issue` gọi lại hàm này từ 2600), xuất vượt bị chặn |
+| Kiểm kê / chốt giá thành | Kiểm kê: Kế toán SX lập biên bản → Kế toán trưởng duyệt (từ 2600); chốt giá thành: Kế toán trưởng; quá 24 giờ Giám đốc được duyệt thay |
 | Người duyệt là người lập | Bỏ bước nếu Giám đốc đã duyệt ở bước khác, nếu không thì chuyển Giám đốc |
-| Kiểm soát kho | Trang `/kho`: Kế toán SX đánh dấu "Đã kiểm" phiếu đã ghi sổ; cân bằng đồng theo lệnh SX, ngưỡng do TP Kỹ thuật/QA đặt |
+| Kiểm soát kho | Từ 2600: Kế toán SX duyệt/trả lại phiếu đã ghi sổ ở `/kho/phieu?tab=duyet`; cân bằng đồng ở `/bao-cao/hao-hut?tab=dong`, ngưỡng ở `/kho/cai-dat` (TP Kỹ thuật/QA) |
 | Vá bảo mật | Phát hành spec và phát lệnh SX chỉ qua quy trình duyệt |
 
 ## Hàm nghiệp vụ chính
@@ -121,6 +125,15 @@ Next.js 15 + Supabase Auth. Mọi truy vấn chạy bằng phiên của người
 | `/may/toc-do`, `/may/kiem-tra` | Tốc độ chuẩn (duyệt, duyệt tạm); kiểm tra năng lực kế hoạch theo tốc độ, tình trạng máy, bảo dưỡng, người đứng máy, số ca, tăng ca |
 | `/may/lich-su`, `/may/bao-cao` | Dòng thời gian trạng thái + nhật ký sự kiện; báo cáo bảo trì tháng (tự gửi email Ban giám đốc ngày 1) |
 | `/may/cai-dat` | Giờ ca, ngày làm việc, tỷ lệ xếp lịch, ngày nhắc bảo dưỡng nhỏ/lớn, số máy tối đa một người, mục checklist |
+| `/kho` | Tổng quan kho: việc chờ (QC, hậu kiểm, giá nhập, phiếu lĩnh, hạn dùng, mức đặt hàng, lệnh giao) và các thao tác theo vai trò |
+| `/kho/quet` | Quét QR (camera hoặc máy quét) tra ống/bao/bobin: tồn, lô, QC, hạn dùng, lịch sử |
+| `/kho/nhan-hang`, `/kho/qc` | Nhận hàng theo PO/không PO (cân tổng − bì), in tem; QC giải phóng/cách ly/không nhận lô, mở NCR |
+| `/kho/cap-phat`, `/kho/nhan-nvl`, `/kho/tra` | Phiếu lĩnh theo định mức + bổ sung (TP KT/QA duyệt), cấp bằng quét QR theo FEFO; công nhân xác nhận nhận tại máy; trả NVL thừa |
+| `/kho/chuyen`, `/kho/ton`, `/kho/phieu` | Chuyển vị trí; tồn tổng hợp/chi tiết, dưới mức đặt hàng; phiếu kho, Kế toán SX duyệt trong ngày, nhập giá, phiếu đảo |
+| `/kho/kiem-ke`, `/kho/phe`, `/kho/xuat-ban` | Kiểm kê (đếm mù, Kế toán trưởng duyệt chênh lệch); ghi phế, bán phế; lệnh giao, quét bobin lên xe |
+| `/kho/thanh-pham`, `/kho/bobin`, `/kho/cai-dat` | Cắt bobin, hàng khách trả, đổi mã/hạ cấp; bobin trung gian; thông số kho, vị trí, bảng bì, mức đặt hàng, tồn đầu kỳ |
+| `/kho/so-cai`, `/bao-cao/hao-hut` | Nhập – xuất – tồn, thẻ kho; báo cáo hao hụt 5 nhóm, theo lệnh, cân bằng đồng, Pareto phế |
+| `/in/tem` | In tem QR 100 × 75 mm cho đơn vị chứa (`?doc=`, `?hu=`) và vị trí (`?loc=`); in lại phải ghi lý do |
 
 Số nhập theo kiểu Việt Nam: `3.500` = ba nghìn năm trăm, `268.000` = 268 nghìn, `1,5` hoặc `1.5` = một phẩy năm.
 

@@ -1,19 +1,26 @@
--- BMT MES · 2400 · Module Kho (phần 3): luồng duyệt theo Quy chuẩn, cảnh báo hằng ngày, phân quyền,
+-- BMT MES · 2600 · Module Kho (phần 3): luồng duyệt theo Quy chuẩn, cảnh báo hằng ngày, phân quyền,
 -- tầng đọc cho web app (schema app) và báo cáo hao hụt
 
 -- ===========================================================================
--- 1. Luồng duyệt theo Quy chuẩn vai trò & nhiệm vụ (mục 9)
+-- 1. Luồng duyệt theo Quy chuẩn vai trò & nhiệm vụ (mục 9) — chạy sau migration 2200 (quy chuẩn vai trò)
 -- ===========================================================================
--- Lĩnh vượt định mức: TP Kỹ thuật/QA duyệt (Quản lý SX giữ vai trò TP sản xuất nên không tự duyệt)
-update wf.approval_flows set doc_table = 'inv.requisitions', rejected_status = 'CANCELLED', submit_label = 'Quản lý SX lập phiếu lĩnh bổ sung'
+-- Lĩnh vượt định mức: chứng từ là phiếu lĩnh bổ sung (inv.requisitions); TP Kỹ thuật/QA duyệt
+update wf.approval_flows set doc_table = 'inv.requisitions', status_col = 'status', approved_status = 'APPROVED',
+       pending_status = 'PENDING_APPROVAL', rejected_status = 'CANCELLED', submit_label = 'Quản lý SX lập phiếu lĩnh bổ sung'
  where doc_type = 'EXTRA_ISSUE';
-update wf.approval_steps set role_code = 'KT_TP', level_label = 'TP Kỹ thuật/QA duyệt lĩnh vượt định mức'
+update wf.approval_steps set role_code = 'KT_TP', level_label = 'TP Kỹ thuật/QA duyệt cấp vượt định mức', fallback_role = 'BGD'
  where doc_type = 'EXTRA_ISSUE' and seq = 1;
--- Kiểm kê: Kế toán SX lập biên bản, Kế toán trưởng duyệt (A)
+-- Kiểm kê: Kế toán SX lập biên bản (người gửi duyệt), Kế toán trưởng duyệt; quá hạn Giám đốc duyệt thay
+-- (bỏ bước "Kế toán SX kiểm tra" vì chính Kế toán SX lập biên bản — để lại sẽ bị chuyển Giám đốc)
 update wf.approval_flows set rejected_status = 'CANCELLED', submit_label = 'Kế toán SX lập biên bản kiểm kê', submit_role = 'KT_KHO'
  where doc_type = 'STOCK_ADJ';
-delete from wf.approval_steps where doc_type = 'STOCK_ADJ' and seq > 1;
-update wf.approval_steps set role_code = 'KTT', level_label = 'Kế toán trưởng duyệt chênh lệch kiểm kê' where doc_type = 'STOCK_ADJ' and seq = 1;
+delete from wf.approval_steps where doc_type = 'STOCK_ADJ' and seq <> 2;
+update wf.approval_steps set seq = 1 where doc_type = 'STOCK_ADJ' and seq = 2;
+insert into wf.approval_steps (doc_type, seq, level_label, role_code, enabled, sla_hours, fallback_role)
+select 'STOCK_ADJ', 1, 'Kế toán trưởng duyệt chênh lệch kiểm kê', 'KTT', true, 24, 'BGD'
+where not exists (select 1 from wf.approval_steps where doc_type = 'STOCK_ADJ');
+update wf.approval_steps set role_code = 'KTT', level_label = 'Kế toán trưởng duyệt chênh lệch kiểm kê', fallback_role = 'BGD', enabled = true
+ where doc_type = 'STOCK_ADJ' and seq = 1;
 -- Bán phế: Quản lý SX lập, Kế toán SX kiểm tra, Giám đốc duyệt
 update wf.approval_flows set rejected_status = 'CANCELLED', submit_label = 'Quản lý SX lập phiếu bán phế' where doc_type = 'SCRAP_OUT';
 update wf.approval_steps set level_label = 'Kế toán SX kiểm tra' where doc_type = 'SCRAP_OUT' and seq = 1;
@@ -23,39 +30,66 @@ insert into wf.approval_flows (doc_type, name, doc_table, status_col, approved_s
 values ('STOCK_OPEN', 'Tồn kho đầu kỳ', 'inv.stock_docs', 'status', 'APPROVED', 'CANCELLED', 'PENDING_APPROVAL', 'Kế toán SX lập tồn đầu kỳ', 'KT_KHO'),
        ('DELIVERY', 'Lệnh giao hàng (xuất xưởng thành phẩm)', 'sales.deliveries', 'status', 'APPROVED', 'CANCELLED', 'PENDING_APPROVAL', 'NV5 lập lệnh giao', 'KHO_NV')
 on conflict (doc_type) do nothing;
-insert into wf.approval_steps (doc_type, seq, level_label, role_code, enabled, sla_hours) values
-  ('STOCK_OPEN', 1, 'Kế toán trưởng duyệt', 'KTT', true, 24),
-  ('DELIVERY', 1, 'TP Kỹ thuật/QA xác nhận chất lượng', 'KT_TP', true, 24),
-  ('DELIVERY', 2, 'Giám đốc duyệt lệnh giao', 'BGD', true, 24)
+insert into wf.approval_steps (doc_type, seq, level_label, role_code, enabled, sla_hours, fallback_role) values
+  ('STOCK_OPEN', 1, 'Kế toán trưởng duyệt', 'KTT', true, 24, 'BGD'),
+  ('DELIVERY', 1, 'TP Kỹ thuật/QA xác nhận chất lượng', 'KT_TP', true, 24, null),
+  ('DELIVERY', 2, 'Giám đốc duyệt lệnh giao', 'BGD', true, 24, null)
 on conflict do nothing;
 
+-- Mỗi quy trình kho chỉ nhận đúng loại chứng từ, đang ở trạng thái nháp
+create or replace function wf.check_doc(p_doc_type text, p_doc_id uuid) returns void
+language plpgsql stable security definer set search_path = pg_catalog, public as $$
+declare d inv.stock_docs; rq inv.requisitions; v_status text; v_need text;
+begin
+  if p_doc_type = 'EXTRA_ISSUE' then
+    select * into rq from inv.requisitions where id = p_doc_id;
+    if not found then raise exception 'Không tìm thấy phiếu lĩnh bổ sung'; end if;
+    if rq.kind <> 'EXTRA' then raise exception 'Phiếu lĩnh % là phiếu theo định mức, không cần duyệt', rq.req_no; end if;
+    if rq.status <> 'DRAFT' then raise exception 'Phiếu lĩnh % đang ở trạng thái %', rq.req_no, rq.status; end if;
+  elsif p_doc_type in ('STOCK_ADJ', 'SCRAP_OUT', 'STOCK_OPEN') then
+    select * into d from inv.stock_docs where id = p_doc_id;
+    if not found then raise exception 'Không tìm thấy phiếu kho'; end if;
+    v_need := case p_doc_type when 'STOCK_ADJ' then 'ADJ' when 'SCRAP_OUT' then 'SCRAP_OUT' else 'OPENING' end;
+    if d.doc_type <> v_need then raise exception 'Phiếu % (loại %) không thuộc quy trình này', d.doc_no, d.doc_type; end if;
+    if d.status <> 'DRAFT' then raise exception 'Phiếu % đang ở trạng thái %', d.doc_no, d.status; end if;
+  elsif p_doc_type = 'DELIVERY' then
+    select status into v_status from sales.deliveries where id = p_doc_id;
+    if not found then raise exception 'Không tìm thấy lệnh giao'; end if;
+    if v_status <> 'DRAFT' then raise exception 'Lệnh giao đang ở trạng thái %', v_status; end if;
+  end if;
+end $$;
+revoke execute on function wf.check_doc(text, uuid) from public, anon, authenticated;
+
 -- ===========================================================================
--- 2. wf.act: hoàn tất duyệt chứng từ kho thì ghi sổ ngay; trả lại thì mở lại kiểm kê / hủy hàng tạo nháp
+-- 2. wf.act (bản 2200: duyệt thay khi quá hạn, phát hành spec/lệnh SX) + nhánh kho:
+--    duyệt xong thì ghi sổ ngay; trả lại thì mở lại kiểm kê / hủy đơn vị chứa của tồn đầu kỳ
 -- ===========================================================================
--- (thân hàm chép từ 2100, thêm nhánh kho — xem các dòng có ghi "kho:")
 create or replace function wf.act(p_request uuid, p_action text, p_comment text default null) returns text
 language plpgsql security definer set search_path = wf, core, public as $$
-declare r wf.approval_requests; f wf.approval_flows; v_step jsonb; v_next jsonb; v_hash text; v_ok boolean; v_behalf uuid;
+declare r wf.approval_requests; f wf.approval_flows; v_step jsonb; v_next jsonb; v_hash text;
+        v_ok boolean; v_behalf uuid; v_fallback boolean; v_comment text := p_comment;
 begin
   select * into r from wf.approval_requests where id = p_request for update;
   if r.status <> 'PENDING' then raise exception 'Yêu cầu đã kết thúc (%)', r.status; end if;
   select * into f from wf.approval_flows where doc_type = r.doc_type;
   v_step := wf.snap_step(r, r.current_seq);
 
-  select ok, on_behalf into v_ok, v_behalf from wf.can_act_step(v_step);
+  select c.ok, c.on_behalf, c.fallback into v_ok, v_behalf, v_fallback from wf.can_act_step(v_step, r.step_started_at) c;
   if not v_ok then
-    raise exception 'Bước "%" cần vai trò % – người được giao: %', v_step ->> 'label', v_step ->> 'role',
+    raise exception 'Bước "%" cần vai trò % – người được giao: %', v_step ->> 'label',
+      coalesce((select name from core.roles where code = v_step ->> 'role'), v_step ->> 'role'),
       coalesce((select string_agg(full_name, ', ') from core.profiles where id = any(wf.step_actor_ids(v_step))), 'chưa có');
   end if;
   if auth.uid() = r.submitted_by then raise exception 'Người lập không tự duyệt chứng từ của mình'; end if;
   if p_action = 'REJECT' and coalesce(trim(p_comment), '') = '' then
     raise exception 'Nhập lý do trả lại để người lập biết cần sửa gì';
   end if;
+  if v_fallback then v_comment := '[Duyệt thay do quá hạn] ' || coalesce(p_comment, ''); end if;
   v_hash := wf.doc_hash(f.doc_table, r.doc_id);
   if v_hash <> r.data_hash then raise exception 'Chứng từ đã bị sửa sau khi gửi duyệt: gửi duyệt lại'; end if;
 
   insert into wf.approval_actions (request_id, seq, on_behalf_of, action, comment, data_hash)
-  values (p_request, r.current_seq, v_behalf, p_action, p_comment, v_hash);
+  values (p_request, r.current_seq, v_behalf, p_action, nullif(trim(v_comment), ''), v_hash);
 
   if p_action = 'COMMENT' then return 'PENDING'; end if;
 
@@ -77,11 +111,12 @@ begin
    where (s ->> 'seq')::int > r.current_seq order by (s ->> 'seq')::int limit 1;
   if v_next is not null then
     update wf.approval_requests set current_seq = (v_next ->> 'seq')::smallint where id = p_request;
-    perform wf.notify_users(wf.step_actor_ids(v_next), 'Chờ duyệt: ' || r.doc_no, r.summary, '/duyet/' || p_request);
+    perform wf.notify_users(array_remove(wf.step_actor_ids(v_next), r.submitted_by), 'Chờ duyệt: ' || r.doc_no, r.summary, '/duyet/' || p_request);
     return 'PENDING';
   end if;
 
   update wf.approval_requests set status = 'APPROVED', finished_at = now() where id = p_request;
+  perform set_config('bmt.wf_release', 'on', true);
   if r.doc_type like 'SPEC%' then
     perform master.release_spec(r.doc_id);
   elsif r.doc_type = 'WO_RELEASE' then
@@ -100,6 +135,7 @@ begin
       perform wf.notify_users(inv.role_users(array['KHO_NV']), 'Lệnh giao đã duyệt: ' || r.doc_no, r.summary, '/kho/xuat-ban/' || r.doc_id);
     end if;
   end if;
+  perform set_config('bmt.wf_release', 'off', true);
   insert into wf.notifications (user_id, title, link) values (r.submitted_by, 'Đã duyệt: ' || r.doc_no, '/duyet/' || p_request);
   return 'APPROVED';
 end $$;
@@ -198,31 +234,10 @@ end $$;
 -- ===========================================================================
 -- 4. Phân quyền theo Quy chuẩn mục 10
 -- ===========================================================================
--- Không gán chung cho 1 người: người giữ kho ≠ người ghi sổ ≠ người mua ≠ người duyệt chi
-create or replace function app.admin_upsert_user(p_user uuid, p_full_name text, p_employee_code text,
-                                                 p_department text, p_title text, p_roles text[], p_status text default 'ACTIVE')
-returns void
-language plpgsql security definer set search_path = pg_catalog, public as $$
-declare v_bad text;
-begin
-  if not core.has_perm('admin', 'edit') then raise exception 'Không có quyền quản trị người dùng'; end if;
-  if p_user = auth.uid() and not ('ADMIN' = any(p_roles)) then
-    raise exception 'Không tự gỡ vai trò ADMIN của chính mình';
-  end if;
-  select string_agg(x.label, '; ') into v_bad
-  from (values ('THU_KHO','KT_KHO','Thủ kho + Kế toán kho'), ('KHO_NV','KT_KHO','NV kho + Kế toán kho'),
-               ('THU_KHO','MUA_NV','Thủ kho + NV mua hàng'), ('KTT','KT_KHO','Kế toán trưởng + Kế toán kho')) x(a, b, label)
-  where x.a = any(p_roles) and x.b = any(p_roles);
-  if v_bad is not null then
-    raise exception 'Không gán chung cho một người (Quy chuẩn mục 10): %', v_bad;
-  end if;
-  insert into core.profiles (id, full_name, employee_code, department, title, status)
-  values (p_user, p_full_name, nullif(trim(p_employee_code), ''), nullif(p_department, ''), p_title, p_status)
-  on conflict (id) do update set full_name = excluded.full_name, employee_code = excluded.employee_code,
-    department = excluded.department, title = excluded.title, status = excluded.status;
-  delete from core.user_roles where user_id = p_user and role_code <> all(p_roles);
-  insert into core.user_roles (user_id, role_code) select p_user, unnest(p_roles) on conflict do nothing;
-end $$;
+-- Không gán chung cho 1 người (bảng xung đột của 2200): thêm NV kho thành phẩm + Kế toán kho
+insert into core.role_conflicts (role_a, role_b, reason) values
+  ('KHO_NV', 'KT_KHO', 'người giữ kho thành phẩm không tự ghi sổ, tự kiểm phiếu kho')
+on conflict do nothing;
 
 -- Người dùng hiện tại: tính cả vai trò đang được ủy quyền (ví dụ tổ phó giữ kho thay Quản lý SX)
 create or replace function app.me() returns jsonb
@@ -418,8 +433,15 @@ left join master.materials m on m.id = l.material_id
 left join master.products p on p.id = l.product_id
 where b.qty > 0;
 
-create or replace view app.v_stock_docs with (security_invoker = true) as
-select d.id, d.doc_no, d.doc_type, d.status, d.doc_date, d.warehouse_id, w.code as warehouse_code, tw.code as to_warehouse_code,
+drop view if exists app.v_stock_docs;   -- 2200 có bản khác cột: tạo lại (giữ đủ cột cũ)
+create view app.v_stock_docs with (security_invoker = true) as
+select d.id, d.doc_no, d.doc_type,
+       case d.doc_type when 'GR' then 'Nhập mua' when 'ISSUE_WO' then 'Xuất cho sản xuất' when 'RETURN_WO' then 'Trả NVL thừa'
+         when 'WIP_IN' then 'Nhập BTP' when 'FG_IN' then 'Nhập thành phẩm' when 'SCRAP_IN' then 'Nhập phế'
+         when 'SALE' then 'Xuất bán' when 'SCRAP_OUT' then 'Bán phế' when 'TRANSFER' then 'Chuyển vị trí/kho'
+         when 'ADJ' then 'Điều chỉnh kiểm kê' when 'RETURN_SUP' then 'Trả nhà cung cấp' when 'OPENING' then 'Tồn đầu kỳ'
+         when 'SPLIT' then 'Cắt bobin' when 'RECLASS' then 'Đổi mã / hủy' when 'CUST_RETURN' then 'Hàng khách trả' end as doc_type_name,
+       d.status, d.doc_date, d.warehouse_id, w.code as warehouse_code, w.name as warehouse_name, tw.code as to_warehouse_code,
        d.ref_type, d.ref_id, d.reason_code, rc.name as reason_name, d.note, d.posted_at, d.created_at,
        d.review_status, d.reviewed_at, d.review_note, d.price_pending, d.delegated, d.off_hours_reason,
        d.reversal_of, d.reversed_by, d.requisition_id, d.receiver_id, d.received_at,
@@ -433,7 +455,9 @@ select d.id, d.doc_no, d.doc_type, d.status, d.doc_date, d.warehouse_id, w.code 
                        when 'COUNT' then (select c.count_no from inv.stock_counts c where c.id = d.ref_id)
                        when 'SO' then (select so.so_no from sales.sales_orders so where so.id = d.ref_id) end as ref_no,
        (select rq.req_no from inv.requisitions rq where rq.id = d.requisition_id) as req_no,
-       (select ar.id from wf.approval_requests ar where ar.doc_id = d.id order by ar.submitted_at desc limit 1) as approval_id
+       (select ar.id from wf.approval_requests ar where ar.doc_id = d.id order by ar.submitted_at desc limit 1) as approval_id,
+       case when d.ref_type = 'WO' then app.wo_no(d.ref_id) end as wo_no,
+       (d.posted_by = auth.uid() or d.created_by = auth.uid()) as mine
 from inv.stock_docs d
 join inv.warehouses w on w.id = d.warehouse_id
 left join inv.warehouses tw on tw.id = d.to_warehouse_id
@@ -832,6 +856,112 @@ begin
   group by s.reason_code, rc.name, o.op_code, mc.code, m.code;
 end $$;
 
+-- ===========================================================================
+-- 7b. Gộp với bản 2200 (quy chuẩn vai trò): một nguồn cho phiếu lĩnh, "đã kiểm", ngưỡng lệch đồng
+-- ===========================================================================
+-- Phiếu lĩnh theo định mức: nay là inv.requisitions (cấp bằng quét QR từng ống/bao); hàm cũ tạo phiếu lĩnh và trả về id phiếu lĩnh
+create or replace function inv.create_wo_issue(p_wo uuid, p_qty_m numeric default null, p_warehouse text default 'KNL') returns uuid
+language plpgsql security definer set search_path = pg_catalog, public as $$
+declare w mfg.work_orders; v_wh uuid; v_done numeric;
+begin
+  if not core.has_perm('inventory', 'create') then raise exception 'Không có quyền lập phiếu kho'; end if;
+  select * into w from mfg.work_orders where id = p_wo;
+  if not found then raise exception 'Không tìm thấy lệnh sản xuất'; end if;
+  if w.status not in ('RELEASED', 'IN_PROGRESS') then
+    raise exception 'LSX % chưa phát lệnh hoặc đã kết thúc (%)', w.wo_no, w.status;
+  end if;
+  select id into v_wh from inv.warehouses where code = p_warehouse;
+  if v_wh is null then raise exception 'Không có kho %', p_warehouse; end if;
+  if not core.can_use_warehouse(v_wh) then raise exception 'Bạn không được giao kho %', p_warehouse; end if;
+  select coalesce(sum(r.qty_m), 0) into v_done from inv.requisitions r where r.wo_id = p_wo and r.kind = 'NORM' and r.status <> 'CANCELLED';
+  if p_qty_m is null and v_done >= w.qty_m then raise exception 'LSX % đã lĩnh đủ định mức', w.wo_no; end if;
+  return inv.create_requisition(p_wo, coalesce(p_qty_m, w.qty_m - v_done), null, null);
+end $$;
+
+-- "Đã kiểm" của Kế toán SX = duyệt hậu kiểm (review_status CONFIRMED); không kiểm phiếu do mình lập/ghi sổ
+create or replace function app.review_stock_docs(p_ids uuid[]) returns integer
+language plpgsql security definer set search_path = pg_catalog, public as $$
+declare v_n int;
+begin
+  if not core.has_role('KT_KHO') then raise exception 'Chỉ Kế toán kho (Kế toán SX) đánh dấu đã kiểm'; end if;
+  update inv.stock_docs set review_status = 'CONFIRMED', reviewed_at = now(), reviewed_by = auth.uid()
+   where id = any(p_ids) and status = 'POSTED' and review_status = 'PENDING'
+     and coalesce(posted_by, '00000000-0000-0000-0000-000000000000') <> auth.uid()
+     and coalesce(created_by, '00000000-0000-0000-0000-000000000000') <> auth.uid();
+  get diagnostics v_n = row_count;
+  return v_n;
+end $$;
+
+-- Ngưỡng lệch đồng: một nguồn là inv.settings.copper_tol_pct (giữ giá trị đang dùng)
+update inv.settings s set num_value = c.value
+  from mfg.control_settings c where c.key = 'copper_tolerance_pct' and s.key = 'copper_tol_pct';
+delete from mfg.control_settings where key = 'copper_tolerance_pct';
+
+create or replace function app.set_control_setting(p_key text, p_value numeric) returns void
+language plpgsql security definer set search_path = pg_catalog, public as $$
+declare s mfg.control_settings;
+begin
+  if p_key = 'copper_tolerance_pct' then
+    if not (core.has_role('KT_TP') or core.has_perm('admin', 'edit')) then
+      raise exception 'Chỉ TP Kỹ thuật/QA được chỉnh "Lệch cân bằng đồng cho phép"';
+    end if;
+    if p_value is null or p_value < 0 or p_value > 100 then raise exception 'Giá trị phải từ 0 đến 100'; end if;
+    update inv.settings set num_value = p_value, updated_at = now(), updated_by = auth.uid() where key = 'copper_tol_pct';
+    return;
+  end if;
+  select * into s from mfg.control_settings where key = p_key;
+  if not found then raise exception 'Không có thông số %', p_key; end if;
+  if not (core.has_role(s.owner_role) or core.has_perm('admin', 'edit')) then
+    raise exception 'Chỉ % được chỉnh "%"', (select name from core.roles where code = s.owner_role), s.name;
+  end if;
+  if p_value is null or p_value < 0 or p_value > 100 then raise exception 'Giá trị phải từ 0 đến 100'; end if;
+  update mfg.control_settings set value = p_value, updated_at = now(), updated_by = auth.uid() where key = p_key;
+end $$;
+
+-- Cân bằng đồng nhanh theo lệnh (bản 2200, ngưỡng lấy từ cài đặt kho). Báo cáo đầy đủ: app.loss_by_wo (gồm đồng trong BTP dở)
+create or replace function app.copper_balance(p_days int default 60)
+returns table (wo_id uuid, wo_no text, product_code text, wo_status text, finished boolean, good_m numeric,
+               issued_kg numeric, product_kg numeric, scrap_kg numeric, diff_kg numeric, diff_pct numeric,
+               tolerance_pct numeric, over_limit boolean)
+language plpgsql stable security definer set search_path = pg_catalog, public as $$
+declare v_tol numeric := coalesce(inv.setting('copper_tol_pct'), 2);
+begin
+  if not app.can_see_loss() then raise exception 'Không có quyền xem cân bằng đồng'; end if;
+  return query
+  with w as (
+    select wo.* from mfg.work_orders wo
+    where wo.status not in ('DRAFT', 'CANCELLED') and coalesce(wo.released_at, wo.created_at) > now() - make_interval(days => p_days)
+  ), iss as (
+    select d.ref_id as wo_id, -sum(sm.qty) as kg
+    from inv.stock_moves sm join inv.stock_docs d on d.id = sm.doc_id join inv.lots l on l.id = sm.lot_id
+    join master.materials m on m.id = l.material_id
+    where d.ref_type = 'WO' and d.doc_type in ('ISSUE_WO', 'RETURN_WO') and l.item_kind = 'MAT' and m.group_code = 'CONDUCTOR'
+    group by d.ref_id
+  ), outp as (
+    select o.wo_id, sum(op.qty_m) as m from mfg.wo_outputs op join mfg.wo_operations o on o.id = op.wo_op_id
+    where o.op_code = 'CD6' group by o.wo_id
+  ), scr as (
+    select o.wo_id, sum(s.qty_kg) as kg from mfg.scrap_records s join mfg.wo_operations o on o.id = s.wo_op_id
+    join master.materials m on m.id = s.scrap_material_id where m.code in ('PL-CU', 'PL-TC') group by o.wo_id
+  )
+  select w.id, w.wo_no, p.code, w.status, w.status in ('PRODUCED', 'QC_PENDING', 'CLOSED'),
+         coalesce(outp.m, 0),
+         round(coalesce(iss.kg, 0), 3),
+         round(coalesce(outp.m, 0) * (coalesce(r.metal_kgkm, 0) + coalesce(r.drain_kgkm, 0)) / 1000, 3),
+         round(coalesce(scr.kg, 0), 3),
+         round(coalesce(iss.kg, 0) - coalesce(outp.m, 0) * (coalesce(r.metal_kgkm, 0) + coalesce(r.drain_kgkm, 0)) / 1000 - coalesce(scr.kg, 0), 3),
+         case when coalesce(iss.kg, 0) > 0 then round(100 * (coalesce(iss.kg, 0) - coalesce(outp.m, 0) * (coalesce(r.metal_kgkm, 0) + coalesce(r.drain_kgkm, 0)) / 1000
+                                                              - coalesce(scr.kg, 0)) / iss.kg, 2) end,
+         v_tol,
+         w.status in ('PRODUCED', 'QC_PENDING', 'CLOSED') and coalesce(iss.kg, 0) > 0
+           and abs(100 * (coalesce(iss.kg, 0) - coalesce(outp.m, 0) * (coalesce(r.metal_kgkm, 0) + coalesce(r.drain_kgkm, 0)) / 1000
+                          - coalesce(scr.kg, 0)) / iss.kg) > v_tol
+  from w join master.products p on p.id = w.product_id
+  left join master.spec_results r on r.spec_id = w.spec_id
+  left join iss on iss.wo_id = w.id left join outp on outp.wo_id = w.id left join scr on scr.wo_id = w.id
+  order by w.wo_no desc;
+end $$;
+
 -- Danh sách lệnh SX cho ô chọn ở trang phế (gồm cả lệnh vừa đóng trong 7 ngày)
 create or replace view app.v_wo_for_scrap with (security_invoker = true) as
 select wo.id, wo.wo_no, wo.status, p.code as product_code,
@@ -843,6 +973,7 @@ where wo.status in ('RELEASED', 'IN_PROGRESS', 'PAUSED', 'PRODUCED', 'QC_PENDING
 -- ===========================================================================
 -- 8. Hộp duyệt: đường dẫn tới chứng từ kho
 -- ===========================================================================
+-- (bản 2200 + đường dẫn tới chứng từ kho)
 drop view if exists app.v_approvals;
 create view app.v_approvals with (security_invoker = true) as
 with base as (
@@ -858,12 +989,12 @@ with base as (
 )
 select b.id, b.doc_type, b.doc_type_name, b.doc_id, b.doc_no, b.summary, b.status, b.current_seq,
        b.current_level, b.current_role, b.current_role_name,
-       case when b.status = 'PENDING' then app.people(wf.step_actor_ids(b.cur_step)) else '[]'::jsonb end as current_approvers,
+       case when b.status = 'PENDING' then app.people(array_remove(wf.step_actor_ids(b.cur_step), b.submitted_by)) else '[]'::jsonb end as current_approvers,
        b.submitted_by, app.user_name(b.submitted_by) as submitted_by_name, b.submitted_at, b.finished_at,
        b.step_started_at, b.step_started_at + make_interval(hours => b.sla_hours) as step_due_at,
        (b.status = 'PENDING' and now() > b.step_started_at + make_interval(hours => b.sla_hours)) as overdue,
        b.step_index, b.step_total,
-       (b.status = 'PENDING' and b.submitted_by <> auth.uid() and (wf.can_act_step(b.cur_step)).ok) as my_turn,
+       (b.status = 'PENDING' and b.submitted_by <> auth.uid() and (wf.can_act_step(b.cur_step, b.step_started_at)).ok) as my_turn,
        (b.submitted_by = auth.uid()) as i_submitted,
        exists (select 1 from wf.approval_actions a where a.request_id = b.id and a.actor_id = auth.uid()) as i_acted,
        case b.doc_type
@@ -893,13 +1024,15 @@ select b.id, b.doc_type, b.doc_type_name, b.doc_id, b.doc_no, b.summary, b.statu
                               where a.request_id = b.id and a.seq = (s ->> 'seq')::int and a.action in ('APPROVE','REJECT') order by a.acted_at desc limit 1),
                    'at', (select a.acted_at from wf.approval_actions a
                            where a.request_id = b.id and a.seq = (s ->> 'seq')::int and a.action in ('APPROVE','REJECT') order by a.acted_at desc limit 1),
-                   'approvers', case when b.status = 'PENDING' and (s ->> 'seq')::int >= b.current_seq then app.people(wf.step_actor_ids(s)) end)
+                   'approvers', case when b.status = 'PENDING' and (s ->> 'seq')::int >= b.current_seq
+                                     then app.people(array_remove(wf.step_actor_ids(s), b.submitted_by)) end)
           from jsonb_array_elements(b.flow_snapshot -> 'steps') s left join core.roles ro on ro.code = s ->> 'role') q) as steps,
        (select jsonb_agg(jsonb_build_object('seq', a.seq, 'action', a.action, 'comment', a.comment, 'at', a.acted_at,
                                             'actor', app.user_name(a.actor_id),
                                             'label', (select s ->> 'label' from jsonb_array_elements(b.flow_snapshot -> 'steps') s where (s ->> 'seq')::int = a.seq))
                          order by a.acted_at)
-          from wf.approval_actions a where a.request_id = b.id) as history
+          from wf.approval_actions a where a.request_id = b.id) as history,
+       (b.flow_snapshot #>> '{facts,amount}')::numeric as doc_amount
 from base b;
 
 grant select on all tables in schema app to authenticated, service_role;
@@ -911,7 +1044,7 @@ do $$
 declare f regprocedure;
 begin
   for f in select p.oid::regprocedure from pg_proc p
-           where p.pronamespace::regnamespace::text in ('inv', 'qa', 'mfg', 'sales', 'purchase') and p.prokind = 'f' loop
+           where p.pronamespace::regnamespace::text in ('inv', 'qa', 'sales', 'purchase') and p.prokind = 'f' loop
     execute format('revoke execute on function %s from public, anon', f);
   end loop;
 end $$;
@@ -925,8 +1058,10 @@ grant execute on function inv.setting(text), inv.loc(text), inv.wh(text), inv.ke
   sales.reserve_so(uuid), sales.create_delivery(uuid, uuid[], date, text), inv.ship_delivery(uuid, uuid[]),
   inv.count_open(uuid, text, uuid[], text), inv.count_scan(uuid, uuid, bigint, numeric, uuid, text), inv.count_close(uuid, boolean),
   inv.count_cancel(uuid, text), inv.review_doc(uuid, boolean, text), inv.reverse_doc(uuid, text), inv.mark_printed(uuid[], text),
-  inv.post_doc(uuid), mfg.record_output(uuid, text, numeric, numeric, jsonb, text, numeric, text, text)
+  inv.post_doc(uuid), mfg.record_output(uuid, text, numeric, numeric, jsonb, text, numeric, text, text),
+  inv.create_wo_issue(uuid, numeric, text), inv.wo_issued(uuid), core.can_use_warehouse(uuid)
   to authenticated;
+revoke execute on function mfg.record_output(uuid, text, numeric, numeric, jsonb, text, numeric, text, text) from public, anon;
 revoke execute on function inv._post(uuid), inv.receipt_finish(uuid), inv.daily_alerts(), inv.bal_add(uuid, uuid, uuid, uuid, numeric),
   inv.val_add(uuid, uuid, numeric, numeric, boolean), inv.new_hu(uuid, text, numeric, uuid, uuid, numeric, numeric, uuid, uuid),
   inv.scrap_lot(uuid, date) from authenticated;
