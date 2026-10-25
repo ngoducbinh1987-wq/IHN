@@ -8,6 +8,8 @@ create function pg_temp.as_user(p_code text) returns void language sql as $$
   select set_config('request.jwt.claim.sub', (select id::text from core.profiles where employee_code = p_code), true)
 $$;
 create function pg_temp.uid(p_code text) returns uuid language sql as $$ select id from core.profiles where employee_code = p_code $$;
+-- Ngày theo giờ Việt Nam (Supabase chạy giờ UTC: 00:00–07:00 sáng ngày VN vẫn là hôm trước theo UTC)
+create function pg_temp.today() returns date language sql as $$ select (now() at time zone 'Asia/Ho_Chi_Minh')::date $$;
 create table pg_temp.n (c int);
 insert into pg_temp.n values (0);
 grant all on pg_temp.n to authenticated;
@@ -91,7 +93,7 @@ insert into t select 'gr1', inv.receive_goods((select id from purchase.purchase_
       'supplier_lot', 'CU-A', 'package_type_id', (select id from master.package_types where code = 'ONG-CU-T'),
       'units', jsonb_build_array(jsonb_build_object('gross_kg', 152.4), jsonb_build_object('gross_kg', 152.4))),
     jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join master.materials m on m.id = pl.material_id where m.code = 'SIL-9710G'),
-      'supplier_lot', 'SIL-A', 'exp_date', current_date + 120, 'units', jsonb_build_array(jsonb_build_object('qty', 50), jsonb_build_object('qty', 50)))));
+      'supplier_lot', 'SIL-A', 'exp_date', pg_temp.today() + 120, 'units', jsonb_build_array(jsonb_build_object('qty', 50), jsonb_build_object('qty', 50)))));
 select pg_temp.ok((select status = 'POSTED' and review_status = 'PENDING' from inv.stock_docs where id = (select v from t where k = 'gr1')),
   'Phiếu nhập theo PO ghi sổ ngay, chờ Kế toán SX duyệt');
 select pg_temp.ok((select count(*) = 2 and min(qty) = 140 and max(tare_kg) = 12.4 from inv.handling_units h join inv.lots l on l.id = h.lot_id
@@ -144,7 +146,7 @@ select set_config('bmt.wf_release', 'off', true);
 select pg_temp.as_user('NV1');
 select pg_temp.fails($$select inv.create_requisition((select id from mfg.work_orders where wo_no='LSX-K1'), 1000)$$, 'Chỉ Quản lý SX', 'Vận hành không lập phiếu lĩnh');
 select pg_temp.as_user('QLSX');
-insert into t select 'req', inv.create_requisition((select id from mfg.work_orders where wo_no = 'LSX-K1'), 1000, current_date, 'Ca 1');
+insert into t select 'req', inv.create_requisition((select id from mfg.work_orders where wo_no = 'LSX-K1'), 1000, pg_temp.today(), 'Ca 1');
 select pg_temp.ok((select round(qty_req, 3) = round(24.72300337 / (1 - 0.015), 3) from inv.requisition_lines rl join master.materials m on m.id = rl.material_id
   where rl.req_id = (select v from t where k = 'req') and m.code = 'CU-024'), 'Phiếu lĩnh đồng = 24,723 kg/km × 1 km / (1 − 1,5%)');
 select pg_temp.ok((select round(qty_req, 3) = round(23.9933 / 0.97 + 4.901961, 3) from inv.requisition_lines rl join master.materials m on m.id = rl.material_id
@@ -229,7 +231,7 @@ select pg_temp.as_user('NV4');
 select inv.record_scrap((select id from mfg.work_orders where wo_no = 'LSX-K1'), 'CD1', 'PL-CU', 1.2, 'SC_STARTUP');
 select inv.record_scrap((select id from mfg.work_orders where wo_no = 'LSX-K1'), 'CD1', 'PL-CU', 0.3, 'SC_BREAK');
 select inv.record_scrap((select id from mfg.work_orders where wo_no = 'LSX-K1'), 'CD5', 'PL-PVC', 2.5, 'SC_STARTUP');
-select pg_temp.ok((select qty = 1.5 from inv.handling_units h join inv.lots l on l.id = h.lot_id where l.lot_no = 'PL-CU-' || to_char(current_date, 'YYMMDD')),
+select pg_temp.ok((select qty = 1.5 from inv.handling_units h join inv.lots l on l.id = h.lot_id where l.lot_no = 'PL-CU-' || to_char(pg_temp.today(), 'YYMMDD')),
   'Phế đồng cùng ngày cộng vào một bao (1,5 kg)');
 select pg_temp.ok((select coalesce(sum(sm.qty * sm.unit_cost), 0) = 0 from inv.stock_moves sm where sm.warehouse_id = inv.wh('KPL')), 'Phế giá trị 0');
 select pg_temp.fails($$select inv.record_scrap((select id from mfg.work_orders where wo_no='LSX-K1'), 'CD1', 'PL-CU', 1, 'DT_POWER')$$, 'nguyên nhân phế', 'Nguyên nhân phải thuộc nhóm phế');
@@ -238,7 +240,7 @@ select pg_temp.fails($$select inv.record_scrap((select id from mfg.work_orders w
 select pg_temp.as_user('TPKT');
 select qa.release_lot((select v from t where k = 'bb1'), 'PASS', null);
 select qa.release_lot((select v from t where k = 'bb2'), 'PASS', null);
-create temp table loss as select * from app.loss_by_wo(current_date - 1, current_date) where wo_no = 'LSX-K1';
+create temp table loss as select * from app.loss_by_wo(pg_temp.today() - 1, pg_temp.today()) where wo_no = 'LSX-K1';
 select pg_temp.ok((select good_m = 985 and cu_issued = 27.5 from loss), 'Báo cáo: 985 m đạt, đồng cấp ròng 27,5 kg');
 select pg_temp.ok((select cu_fg = round(0.985 * 24.723003, 3) and cu_scrap = 1.5 from loss), 'Đồng trong TP = 0,985 km × 24,723 kg/km; phế đồng 1,5 kg');
 select pg_temp.ok((select cu_diff = round(cu_issued - cu_fg - cu_scrap - coalesce(cu_cable, 0) - cu_wip, 3) from loss), 'Lệch đồng = cấp − (TP + phế + cáp lỗi + BTP dở)');
@@ -246,7 +248,7 @@ select pg_temp.ok((select overlength_m = 5 and startup_kg = 3.7 and quality_kg =
 select pg_temp.ok((select giveaway_kg = round(62.3 - 0.985 * 62.343041, 2) from loss), 'Vượt dày = kg tịnh bobin − km × kg/km lý thuyết');
 select pg_temp.ok((select count(*) > 0 from app.loss_wo_materials((select id from mfg.work_orders where wo_no = 'LSX-K1')) where material_code = 'CU-024' and net = 27.5),
   'Tiêu hao vật tư theo lệnh: CU-024 ròng 27,5 kg');
-select pg_temp.ok((select sum(kg) = 4 from app.loss_scrap(current_date, current_date)), 'Pareto phế: tổng 4 kg');
+select pg_temp.ok((select sum(kg) = 4 from app.loss_scrap(pg_temp.today(), pg_temp.today())), 'Pareto phế: tổng 4 kg');
 
 -- ================================================================ 11. Chuyển vị trí (đúng người giữ kho, đúng phạm vi kho được giao)
 select pg_temp.as_user('ADM');
@@ -266,7 +268,7 @@ select inv.move_hu(h.id, inv.loc('KTP-A')) from inv.handling_units h where h.lot
 -- ================================================================ 12. Giữ hàng, lệnh giao (TP KT/QA + Giám đốc duyệt), xuất đúng bobin
 select pg_temp.as_user('KD');
 insert into sales.sales_orders (so_no, customer_id, label_brand, required_date, status)
-select 'SO-K1', id, 'KAVIX', current_date + 7, 'APPROVED' from core.partners where code = 'KAVIX';
+select 'SO-K1', id, 'KAVIX', pg_temp.today() + 7, 'APPROVED' from core.partners where code = 'KAVIX';
 insert into sales.so_lines (so_id, line_no, product_id, spec_id, qty_m, pack_type, m_per_pack)
 select so.id, 1, p.id, p.current_spec_id, 505, 'Bobin gỗ', 500 from sales.sales_orders so, master.products p where so.so_no = 'SO-K1' and p.code = 'PFR-2C-1p5';
 select sales.reserve_so((select id from sales.sales_orders where so_no = 'SO-K1'));
@@ -276,7 +278,7 @@ select pg_temp.as_user('NV5');
 select pg_temp.fails(format($$select inv.split_hu(%L, array[200]::numeric[], 0, 'thử')$$, (select h.id from inv.handling_units h where h.lot_id = (select v from t where k = 'bb1'))),
   'đang được giữ', 'Không cắt bobin đang giữ cho đơn');
 insert into t select 'dv', sales.create_delivery((select id from sales.sales_orders where so_no = 'SO-K1'),
-  array[(select h.id from inv.handling_units h where h.lot_id = (select v from t where k = 'bb1'))], current_date, null);
+  array[(select h.id from inv.handling_units h where h.lot_id = (select v from t where k = 'bb1'))], pg_temp.today(), null);
 select pg_temp.as_user('QLSX');
 select pg_temp.fails($$select wf.act((select id from wf.approval_requests where doc_id=(select v from t where k='dv')), 'APPROVE')$$, 'cần vai trò', 'Bước 1 lệnh giao: TP Kỹ thuật/QA');
 select pg_temp.as_user('TPKT'); select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k = 'dv')), 'APPROVE', 'CQ đủ');
@@ -294,7 +296,7 @@ select pg_temp.ok((select count(*) = 0 from inv.stock_balances where lot_id = (s
 insert into t select 'sp', inv.split_hu(h.id, array[300]::numeric[], 2, 'Khách cần 300 m') from inv.handling_units h where h.lot_id = (select v from t where k = 'bb2') and h.status = 'ACTIVE';
 select pg_temp.ok((select qty = 178 from inv.handling_units where lot_id = (select v from t where k = 'bb2') and parent_hu_id is null), 'Bobin mẹ còn 480 − 300 − 2 = 178 m');
 select pg_temp.ok((select count(*) = 1 from inv.handling_units where lot_id = (select v from t where k = 'bb2') and parent_hu_id is not null and qty = 300 and not is_remnant), 'Đoạn 300 m có tem mới');
-select pg_temp.ok((select sum(qty) > 0 from inv.handling_units h join inv.lots l on l.id = h.lot_id where l.lot_no = 'PL-CABLE-' || to_char(current_date, 'YYMMDD')), 'Phế cắt nhập kho phế dạng cáp lỗi (kg)');
+select pg_temp.ok((select sum(qty) > 0 from inv.handling_units h join inv.lots l on l.id = h.lot_id where l.lot_no = 'PL-CABLE-' || to_char(pg_temp.today(), 'YYMMDD')), 'Phế cắt nhập kho phế dạng cáp lỗi (kg)');
 
 -- ================================================================ 14. Ủy quyền thủ kho: phải có Kế toán SX chứng kiến
 insert into core.delegations (from_user, to_user, role_code, valid_from, valid_to, reason)
@@ -342,22 +344,22 @@ insert into t select 'sc', d.id from inv.stock_docs d where d.doc_type = 'SCRAP_
 select inv.reverse_doc((select v from t where k = 'sc'), 'Ghi nhầm công đoạn');
 select pg_temp.ok((select reversed_by is not null from inv.stock_docs where id = (select v from t where k = 'sc')), 'Phiếu đảo liên kết phiếu gốc');
 select pg_temp.fails($$select inv.reverse_doc((select v from t where k='sc'), 'lần 2')$$, 'đã được đảo', 'Không đảo hai lần');
-insert into cost.cost_periods (period, status) values (to_char(current_date, 'YYYY-MM'), 'CLOSED');
+insert into cost.cost_periods (period, status) values (to_char(pg_temp.today(), 'YYYY-MM'), 'CLOSED');
 select pg_temp.as_user('QLSX');
 select pg_temp.fails($$select inv.move_hu((select v from t where k='hu1'), inv.loc('KNL-CU'))$$, 'đã chốt giá thành', 'Kỳ đã chốt: không ghi sổ');
-delete from cost.cost_periods where period = to_char(current_date, 'YYYY-MM');
+delete from cost.cost_periods where period = to_char(pg_temp.today(), 'YYYY-MM');
 
 -- ================================================================ 18. Bán phế: Kế toán SX kiểm tra, Giám đốc duyệt → ghi sổ
 select pg_temp.as_user('QLSX');
 insert into t select 'bp', inv.create_scrap_sale(jsonb_build_array(jsonb_build_object('hu_id', h.id, 'qty', 1.0)), 'Cơ sở thu mua phế A', null)
-from inv.handling_units h join inv.lots l on l.id = h.lot_id where l.lot_no = 'PL-CU-' || to_char(current_date, 'YYMMDD');
+from inv.handling_units h join inv.lots l on l.id = h.lot_id where l.lot_no = 'PL-CU-' || to_char(pg_temp.today(), 'YYMMDD');
 select pg_temp.as_user('KTSX'); select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k = 'bp')), 'APPROVE');
 select pg_temp.as_user('GD');   select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k = 'bp')), 'APPROVE');
 select pg_temp.ok((select status = 'POSTED' from inv.stock_docs where id = (select v from t where k = 'bp')), 'Bán phế được duyệt → ghi sổ ngay');
 
 -- ================================================================ 19. Tồn đầu kỳ: Kế toán SX lập, Kế toán trưởng duyệt
 select pg_temp.as_user('KTSX');
-insert into t select 'op', inv.create_opening(inv.wh('KNL'), current_date, '[{"code":"TALC","qty":50,"unit_cost":20000,"location_code":"KNL-NH","units":2}]');
+insert into t select 'op', inv.create_opening(inv.wh('KNL'), pg_temp.today(), '[{"code":"TALC","qty":50,"unit_cost":20000,"location_code":"KNL-NH","units":2}]');
 select pg_temp.as_user('KTT'); select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k = 'op')), 'APPROVE');
 select pg_temp.ok((select count(*) = 2 and sum(h.qty) = 50 from inv.handling_units h join inv.stock_doc_lines dl on dl.hu_id = h.id where dl.doc_id = (select v from t where k = 'op')),
   'Tồn đầu kỳ: 2 bao TALC, 50 kg, ghi sổ sau khi duyệt');
@@ -397,7 +399,7 @@ reset role;
 update pg_temp.n set c = c + 1;
 select pg_temp.as_user('KTSX');
 select pg_temp.ok((select count(*) > 0 and bool_and(unit_cost is not null) from app.doc_line_prices((select v from t where k = 'gr1'))), 'Kế toán SX xem được giá dòng phiếu');
-select pg_temp.ok((select count(*) > 0 from app.stock_nxt(current_date - 30, current_date)), 'Báo cáo nhập – xuất – tồn chạy');
+select pg_temp.ok((select count(*) > 0 from app.stock_nxt(pg_temp.today() - 30, pg_temp.today())), 'Báo cáo nhập – xuất – tồn chạy');
 update inv.stock_docs set posted_at = now() - interval '2 days' where id = (select v from t where k = 'rt1');
 reset role;
 select pg_temp.ok(inv.daily_alerts() > 0, 'Cảnh báo hằng ngày chạy');
