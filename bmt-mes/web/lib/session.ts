@@ -17,7 +17,8 @@ export type Me = {
 export const getMe = cache(async (): Promise<Me | null> => {
   const supabase = await createClient();
   const { data, error } = await supabase.schema('app').rpc('me');
-  if (error) throw new Error(error.message);
+  // Lỗi cấu hình (chưa mở schema cho Data API, sai khóa…): chuyển sang trang hướng dẫn thay vì màn hình lỗi trống
+  if (error) redirect('/loi-ket-noi?code=' + encodeURIComponent(error.code ?? '') + '&msg=' + encodeURIComponent(error.message));
   return (data as Me | null) ?? null;
 });
 
