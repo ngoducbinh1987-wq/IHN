@@ -6,7 +6,7 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - Code: thư mục `bmt-mes/` (repo GitHub `ngoducbinh1987-wq/IHN`). Đẩy lên `main` = Vercel tự deploy production.
 - Web: Next.js 15 + React 19 + Tailwind, `bmt-mes/web/`. Chạy tại https://ihn-ten.vercel.app
 - Database: Supabase project `critwnuscvdchdbvwygv` (PG17). Schema: core, master, sales, plan, purchase, inv, mfg, qa, cost, wf, iot, integ, app (view/hàm cho web).
-- Migration: `bmt-mes/supabase/migrations/` (mới nhất: `20261025002200_role_standard.sql`). 2100 đã có trên Supabase nhưng chưa ghi vào `supabase_migrations.schema_migrations`; workflow sẽ chạy lại 2100 (an toàn, idempotent) rồi 2200.
+- Migration: `bmt-mes/supabase/migrations/` (mới nhất: `20261025002200_role_standard.sql`, đã áp lên Supabase 26/10/2026 qua MCP; 27 hàm khớp từng ký tự với bản kiểm thử). `schema_migrations` trên Supabase đã có số 2100 và 2200 (tên ghi khác repo, bản 2200 mang tên `production_planning`) nên workflow deploy bỏ qua cả hai; bản MCP ghi thêm `20261025171945 bmt_mes_role_standard`. Migration mới tiếp theo đánh số từ `20261025002300`.
 - Quyền: RLS qua `core.has_perm(module, action)`, `core.has_role(role)`. Luồng duyệt: `wf.submit`, `wf.act`, cấu hình đóng băng vào `wf.approval_requests.flow_snapshot`.
 - Thông báo: `wf.notifications`; email qua `lib/notify.ts` (SMTP) và `/api/cron/notify` (CRON_SECRET). pg_cron: `bmt-mes-sla` (wf.check_sla 10 phút/lần), `bmt-mes-email` (pg_net gọi /api/cron/notify, cần Vault `mes_app_url`, `mes_cron_secret`).
 
@@ -20,7 +20,6 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - Quy chuẩn vai trò (migration 2200, nhánh `feat/quy-chuan-vai-tro`): luồng duyệt theo quy chuẩn, PO theo hạn mức, chuyển Giám đốc khi người duyệt là người lập, duyệt thay khi quá hạn, chặn vai trò xung đột, phạm vi kho, phiếu lĩnh theo định mức, "Đã kiểm" phiếu kho, cân bằng đồng (`/kho`), vá phát hành spec/phát lệnh SX. Đã sửa vai trò thật: Minh BGD+SX_KH, Lực KT_TP+QC, Hương MUA_TP, Trang KTT (Bình giữ đủ vai trò để chạy thử).
 
 ## Việc còn chờ
-- Chạy workflow "BMT MES – Deploy database" trên nhánh `feat/quy-chuan-vai-tro` (áp 2100 + 2200), rồi gộp PR vào `main` để Vercel triển khai web.
 - Tạo tài khoản: Quản lý SX (Quản lý sản xuất + Tổ trưởng ca + Kế hoạch SX + Thủ kho, kho KNL/KPL), Kế toán SX (Kế toán kho + Kế toán giá thành), NV mua hàng, 5 công nhân (email nội bộ; NV5 thêm NV kho, kho KTP).
 - Người dùng tự thêm trên Vercel: `CRON_SECRET`, `SMTP_*` (Zoho smtp.zoho.com:465), `APP_URL`; và chạy `vault.create_secret` cho `mes_app_url`, `mes_cron_secret` trên Supabase.
 - `tests/test_flows_supabase.sql` cần sửa vì spec đã phát hành.
