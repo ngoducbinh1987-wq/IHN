@@ -1,0 +1,81 @@
+// Kiểm thử bộ xếp lịch máy (không cần database): node --experimental-strip-types web/tests/kh-scheduler.test.ts
+import { schedule, makeCalendar, finishInfo, buildTasks, type Order, type Config, type MachineInfo, type OperatorInfo } from '../lib/kh/scheduler.ts';
+const cfg: Config = { fill_pct: 85, frozen_days: 3, cutoff_time: '16:00', downtime_reason_min: 5, plc_dev_pct: 0.5, auto_shifts: 10, plc_loss_min: 10, machines_per_operator: 1,
+  shifts: [{ code: 'A', start_time: '06:00', end_time: '14:00', break_min: 30, active: true }, { code: 'B', start_time: '14:00', end_time: '22:00', break_min: 30, active: false }, { code: 'C', start_time: '22:00', end_time: '06:00', break_min: 30, active: false }],
+  rates: [['CD1', 100, 80], ['CD2', 80, 70], ['CD3', 50, 50], ['CD4', 60, 60], ['CD5', 60, 45]].map(([op, a, b], i) => ({ op_code: op as string, label: '', unit: '', rate_small: a as number, rate_large: b as number, confirmed: false, sort: i })),
+  changeovers: [['INS_UP', 15], ['INS_DOWN', 35], ['INS_SIZE', 45], ['SH_COLOR', 20], ['SH_CODE', 45], ['BUN_SIZE', 20], ['TWS_CODE', 25]].map(([c, m], i) => ({ code: c as string, op_code: '', label: '', minutes: m as number, sort: i })) };
+const machines: MachineInfo[] = [['BUN-01', 'BUNCHER', ['NV2']], ['EXT-SI-01', 'EXTRUDER_SI', ['NV1', 'NV5']], ['EXT-SI-02', 'EXTRUDER_SI', ['NV1', 'NV5']], ['TWS-01', 'TWISTER', ['NV2']], ['EXT-TP-01', 'EXTRUDER_TP', ['NV1', 'NV5']], ['EXT-TP-02', 'EXTRUDER_TP', ['NV1', 'NV5']]]
+  .map(([c, t, o]) => ({ code: c as string, name: c as string, machine_type: t as string, data_mode: 'MANUAL', tag_count: 0, operators: o as string[] }));
+const ex = ['EXT-SI-01', 'EXT-SI-02', 'EXT-TP-01', 'EXT-TP-02'];
+const operators: OperatorInfo[] = [
+  { code: 'NV1', job: '', extra: '', is_deputy: true, keeps_fg: false, skills: ex, learning: [] },
+  { code: 'NV2', job: '', extra: '', is_deputy: false, keeps_fg: false, skills: ['BUN-01', 'TWS-01'], learning: [] },
+  { code: 'NV3', job: '', extra: '', is_deputy: false, keeps_fg: true, skills: [], learning: [] },
+  { code: 'NV4', job: '', extra: '', is_deputy: false, keeps_fg: false, skills: [], learning: [] },
+  { code: 'NV5', job: '', extra: '', is_deputy: false, keeps_fg: false, skills: ex, learning: [] },
+];
+const mk = (i: number, code: string, g: string, size: number, cores: string[], sheath: string | null, qty: number, due: string, sil = true, shield = false, prio = 1): Order => ({
+  id: 'L' + i, label: 'D' + String(i).padStart(2, '0'), product_code: code, product_name: code, group: g, size, cores, sheath, sil, shield,
+  route: (g === 'SIF' ? ['CD1', 'CD2'] : ['CD1', 'CD2', 'CD3', 'CD5']) as Order['route'], qty, due, prio, source: 'x' });
+const orders: Order[] = [
+  mk(1, 'PFR-2C-1p5', 'PFR', 1.5, ['Nâu', 'Trắng'], 'RAL 6037', 30000, '2026-11-10'),
+  mk(2, 'CTL-1P-A14', 'CTL', 2.08, ['Trắng', 'Đen'], 'Xám (Gray)', 10000, '2026-11-12', false, true),
+  mk(3, 'CFR-4C-1p5', 'CFR', 1.5, ['Trắng', 'Xám', 'Nâu', 'Đen'], 'Đỏ', 10000, '2026-11-14'),
+  mk(4, 'SIF-1C-1p5', 'SIF', 1.5, ['Đỏ'], null, 40000, '2026-11-14'),
+  mk(5, 'PFR-2C-1', 'PFR', 1, ['Nâu', 'Trắng'], 'Đỏ', 25000, '2026-11-20'),
+  mk(6, 'CTL-1P-A14', 'CTL', 2.08, ['Trắng', 'Trắng'], 'Xám', 25000, '2026-11-21', false, true),
+  mk(7, 'PFR-3C-2p5', 'PFR', 2.5, ['Nâu', 'Đen', 'Xám'], 'Đỏ', 10000, '2026-11-26'),
+];
+const cal = makeCalendar(cfg, '2026-11-02');
+console.log('cal', cal.S, cal.SPD, cal.RUN, cal.base, cal.days.slice(0, 7).join(','));
+const ctx = { cfg, cal, machines, operators };
+const r = schedule(orders, ctx);
+const fin = finishInfo(r, cal, orders);
+let errs = 0; const bad = (m: string) => { errs++; console.log('LỖI', m); };
+function check(sch: typeof r, ords: Order[], tag: string) {
+  // 1 trùng giờ trên máy
+  for (const [m, sl] of sch.byMachine) for (let i = 1; i < sl.length; i++) if (sl[i].start < sl[i - 1].end - 1e-6) bad(`${tag} trùng giờ ${m} ${sl[i - 1].key} ${sl[i].key}`);
+  // 2 người đứng 1 máy
+  for (const w of ['NV1', 'NV2', 'NV5']) { const sl = sch.slots.filter((s) => s.operator === w).sort((a, b) => a.start - b.start); for (let i = 1; i < sl.length; i++) if (sl[i].start < sl[i - 1].end - 1e-6) bad(`${tag} ${w} đứng 2 máy ${sl[i - 1].machine}/${sl[i].machine} @${sl[i].start.toFixed(0)}`); }
+  // 3 bảo toàn mét
+  const tasks = buildTasks(ords, cfg);
+  for (const t of tasks) { const got = sch.slots.filter((s) => s.key === t.key).reduce((a, s) => a + s.meters, 0); if (Math.abs(got - t.full) > 2) bad(`${tag} mét ${t.key} ${got.toFixed(0)} ≠ ${t.full}`); }
+  // 4 gối đầu ≥ 1 ca
+  for (const o of ords) for (let k = 1; k < o.route.length; k++) {
+    const p = sch.opDone.get(o.id + '|' + o.route[k - 1])!, c = sch.opDone.get(o.id + '|' + o.route[k])!;
+    if (c.start < p.start + sch.S - 1e-6) bad(`${tag} gối đầu ${o.label} ${o.route[k]} bắt đầu ${c.start.toFixed(0)} < ${p.start.toFixed(0)}+S`);
+    if (c.end < p.end - 1e-6) bad(`${tag} ${o.label} ${o.route[k]} xong trước công đoạn trước`);
+  }
+  // 5 CD2 HDPE trên line vỏ, SIL trên line silicone
+  for (const s of sch.slots) if (s.op === 'CD2') { const o = ords.find((x) => x.id === s.lineId)!; if (o.sil !== s.machine.startsWith('EXT-SI')) bad(`${tag} CD2 sai máy ${o.label} ${s.machine}`); }
+  if (sch.unplaced.length) bad(`${tag} chưa xếp ${sch.unplaced.length}`);
+}
+check(r, orders, 'v1');
+for (const o of orders) { const f = fin.get(o.id)!; console.log(o.label, o.product_code, 'xong', f.finDate, 'hạn', o.due, 'dư', f.slack); }
+console.log('slots', r.slots.length, 'CTL CD2 máy', [...new Set(r.slots.filter((s) => s.lineId === 'L2' && s.op === 'CD2').map((s) => s.machine))]);
+// Xếp lại: giữ phần trước mốc ngày 3 (vùng khóa)
+const B = 3 * cal.SPD * cal.S;
+const r2 = schedule(orders, ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: B });
+check(r2, orders, 'v2');
+const before = r.slots.filter((s) => s.start < B).map((s) => s.key + s.start.toFixed(2) + s.machine).sort().join();
+const after = r2.slots.filter((s) => s.start < B).map((s) => s.key + s.start.toFixed(2) + s.machine).sort().join();
+if (before !== after) bad('xếp lại làm đổi phần trước mốc');
+// Bật ca B: k = 2
+const cfg2 = { ...cfg, shifts: cfg.shifts.map((s) => s.code === 'B' ? { ...s, active: true } : s) };
+const cal2 = makeCalendar(cfg2, '2026-11-02');
+const r3 = schedule(orders, { ...ctx, cfg: cfg2, cal: cal2 }, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: 3 * cal2.SPD * cal2.S });
+check(r3, orders, 'caB');
+const f3 = finishInfo(r3, cal2, orders);
+console.log('ca B: ', orders.map((o) => `${o.label} ${fin.get(o.id)!.finDate}→${f3.get(o.id)!.finDate}`).join(' | '));
+// Đơn gấp chen vùng khóa (tách)
+const urgent = { ...mk(8, 'CFR-2C-1p5', 'CFR', 1.5, ['Đỏ', 'Đen'], 'Đỏ', 10000, '2026-11-09'), prio: 0 };
+const r4 = schedule([...orders, urgent], ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: 2 * cal.SPD * cal.S, split: true });
+check(r4, [...orders, urgent], 'gấp');
+const f4 = finishInfo(r4, cal, [...orders, urgent]);
+console.log('gấp xong', f4.get('L8')!.finDate, 'hạn 09/11; ảnh hưởng', orders.filter((o) => f4.get(o.id)!.finDate !== fin.get(o.id)!.finDate).map((o) => o.label).join(','));
+// Credit (thiếu 5000 m bện D01 ở ngày đã qua)
+const r5 = schedule(orders, ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: B, credit: new Map([['L1|CD1|', 5000]]) });
+const got = r5.slots.filter((s) => s.key === 'L1|CD1|').reduce((a, s) => a + s.meters, 0);
+console.log('credit D01 bện', got, '(=60000+5000)');
+if (Math.abs(got - 65000) > 2) bad('credit');
+console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');
