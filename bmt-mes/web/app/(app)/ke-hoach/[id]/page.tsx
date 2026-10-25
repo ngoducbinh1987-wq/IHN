@@ -36,7 +36,7 @@ export default async function PlanDetail({ params, searchParams }:
   const [{ data: req }, { data: flow }, { data: flowHead }, { data: packOpts }, { data: edits }, { data: prs }] = await Promise.all([
     supabase.schema('app').from('v_approvals').select('*').eq('doc_id', id).order('submitted_at', { ascending: false }).limit(1).maybeSingle<Approval>(),
     supabase.schema('wf').from('approval_steps').select('seq, level_label').eq('doc_type', 'PLAN').eq('enabled', true).order('seq'),
-    supabase.schema('wf').from('approval_flows').select('submit_label').eq('doc_type', 'PLAN').maybeSingle(),
+    supabase.schema('wf').from('approval_flows').select('submit_label, submit_role, submit_user_ids').eq('doc_type', 'PLAN').maybeSingle(),
     supabase.schema('app').from('v_pack_options').select('pack_type, m_per_pack').order('pack_type').order('sort').returns<PackOption[]>(),
     supabase.schema('app').from('v_mrp_edits').select('*').eq('plan_id', id).order('edited_at', { ascending: false }).limit(50),
     plan.last_run_id
@@ -45,6 +45,10 @@ export default async function PlanDetail({ params, searchParams }:
   ]);
   const stages: Stage[] = req?.steps ?? [{ seq: 0, label: flowHead?.submit_label ?? 'Lập kế hoạch', state: 'current' }, ...(flow ?? []).map((s) => ({ seq: s.seq, label: s.level_label, state: 'todo' as const }))];
   const draft = plan.status === 'DRAFT';
+  // Gửi duyệt: đúng người/vai trò được cấu hình ở bước lập (mặc định: Ban giám đốc)
+  const canSubmit = (!flowHead?.submit_role || me.roles.includes(flowHead.submit_role))
+    && (!(flowHead?.submit_user_ids?.length) || flowHead.submit_user_ids.includes(me.id));
+  const canMakePr = can(me, 'plan', 'create') || can(me, 'purchase', 'create');
   const editable = draft && can(me, 'plan', 'edit');
   const stale = Boolean(plan.mrp_stale);
   const pr = prs?.[0];
@@ -66,14 +70,14 @@ export default async function PlanDetail({ params, searchParams }:
             <form action={runMrp}><input type="hidden" name="plan_id" value={id} /><SubmitButton className="btn btn-soft">Chạy MRP</SubmitButton></form>
           )}
           <Link className="btn btn-soft" href={`/in/ke-hoach/${id}`} target="_blank"><Printer size={16} />In</Link>
-          {draft && plan.last_run_id && !stale && can(me, 'plan', 'create') && (
+          {draft && plan.last_run_id && !stale && canSubmit && (
             <form action={submitPlan}>
               <input type="hidden" name="plan_id" value={id} /><input type="hidden" name="plan_no" value={plan.plan_no} />
               <input type="hidden" name="summary" value={`${plan.period_label}: ${plan.line_count} SKU, ${nf(plan.total_m)} m, ${toBuy} vật tư cần mua`} />
               <SubmitButton>Gửi duyệt kế hoạch</SubmitButton>
             </form>
           )}
-          {plan.status === 'APPROVED' && plan.mode === 'OFFICIAL' && plan.last_run_id && !stale && !pr && can(me, 'plan', 'create') && (
+          {plan.status === 'APPROVED' && plan.mode === 'OFFICIAL' && plan.last_run_id && !stale && !pr && canMakePr && (
             <form action={createPr}><input type="hidden" name="plan_id" value={id} /><input type="hidden" name="run_id" value={plan.last_run_id} /><SubmitButton>Sinh đề xuất mua (PR)</SubmitButton></form>
           )}
           <Link className="btn" href="/ke-hoach">Đóng</Link>

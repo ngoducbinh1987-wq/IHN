@@ -30,48 +30,59 @@ set client_min_messages = notice;
 -- ---------------------------------------------------------------- người dùng kiểm thử
 with u(code, role) as (values ('U_KTNV','KT_NV'),('U_QC','QC'),('U_KTTP','KT_TP'),('U_BGD','BGD'),('U_SXKH','SX_KH'),
   ('U_SXTP','SX_TP'),('U_MUANV','MUA_NV'),('U_MUATP','MUA_TP'),('U_KHO','THU_KHO'),('U_KTKHO','KT_KHO'),
-  ('U_KDNV','KD_NV'),('U_KDTP','KD_TP'),('U_VH','VAN_HANH'),('U_TT','TO_TRUONG'),('U_KTGT','KT_GT')),
+  ('U_KDNV','KD_NV'),('U_KDTP','KD_TP'),('U_VH','VAN_HANH'),('U_TT','TO_TRUONG'),('U_KTGT','KT_GT'),('U_CT','BGD')),
 ins as (insert into auth.users (id, email) select gen_random_uuid(), lower(code) || '@bmt.test' from u returning id, email)
 insert into core.profiles (id, employee_code, full_name, status)
 select ins.id, upper(split_part(ins.email, '@', 1)), 'Test ' || split_part(ins.email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('U_KTNV','KT_NV'),('U_QC','QC'),('U_KTTP','KT_TP'),('U_BGD','BGD'),
   ('U_SXKH','SX_KH'),('U_SXTP','SX_TP'),('U_MUANV','MUA_NV'),('U_MUATP','MUA_TP'),('U_KHO','THU_KHO'),('U_KTKHO','KT_KHO'),
-  ('U_KDNV','KD_NV'),('U_KDTP','KD_TP'),('U_VH','VAN_HANH'),('U_TT','TO_TRUONG'),('U_KTGT','KT_GT')) u(code, role) on u.code = p.employee_code;
+  ('U_KDNV','KD_NV'),('U_KDTP','KD_TP'),('U_VH','VAN_HANH'),('U_TT','TO_TRUONG'),('U_KTGT','KT_GT'),('U_CT','BGD')) u(code, role) on u.code = p.employee_code;
 
 create temp table t (k text primary key, v uuid);
 grant all on t to authenticated;
+-- Bước "Chủ tịch HĐQT" giao cho người dùng thử U_CT
+update wf.approval_steps set assignee_ids = array[(select id from core.profiles where employee_code = 'U_CT')]
+ where (doc_type = 'PLAN' and seq = 2) or (doc_type = 'PO' and seq = 3);
 
--- ================================================================ 1. Phát hành spec mã mới (QC → TP KT → BGĐ)
+-- ================================================================ 1. Phát hành spec mã mới (TP KT/QA lập → Quản lý SX xác nhận → Giám đốc phát hành)
 select pg_temp.as_user('U_KTNV');
+select pg_temp.fails($$select wf.submit('SPEC_NEW', (select current_spec_id from master.products where code = 'PFR-2C-1p5'), 'SPEC PFR-2C-1p5 v1')$$,
+  'cần vai trò', 'Chỉ TP Kỹ thuật/QA được lập spec gửi duyệt');
+select pg_temp.as_user('U_KTTP');
 insert into t select 'spec_pfr', current_spec_id from master.products where code = 'PFR-2C-1p5';
 insert into t select 'req_spec', wf.submit('SPEC_NEW', (select v from t where k = 'spec_pfr'), 'SPEC PFR-2C-1p5 v1', 'Phát hành spec v1');
 select pg_temp.ok((select status from master.product_specs where id = (select v from t where k='spec_pfr')) = 'PENDING_APPROVAL', 'Gửi duyệt: spec chuyển Chờ duyệt');
-select pg_temp.fails($$select wf.act((select v from t where k='req_spec'), 'APPROVE')$$, 'cần vai trò QC', 'KT_NV không duyệt thay bước QC');
+select pg_temp.ok((select jsonb_array_length(flow_snapshot -> 'steps') from wf.approval_requests where id = (select v from t where k='req_spec')) = 2,
+  'Spec mã mới: 2 bước (Quản lý SX xác nhận → Giám đốc phát hành)');
 select pg_temp.as_user('U_QC');
+select pg_temp.fails($$select wf.act((select v from t where k='req_spec'), 'APPROVE')$$, 'cần vai trò', 'QC không duyệt thay bước Quản lý SX');
+select pg_temp.as_user('U_SXTP');
 select pg_temp.fails($$select wf.act((select v from t where k='req_spec'), 'REJECT', '')$$, 'Nhập lý do', 'Trả lại bắt buộc có lý do');
-select wf.act((select v from t where k='req_spec'), 'APPROVE', 'Pilot đạt');
-select pg_temp.as_user('U_KTTP');  select wf.act((select v from t where k='req_spec'), 'APPROVE');
+select wf.act((select v from t where k='req_spec'), 'APPROVE', 'Sản xuất được');
 select pg_temp.as_user('U_BGD');   select wf.act((select v from t where k='req_spec'), 'APPROVE');
 select pg_temp.ok((select status from master.product_specs where id = (select v from t where k='spec_pfr')) = 'RELEASED', 'BGĐ phê duyệt: spec Đã phát hành');
 select pg_temp.ok((select status from master.bom_headers where spec_id = (select v from t where k='spec_pfr')) = 'RELEASED', 'BOM phát hành cùng spec');
 select pg_temp.fails($$update master.product_specs set ins_thickness_mm = 0.7 where id = (select v from t where k='spec_pfr')$$, 'đã phát hành', 'Không sửa trực tiếp spec đã phát hành');
 select pg_temp.fails($$update master.bom_lines set qty_per_basis = 1 where bom_id = (select id from master.bom_headers where spec_id = (select v from t where k='spec_pfr'))$$, 'BOM đã phát hành', 'Không sửa BOM đã phát hành');
 select pg_temp.fails($$update master.product_specs set status = 'RELEASED' where id = (select current_spec_id from master.products where code = 'SIF-1C-1p5')$$, 'luồng duyệt', 'Không phát hành spec ngoài luồng duyệt');
-select pg_temp.as_user('U_KTNV');
+select pg_temp.fails($$select master.release_spec((select current_spec_id from master.products where code = 'SIF-1C-1p5'))$$, 'qua quy trình duyệt', 'Không gọi thẳng hàm phát hành spec');
+select pg_temp.as_user('U_KTTP');
 select pg_temp.fails($$select wf.submit('SPEC_NEW', (select current_spec_id from master.products where code = 'SFR-2P-1'), 'SPEC SFR-2P-1 v1')$$, 'Rdc', 'SFR-2P-1 Rdc vượt: chặn gửi duyệt');
 -- Phiên bản mới từ spec đã phát hành
 select pg_temp.as_user('U_KTNV');
 insert into t select 'spec_v2', master.new_spec_version((select v from t where k='spec_pfr'), 'MINOR');
 select pg_temp.ok((select version from master.product_specs where id = (select v from t where k='spec_v2')) = 2
   and (select count(*) from master.bom_lines l join master.bom_headers h on h.id = l.bom_id where h.spec_id = (select v from t where k='spec_v2'))
-    = (select count(*) from master.bom_lines l join master.bom_headers h on h.id = l.bom_id where h.spec_id = (select v from t where k='spec_pfr')),
-  'Tạo spec v2 sao chép đủ BOM');
+    = (select count(*) from master.bom_lines l join master.bom_headers h on h.id = l.bom_id where h.spec_id = (select v from t where k='spec_pfr'))
+  and (select change_level from master.product_specs where id = (select v from t where k='spec_v2')) = 'MAJOR',
+  'Tạo spec v2 sao chép đủ BOM, luôn là thay đổi đầy đủ (không còn thay đổi nhỏ)');
+select pg_temp.fails($$select master.new_spec_version((select v from t where k='spec_pfr'), 'MAJOR')$$, 'đang có phiên bản nháp', 'Không mở thêm phiên bản khi đang có bản nháp');
 
--- ================================================================ 2. Người lập không tự duyệt
+-- ================================================================ 2. Bỏ quy trình Spec thay đổi nhỏ
 select pg_temp.as_user('U_KTTP');
-insert into t select 'req_minor', wf.submit('SPEC_MINOR', (select current_spec_id from master.products where code = 'SIF-1C-1p5'), 'SPEC SIF-1C-1p5 v1');
-select pg_temp.fails($$select wf.act((select v from t where k='req_minor'), 'APPROVE')$$, 'không tự duyệt', 'Người lập không tự duyệt');
+select pg_temp.fails($$select wf.submit('SPEC_MINOR', (select current_spec_id from master.products where code = 'SIF-1C-1p5'), 'SPEC SIF-1C-1p5 v1')$$,
+  'ngưng sử dụng', 'Quy trình Spec thay đổi nhỏ đã bỏ');
 
 -- ================================================================ 3. Kế hoạch chính thức + MRP + PR
 select pg_temp.as_user('U_MUATP');
@@ -93,10 +104,16 @@ insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_pe
 select pp.id, p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from plan.production_plans pp, master.products p
  where pp.plan_no = 'KH-SFR' and p.code = 'SFR-2P-1';
 select pg_temp.fails($$select plan.run_mrp((select id from plan.production_plans where plan_no = 'KH-SFR'))$$, 'Spec chưa phát hành', 'MRP chính thức chặn spec chưa phát hành');
+select pg_temp.fails($$select wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'KH-2611-01'), 'KH-2611-01')$$,
+  'cần vai trò', 'Chỉ Giám đốc gửi duyệt kế hoạch tháng');
+select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k='run1'))$$, 'được phê duyệt', 'Chưa duyệt kế hoạch thì không sinh PR');
+select pg_temp.as_user('U_BGD');
 insert into t select 'req_plan', wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'KH-2611-01'), 'KH-2611-01');
-select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k='run1'))$$, 'BGĐ duyệt', 'Chưa duyệt kế hoạch thì không sinh PR');
-select pg_temp.as_user('U_SXTP'); select wf.act((select v from t where k='req_plan'), 'APPROVE');
-select pg_temp.as_user('U_BGD');  select wf.act((select v from t where k='req_plan'), 'APPROVE');
+select pg_temp.as_user('U_SXTP'); select wf.act((select v from t where k='req_plan'), 'APPROVE', 'Đủ năng lực');
+select pg_temp.as_user('U_BGD');
+select pg_temp.fails($$select wf.act((select v from t where k='req_plan'), 'APPROVE')$$, 'cần vai trò', 'Bước Chủ tịch HĐQT: Giám đốc không duyệt thay');
+select pg_temp.as_user('U_CT');   select wf.act((select v from t where k='req_plan'), 'APPROVE');
+select pg_temp.ok((select status from plan.production_plans where plan_no = 'KH-2611-01') = 'APPROVED', 'Kế hoạch tháng: Giám đốc lập → Quản lý SX xác nhận → Chủ tịch HĐQT phê duyệt');
 select pg_temp.as_user('U_SXKH');
 insert into t select 'pr1', plan.create_pr_from_mrp((select v from t where k='run1'));
 select pg_temp.ok((select count(*) from purchase.pr_lines where pr_id = (select v from t where k='pr1')) > 5, 'Sinh PR từ MRP sau khi BGĐ duyệt kế hoạch');
@@ -115,9 +132,24 @@ select pg_temp.fails($$select wf.act((select v from t where k='req_po'), 'APPROV
 update wf.approval_requests set status = 'CANCELLED' where id = (select v from t where k='req_po');
 select pg_temp.as_user('U_MUANV');
 insert into t select 'req_po2', wf.submit('PO', (select id from purchase.purchase_orders where po_no = 'PO-T1'), 'PO-T1');
+select pg_temp.ok((select jsonb_array_length(flow_snapshot -> 'steps') = 3 and (flow_snapshot #>> '{facts,amount}')::numeric = 268000000
+  from wf.approval_requests where id = (select v from t where k='req_po2')), 'PO 268 triệu: 3 bước (TP mua → Giám đốc → Chủ tịch HĐQT)');
 select pg_temp.as_user('U_MUATP'); select wf.act((select v from t where k='req_po2'), 'APPROVE');
 select pg_temp.as_user('U_BGD');   select wf.act((select v from t where k='req_po2'), 'APPROVE');
-select pg_temp.ok((select status from purchase.purchase_orders where po_no = 'PO-T1') = 'APPROVED', 'PO qua TP Mua + BGĐ');
+select pg_temp.ok((select status from purchase.purchase_orders where po_no = 'PO-T1') = 'PENDING_APPROVAL', 'PO trên 200 triệu còn chờ Chủ tịch HĐQT');
+select pg_temp.as_user('U_CT');    select wf.act((select v from t where k='req_po2'), 'APPROVE');
+select pg_temp.ok((select status from purchase.purchase_orders where po_no = 'PO-T1') = 'APPROVED', 'PO qua TP mua + Giám đốc + Chủ tịch HĐQT');
+
+-- ================================================================ 5a. Lệnh SX (phiếu xuất NVL phải gắn lệnh SX)
+select pg_temp.as_user('U_SXKH');
+insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
+select 'LSX-T1', p.id, p.current_spec_id, h.id, 3500, 500, 'Bobin gỗ', 'KAVIX'
+from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1p5';
+insert into t select 'req_wo', wf.submit('WO_RELEASE', (select id from mfg.work_orders where wo_no = 'LSX-T1'), 'LSX-T1');
+select pg_temp.as_user('U_SXTP'); select wf.act((select v from t where k='req_wo'), 'APPROVE');
+select pg_temp.ok((select status from mfg.work_orders where wo_no = 'LSX-T1') = 'RELEASED'
+  and (select count(*) from mfg.wo_operations o join mfg.work_orders w on w.id = o.wo_id where w.wo_no = 'LSX-T1') = 6,
+  'Phát lệnh: tạo 6 công đoạn theo routing PFR');
 
 -- ================================================================ 5. Nhập kho + bình quân gia quyền di động
 select pg_temp.as_user('U_KHO');
@@ -130,8 +162,15 @@ union all select (select id from inv.stock_docs where doc_no = 'GR-T2'), 1, id, 
 select inv.post_doc(id) from inv.stock_docs where doc_no in ('GR-T1','GR-T2') order by doc_no;
 select pg_temp.ok((select avg_cost from cost.item_valuation v join master.materials m on m.id = v.material_id where m.code = 'CU-024') = 272800,
   'Bình quân di động: (600×268.000 + 400×280.000)/1.000 = 272.800');
-insert into inv.stock_docs (doc_no, doc_type, warehouse_id, ref_type) select 'IS-T1', 'ISSUE_WO', id, 'WO' from inv.warehouses where code = 'KNL';
+insert into inv.stock_docs (doc_no, doc_type, warehouse_id, ref_type, ref_id)
+select 'IS-T1', 'ISSUE_WO', id, 'WO', (select id from mfg.work_orders where wo_no = 'LSX-T1') from inv.warehouses where code = 'KNL';
 insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id from inv.stock_docs where doc_no = 'IS-T1'), 1, id, 100 from inv.lots where lot_no = 'CU24-T1';
+select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'IS-T1'))$$, 'Vượt định mức', 'Xuất 100 kg đồng vượt định mức LSX bị chặn');
+insert into t select 'req_extra', wf.submit('EXTRA_ISSUE', (select id from inv.stock_docs where doc_no = 'IS-T1'), 'IS-T1', 'Cấp bù đồng');
+select pg_temp.as_user('U_SXTP');
+select pg_temp.fails($$select wf.act((select v from t where k='req_extra'), 'APPROVE')$$, 'cần vai trò', 'Quản lý SX không duyệt cấp vượt định mức');
+select pg_temp.as_user('U_KTTP'); select wf.act((select v from t where k='req_extra'), 'APPROVE');
+select pg_temp.as_user('U_KHO');
 select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'IS-T1'))$$, 'chưa đạt QC', 'Lô Chờ QC không được xuất SX');
 select pg_temp.as_user('U_QC');
 update inv.lots set qc_status = 'PASSED' where lot_no = 'CU24-T1';
@@ -141,7 +180,7 @@ select pg_temp.ok((select unit_cost from inv.stock_moves where doc_id = (select 
   'Xuất SX lấy giá bình quân tại thời điểm xuất');
 select pg_temp.ok((select qty = 900 and value = 245520000 from cost.item_valuation v join master.materials m on m.id = v.material_id where m.code = 'CU-024'),
   'Giá trị tồn sau xuất = 900 × 272.800');
-insert into inv.stock_docs (doc_no, doc_type, warehouse_id) select 'IS-T2', 'ISSUE_WO', id from inv.warehouses where code = 'KNL';
+insert into inv.stock_docs (doc_no, doc_type, warehouse_id) select 'IS-T2', 'RETURN_SUP', id from inv.warehouses where code = 'KNL';
 insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id from inv.stock_docs where doc_no = 'IS-T2'), 1, id, 1000 from inv.lots where lot_no = 'CU24-T1';
 select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'IS-T2'))$$, 'Không đủ tồn', 'Không xuất quá tồn lô');
 select pg_temp.ok((select available = 500 and in_quality = 400 from inv.v_material_availability where code = 'CU-024'),
@@ -153,23 +192,16 @@ insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty, unit_cost) select
 select inv.post_doc((select id from inv.stock_docs where doc_no = 'SC-T1'));
 select pg_temp.ok((select unit_cost from inv.stock_moves where doc_id = (select id from inv.stock_docs where doc_no = 'SC-T1')) = 0, 'Phế nhập kho phế liệu với giá trị 0');
 insert into inv.stock_docs (doc_no, doc_type, warehouse_id) select 'ADJ-T1', 'ADJ', id from inv.warehouses where code = 'KNL';
-select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'ADJ-T1'))$$, 'BGĐ phê duyệt', 'Điều chỉnh kiểm kê phải được phê duyệt trước khi ghi sổ');
+select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'ADJ-T1'))$$, 'được duyệt theo quy trình', 'Điều chỉnh kiểm kê phải được phê duyệt trước khi ghi sổ');
 select pg_temp.ok((select count(*) from integ.sync_queue where entity = 'STOCK_DOC') = 3, 'Phiếu nhập mua + xuất SX được đưa vào hàng đợi MISA');
 
 -- ================================================================ 6. Lệnh SX + truy xuất
 select pg_temp.as_user('U_SXKH');
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
-select 'LSX-T1', p.id, p.current_spec_id, h.id, 3500, 500, 'Bobin gỗ', 'KAVIX'
-from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1p5';
-update inv.stock_docs set ref_id = (select id from mfg.work_orders where wo_no = 'LSX-T1') where doc_no = 'IS-T1';
-insert into t select 'req_wo', wf.submit('WO_RELEASE', (select id from mfg.work_orders where wo_no = 'LSX-T1'), 'LSX-T1');
-select pg_temp.as_user('U_SXTP'); select wf.act((select v from t where k='req_wo'), 'APPROVE');
-select pg_temp.ok((select status from mfg.work_orders where wo_no = 'LSX-T1') = 'RELEASED'
-  and (select count(*) from mfg.wo_operations o join mfg.work_orders w on w.id = o.wo_id where w.wo_no = 'LSX-T1') = 6,
-  'Phát lệnh: tạo 6 công đoạn theo routing PFR');
-insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
 select 'LSX-T2', p.id, p.current_spec_id, h.id, 1000, 500, 'Bobin gỗ', 'KAVIX'
 from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'SFR-2P-1';
+select pg_temp.fails($$select mfg.release_wo((select id from mfg.work_orders where wo_no = 'LSX-T2'))$$, 'qua quy trình duyệt', 'Kế hoạch SX không tự phát lệnh ngoài quy trình');
+select pg_temp.as_user('U_SXTP');
 select pg_temp.fails($$select mfg.release_wo((select id from mfg.work_orders where wo_no = 'LSX-T2'))$$, 'spec chưa phát hành', 'Chặn phát lệnh SX khi spec chưa phát hành');
 
 select pg_temp.as_user('U_TT');

@@ -47,9 +47,8 @@ export async function deleteBomLine(form: FormData) {
 
 export async function submitSpec(form: FormData) {
   const code = String(form.get('code')); const spec = String(form.get('spec_id')); const version = String(form.get('version'));
-  const minor = form.get('change_level') === 'MINOR';
-  const { error } = await submitForApproval(minor ? 'SPEC_MINOR' : 'SPEC_NEW', spec, `SPEC ${code} v${version}`,
-    minor ? 'Thay đổi nhỏ spec + BOM' : 'Phát hành spec + BOM');
+  // Mọi thay đổi spec đi quy trình đầy đủ (đã bỏ quy trình "thay đổi nhỏ")
+  const { error } = await submitForApproval('SPEC_NEW', spec, `SPEC ${code} v${version}`, 'Phát hành spec + BOM');
   if (error) back(code, 'err', error.message, spec);
   revalidatePath('/', 'layout');
   back(code, 'ok', 'Đã gửi duyệt. Người duyệt bước đầu đã nhận thông báo.', spec);
@@ -80,7 +79,7 @@ export async function newVersion(form: FormData) {
   const code = String(form.get('code'));
   const supabase = await createClient();
   const { data, error } = await supabase.schema('master').rpc('new_spec_version', {
-    p_from: String(form.get('spec_id')), p_change_level: String(form.get('level')),
+    p_from: String(form.get('spec_id')), p_change_level: 'MAJOR',
   });
   if (error) back(code, 'err', error.message);
   // Phiên bản mới là bản nháp; sản phẩm vẫn dùng bản đã phát hành cho tới khi bản mới được duyệt

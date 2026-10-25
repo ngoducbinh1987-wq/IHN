@@ -63,6 +63,6 @@ export type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'mute' | 'cu';
 export const ROLE_NAMES: Record<string, string> = {
   BGD: 'Ban giám đốc', KD_NV: 'NV kinh doanh', KD_TP: 'TP kinh doanh', KT_NV: 'NV kỹ thuật', KT_TP: 'TP Kỹ thuật/QA',
   QC: 'Kiểm tra chất lượng', KHO_NV: 'NV kho', THU_KHO: 'Thủ kho', MUA_NV: 'NV mua hàng', MUA_TP: 'TP mua hàng',
-  KT_KHO: 'Kế toán kho', KT_GT: 'Kế toán giá thành', KTT: 'Kế toán trưởng', SX_TP: 'TP sản xuất', SX_KH: 'Kế hoạch SX',
+  KT_KHO: 'Kế toán kho', KT_GT: 'Kế toán giá thành', KTT: 'Kế toán trưởng', SX_TP: 'Quản lý sản xuất', SX_KH: 'Kế hoạch SX',
   TO_TRUONG: 'Tổ trưởng ca', VAN_HANH: 'Vận hành máy', ADMIN: 'Quản trị hệ thống',
 };
