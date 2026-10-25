@@ -34,5 +34,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.svg).*)'],
+  // Logo và ảnh trang đăng nhập phải xem được khi chưa đăng nhập
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.svg|logo-bmt.png|brand/).*)'],
 };
