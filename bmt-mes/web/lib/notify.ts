@@ -8,12 +8,14 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 // Gửi email cho các thông báo chưa gửi (người duyệt tiếp theo, người lập khi được duyệt/trả lại).
 // Chỉ chạy khi đã cấu hình SMTP (ví dụ Zoho Mail của công ty); thiếu cấu hình thì chỉ có thông báo trong app.
-export async function flushEmailOutbox() {
+// Hàng đợi nhận theo lô (claim) nên hai lần gửi chạy cùng lúc không gửi trùng; gửi lỗi thì 10 phút sau thử lại.
+export async function flushEmailOutbox(): Promise<{ sent: number; failed: number; skipped?: string }> {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, APP_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
-  if (!SMTP_HOST || !(SMTP_FROM || SMTP_USER) || !SUPABASE_SERVICE_ROLE_KEY) return;
+  if (!SMTP_HOST || !(SMTP_FROM || SMTP_USER) || !SUPABASE_SERVICE_ROLE_KEY) return { sent: 0, failed: 0, skipped: 'Chưa cấu hình SMTP' };
   const admin = createAdminClient();
   const { data, error } = await admin.schema('app').rpc('notification_outbox', { p_limit: 50 });
-  if (error || !data?.length) return;
+  if (error) return { sent: 0, failed: 0, skipped: error.message };
+  if (!data?.length) return { sent: 0, failed: 0 };
   const port = Number(SMTP_PORT ?? 465);
   const mail = nodemailer.createTransport({ host: SMTP_HOST, port, secure: port === 465, auth: SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined });
   const sent: number[] = [];
@@ -38,12 +40,13 @@ export async function flushEmailOutbox() {
     }
   }
   if (sent.length) await admin.schema('app').rpc('mark_emailed', { p_ids: sent });
+  return { sent: sent.length, failed: data.length - sent.length };
 }
 
 // Gửi duyệt một chứng từ; thông báo cho người giữ bước đầu được tạo trong database, email gửi sau khi phản hồi
 export async function submitForApproval(docType: string, docId: string, docNo: string, summary: string) {
   const supabase = await createClient();
   const res = await supabase.schema('wf').rpc('submit', { p_doc_type: docType, p_doc_id: docId, p_doc_no: docNo, p_summary: summary });
-  if (!res.error) after(flushEmailOutbox);
+  if (!res.error) after(async () => { await flushEmailOutbox(); });
   return res;
 }

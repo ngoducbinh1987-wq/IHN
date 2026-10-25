@@ -30,9 +30,11 @@ export async function saveLine(form: FormData) {
   const mpp = parseNum(form.get('m_per_pack'));
   if (qty === null || Number.isNaN(qty) || qty < 0) back(planId, 'err', 'Sản lượng (m) phải là số ≥ 0');
   if (lots === null || Number.isNaN(lots) || lots < 1) back(planId, 'err', 'Số lô chạy phải ≥ 1');
-  if (mpp === null || Number.isNaN(mpp) || mpp <= 0) back(planId, 'err', 'm/kiện phải > 0');
+  if (mpp === null || Number.isNaN(mpp) || mpp <= 0) back(planId, 'err', 'Chọn quy cách m/kiện');
 
   const supabase = await createClient();
+  const { data: plan } = await supabase.schema('plan').from('production_plans').select('status').eq('id', planId).single();
+  if (plan?.status !== 'DRAFT') back(planId, 'err', 'Kế hoạch không còn ở trạng thái Nháp: không sửa dòng được');
   const { data: prod } = await supabase.schema('master').from('products').select('code, current_spec_id').eq('id', productId).single();
   if (!prod?.current_spec_id) back(planId, 'err', 'Sản phẩm chưa có spec');
   const row = {
@@ -41,12 +43,14 @@ export async function saveLine(form: FormData) {
     single_color: String(form.get('single_color') ?? '').trim() || null, wo_note: String(form.get('wo_note') ?? '').trim() || null,
   };
   const lineId = String(form.get('line_id') ?? '');
-  const { error } = lineId
-    ? await supabase.schema('plan').from('plan_lines').update(row).eq('id', lineId)
-    : await supabase.schema('plan').from('plan_lines').insert(row);
-  if (error) back(planId, 'err', error.message);
+  const { data: saved, error } = lineId
+    ? await supabase.schema('plan').from('plan_lines').update(row).eq('id', lineId).eq('plan_id', planId).select('id')
+    : await supabase.schema('plan').from('plan_lines').insert(row).select('id');
+  if (error) back(planId, 'err', error.code === '23505' ? `${prod!.code} đã có trong kế hoạch: sửa dòng có sẵn` : error.message.includes('row-level') ? 'Bạn không có quyền sửa kế hoạch' : error.message);
+  if (!saved?.length) back(planId, 'err', 'Không lưu được: bạn không có quyền sửa hoặc kế hoạch đã khóa');
+  const { data: fresh } = await supabase.schema('plan').from('production_plans').select('mrp_stale').eq('id', planId).single();
   revalidatePath(`/ke-hoach/${planId}`);
-  back(planId, 'ok', `Đã lưu dòng ${prod!.code}. Chạy lại MRP để cập nhật nhu cầu vật tư.`);
+  back(planId, 'ok', `Đã ${lineId ? 'cập nhật' : 'thêm'} dòng ${prod!.code}.${fresh?.mrp_stale ? ' Kết quả MRP cần chạy lại.' : ''}`);
 }
 
 export async function deleteLine(form: FormData) {
@@ -82,4 +86,21 @@ export async function createPr(form: FormData) {
   if (error) back(planId, 'err', error.message);
   const { data: pr } = await supabase.schema('purchase').from('purchase_requests').select('pr_no').eq('id', data as string).single();
   redirect(`/de-xuat/${data}?ok=` + encodeURIComponent(`Đã sinh ${pr?.pr_no ?? 'PR'} từ kết quả MRP. Kiểm tra rồi gửi duyệt.`));
+}
+
+// Điều chỉnh kết quả MRP: quyền, khóa chứng từ, giá trị gốc và lịch sử do database kiểm tra/ghi (app.adjust_mrp_line)
+export async function adjustMrp(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const qty = parseNum(form.get('qty'));
+  const reason = String(form.get('reason') ?? '').trim();
+  if (qty === null || Number.isNaN(qty) || qty < 0) back(planId, 'err', 'Số lượng đề nghị mua phải là số ≥ 0');
+  if (!reason) back(planId, 'err', 'Nhập lý do điều chỉnh');
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('adjust_mrp_line', {
+    p_line: String(form.get('line_id')), p_qty: qty, p_need_date: String(form.get('need_date') ?? '') || null,
+    p_note: String(form.get('note') ?? ''), p_reason: reason,
+  });
+  if (error) back(planId, 'err', error.message);
+  revalidatePath(`/ke-hoach/${planId}`);
+  back(planId, 'ok', 'Đã điều chỉnh kết quả MRP. Đề xuất mua sinh ra sẽ dùng số liệu mới.');
 }

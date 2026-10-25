@@ -4,14 +4,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
-  Bell, Boxes, CheckSquare, ClipboardList, Factory, FileText, Gauge, Search, ShoppingCart, Users,
+  Bell, Boxes, CheckSquare, ClipboardList, Factory, FileText, Gauge, Search, ShoppingCart, Users, Workflow,
 } from 'lucide-react';
 
 export type NavItem = { href: string; label: string; icon: string; group: string; badge?: number };
 
 const ICONS = {
   gauge: Gauge, check: CheckSquare, bell: Bell, plan: ClipboardList, spec: FileText, mat: Boxes,
-  cart: ShoppingCart, users: Users, factory: Factory,
+  cart: ShoppingCart, users: Users, factory: Factory, flow: Workflow,
 } as const;
 
 export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
@@ -31,7 +31,7 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
           <div key={g} className="flex flex-col">
             <div className="px-5 pb-1 pt-4 text-[11.5px] font-medium uppercase tracking-wider text-side-ink/55">{g}</div>
             {shown.filter((i) => i.group === g).map((i) => {
-              const on = i.href === '/' ? path === '/' : path.startsWith(i.href);
+              const on = i.href === '/' ? path === '/' : path.startsWith(i.href) && !shown.some((o) => o.href.length > i.href.length && o.href.startsWith(i.href) && path.startsWith(o.href));
               const Icon = ICONS[i.icon as keyof typeof ICONS] ?? FileText;
               return (
                 <Link key={i.href} href={i.href} onClick={onNavigate} aria-current={on ? 'page' : undefined}

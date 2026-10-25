@@ -19,6 +19,7 @@ Phương án đã duyệt ngày 25/10/2026:
 | `tools/gen_seed.py` | Sinh migration dữ liệu từ file Excel (chạy lại khi Excel đổi) |
 | `tests/test_parity.py` | Đối chiếu định mức và MRP với file Excel |
 | `tests/test_flows.sql` | 47 kiểm thử luồng nghiệp vụ, chạy trong transaction rồi rollback |
+| `tests/test_plan_mrp_flow.sql` | 34 kiểm thử: sửa dòng kế hoạch, đóng gói, điều chỉnh MRP, cài đặt quy trình, cảnh báo quá hạn (rollback) |
 | `scripts/apply_local.sh` | Dựng database trên PostgreSQL cục bộ |
 | `scripts/deploy_supabase.sh` | Đẩy lên Supabase qua Management API |
 

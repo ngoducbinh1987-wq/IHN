@@ -157,6 +157,47 @@ ok('MRP CU-024: lý thuyết 86,53 kg → cấp SX 87,85 kg → đề nghị mua
 if ((await page.textContent('body')).includes('Thành tiền') || (await page.textContent('body')).includes('ngân sách')) fail('Kế hoạch SX không được thấy giá/ngân sách');
 ok('Kế hoạch SX không thấy cột thành tiền và ngân sách (không có quyền xem giá)');
 await page.screenshot({ path: `${SHOTS}/05-ke-hoach-mrp.png`, fullPage: true });
+// 6a. Sửa dòng kế hoạch bằng nút bút: mở dữ liệu cũ, đổi quy cách đóng gói, cập nhật số kiện, đánh dấu cần chạy lại MRP
+if (await page.locator('tr:has-text("CU-024") a[title="Điều chỉnh"]').count()) fail('Kế hoạch SX không được thấy nút điều chỉnh MRP');
+await clickNav(page, 'a[title="Sửa dòng"]');
+if ((await page.inputValue('input[name=qty_m]')) !== '3500' || (await page.inputValue('select[name=pack_type]')) !== 'Bobin gỗ'
+  || (await page.inputValue('select[name=m_per_pack]')) !== '500') fail('Form sửa phải mở đúng dữ liệu cũ 3500 m / Bobin gỗ / 500');
+const mOpts = await page.locator('select[name=m_per_pack] option').allInnerTexts();
+if (!mOpts.includes('305') || !mOpts.includes('500')) fail(`Bobin gỗ phải có 305 và 500 m/kiện: ${mOpts}`);
+ok('Bút sửa dòng mở đúng dữ liệu cũ; Bobin gỗ có lựa chọn 305 và 500 m/kiện');
+await page.selectOption('select[name=m_per_pack]', '305');
+await clickNav(page, 'button:has-text("Lưu")');
+await expectOk(page, 'Lưu dòng sửa sang 305 m/kiện');
+if (!(await flash(page)).includes('cần chạy lại')) fail('Sửa sau khi chạy MRP phải báo cần chạy lại MRP');
+const row305 = await page.locator('tr:has-text("PFR-2C-1p5")').first().innerText();
+if (!row305.includes('305') || !row305.includes('12') || !row305.includes('11 chẵn + 1 lẻ 145 m')) fail(`3.500 m / 305 phải là 12 kiện (11 chẵn + 1 lẻ 145 m): ${row305}`);
+if (!(await page.textContent('#mrp-stale')).includes('Chạy MRP') || await page.locator('button:has-text("Gửi duyệt kế hoạch")').count()) fail('MRP cũ: phải cảnh báo và ẩn nút gửi duyệt');
+ok('305 m/kiện: 12 kiện (11 chẵn + 1 lẻ 145 m); cảnh báo cần chạy lại MRP, ẩn nút gửi duyệt');
+await clickNav(page, 'a[title="Sửa dòng"]');
+await page.selectOption('select[name=pack_type]', 'Cuộn PE');
+const peOpts = await page.locator('select[name=m_per_pack] option').allInnerTexts();
+if (peOpts.join() !== '100,200') fail(`Cuộn PE phải có 100 và 200 m: ${peOpts}`);
+await page.selectOption('select[name=m_per_pack]', '200');
+await clickNav(page, 'button:has-text("Lưu")');
+await page.reload();
+await clickNav(page, 'a[title="Sửa dòng"]');
+if ((await page.inputValue('select[name=pack_type]')) !== 'Cuộn PE' || (await page.inputValue('select[name=m_per_pack]')) !== '200') fail('Tải lại phải giữ Cuộn PE 200 m');
+ok('Cuộn PE có 100/200 m; lưu và tải lại giữ đúng Cuộn PE 200 m');
+await page.selectOption('select[name=pack_type]', 'Bobin gỗ');
+await page.selectOption('select[name=m_per_pack]', '500');
+await clickNav(page, 'button:has-text("Lưu")');
+await clickNav(page, 'button:has-text("Chạy MRP")');
+if (await page.locator('#mrp-stale').count()) fail('Chạy lại MRP phải hết cảnh báo');
+ok('Chạy lại MRP: hết cảnh báo, hiện lại nút gửi duyệt');
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'sx.kh@bmt.test');
+  await p.goto(`${BASE}/in/ke-hoach/${planUrl.split('/').pop()}`);
+  const t = await p.textContent('main');
+  if (!t.includes('KẾ HOẠCH SẢN XUẤT') || !t.includes('Kiện lẻ')) fail('Bản in kế hoạch phải có cột kiện chẵn/lẻ');
+  ok('Bản in kế hoạch có quy cách đóng gói, kiện chẵn và kiện lẻ');
+  await c.close();
+}
 await clickNav(page, 'button:has-text("Gửi duyệt kế hoạch")');
 await expectOk(page, 'Gửi duyệt kế hoạch');
 await ctx.close();
@@ -171,13 +212,40 @@ await approveAs('bgd@bmt.test', planNo, 'BGĐ');
   ok('BGĐ thấy thành tiền CU-024 = 100 kg × 268.000 = 26.800.000 đ');
   await c.close();
 }
+// 6a'. TP Mua điều chỉnh kết quả MRP (bắt buộc lý do), PR dùng số đã điều chỉnh, sau đó khóa
+[ctx, page] = await ctxFor();
+await login(page, 'mua.tp@bmt.test');
+await page.goto(planUrl);
+await clickNav(page, 'tr:has-text("CU-024") a[title="Điều chỉnh"]');
+await page.fill('form input[name=qty]', '120');
+await page.fill('form input[name=note]', 'Gom đơn quý IV');
+await page.fill('form input[name=reason]', 'NCC giảm giá khi mua từ 120 kg');
+await clickNav(page, 'form button:has-text("Lưu")');
+await expectOk(page, 'TP Mua điều chỉnh CU-024 100 → 120 kg');
+const cuAdj = await page.locator('tr:has-text("CU-024")').first().innerText();
+if (!cuAdj.includes('120') || !cuAdj.includes('gốc 100') || !cuAdj.includes('Gom đơn quý IV')) fail(`Dòng MRP phải hiện số mới + gốc: ${cuAdj}`);
+if (!(await page.textContent('main')).includes('NCC giảm giá khi mua từ 120 kg')) fail('Lịch sử điều chỉnh phải có lý do');
+ok('MRP hiện số đã điều chỉnh, giữ số gốc 100 và lịch sử kèm lý do');
+await page.screenshot({ path: `${SHOTS}/05b-mrp-dieu-chinh.png`, fullPage: true });
+await ctx.close();
 [ctx, page] = await ctxFor();
 await login(page, 'sx.kh@bmt.test');
 await page.goto(planUrl);
 await clickNav(page, 'button:has-text("Sinh đề xuất mua (PR)")');
 if (!page.url().includes('/de-xuat/')) fail('Sinh PR phải chuyển sang trang đề xuất mua');
 await expectOk(page, 'Sinh PR sau khi BGĐ duyệt kế hoạch');
+if (!(await page.locator('tr:has-text("CU-024")').first().innerText()).includes('120')) fail('PR phải dùng số đã điều chỉnh 120 kg');
+ok('PR sinh từ MRP dùng số lượng đã điều chỉnh (CU-024 120 kg)');
 await ctx.close();
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'mua.tp@bmt.test');
+  await p.goto(planUrl);
+  if (await p.locator('a[title="Điều chỉnh"]').count()) fail('Đã sinh PR: không còn nút điều chỉnh MRP');
+  if (!(await p.textContent('main')).includes('Kết quả MRP đang khóa')) fail('Phải báo kết quả MRP đang khóa');
+  ok('Đã sinh PR: kết quả MRP bị khóa');
+  await c.close();
+}
 
 // 6b. Thêm mới: vật tư, đề xuất mua thủ công → người duyệt tiếp theo nhận thông báo → duyệt
 [ctx, page] = await ctxFor();
@@ -278,6 +346,40 @@ ok('Vận hành xem Vật tư nhưng không thấy cột giá');
 await page.goto(`${BASE}/`);
 await page.screenshot({ path: `${SHOTS}/06-tong-quan-van-hanh.png` });
 await ctx.close();
+
+// 8. Quản trị → Cài đặt quy trình: giao người, thời hạn; hồ sơ mới dùng cấu hình mới
+[ctx, page] = await ctxFor();
+await login(page, 'admin@bmt.test', 'Admin@12345');
+await page.goto(`${BASE}/quan-tri/quy-trinh?f=PLAN`);
+const flowText = await page.textContent('main');
+if (!flowText.includes('Lập kế hoạch') || !flowText.includes('Phê duyệt')) fail('Trang cài đặt phải hiện luồng Lập kế hoạch → Duyệt → Phê duyệt');
+const step1 = page.locator('form:has(input[name=seq][value="1"])');
+await step1.locator('input[name=sla_hours]').fill('8');
+await step1.locator('input[name=warn_hours]').fill('2');
+await step1.locator('label:has-text("Đỗ Văn Khánh") input').check();
+await clickNav(page, 'form:has(input[name=seq][value="1"]) button:has-text("Lưu bước")');
+await expectOk(page, 'Lưu bước Duyệt: giao Đỗ Văn Khánh, hạn 8 giờ, nhắc trước 2 giờ');
+if (!(await page.locator('ol[aria-label="Các giai đoạn duyệt"]').innerText()).includes('8 giờ')) fail('Sơ đồ quy trình phải cập nhật thời hạn');
+await page.screenshot({ path: `${SHOTS}/12-cai-dat-quy-trinh.png`, fullPage: true });
+await step1.locator('input[name=warn_hours]').fill('9');
+await clickNav(page, 'form:has(input[name=seq][value="1"]) button:has-text("Lưu bước")');
+if (!(await flash(page)).includes('Nhắc trước hạn')) fail('Phải chặn nhắc trước hạn ≥ thời hạn');
+ok('Chặn cấu hình sai: nhắc trước hạn ≥ thời hạn');
+await ctx.close();
+[ctx, page] = await ctxFor();
+await login(page, 'sx.kh@bmt.test');
+await page.goto(`${BASE}/quan-tri/quy-trinh`);
+if (!(await flash(page)).includes('chưa được cấp quyền')) fail('Kế hoạch SX không được vào Cài đặt quy trình');
+ok('Người không phải quản trị bị chặn khỏi Cài đặt quy trình');
+await ctx.close();
+{
+  const r1 = await fetch(`${BASE}/api/cron/notify`);
+  if (r1.status !== 401) fail(`Job không có CRON_SECRET phải bị từ chối: ${r1.status}`);
+  const r2 = await fetch(`${BASE}/api/cron/notify`, { headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` } });
+  const j = await r2.json();
+  if (r2.status !== 200 || j.sla_error) fail(`Job máy chủ lỗi: ${r2.status} ${JSON.stringify(j)}`);
+  ok(`Job máy chủ /api/cron/notify chạy (không cần trình duyệt): ${JSON.stringify(j)}`);
+}
 
 // Ảnh tổng quan của BGĐ (điện thoại + máy tính)
 [ctx, page] = await ctxFor();

@@ -24,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (can(me, 'plan', 'view')) items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' });
   if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' });
+  if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' });
 
   const initials = me.full_name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase();
   const roleText = me.roles.map((r) => ROLE_NAMES[r] ?? r).join(', ') || 'Chưa có vai trò';

@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 // Làm mới phiên đăng nhập và chặn trang khi chưa đăng nhập
 export async function middleware(request: NextRequest) {
+  // Job máy chủ tự kiểm tra CRON_SECRET, không cần phiên đăng nhập
+  if (request.nextUrl.pathname.startsWith('/api/cron/')) return NextResponse.next();
   let response = NextResponse.next({ request });
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {

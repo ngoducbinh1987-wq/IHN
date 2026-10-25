@@ -9,7 +9,14 @@ source dev/.env.local-stack
 curl -sf -X POST http://localhost:54321/auth/v1/admin/users -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "apikey: $SERVICE_ROLE_KEY" \
   -H 'Content-Type: application/json' -d '{"email":"admin@bmt.test","password":"Admin@12345","email_confirm":true}' >/dev/null
 cd web
-printf "NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321\nNEXT_PUBLIC_SUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n" "$ANON_KEY" "$SERVICE_ROLE_KEY" > .env.local
+export CRON_SECRET="e2e-$RANDOM$RANDOM"
+printf "NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321\nNEXT_PUBLIC_SUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\nCRON_SECRET=%s\nAPP_URL=http://localhost:3000\n" "$ANON_KEY" "$SERVICE_ROLE_KEY" "$CRON_SECRET" > .env.local
+# Email: máy chủ SMTP giả (không gửi ra ngoài), thư nhận được ghi vào $SHOTS/smtp.log
+if python3 -c "import aiosmtpd" 2>/dev/null; then
+  pkill -f "aiosmtpd -n -l 127.0.0.1:2525" 2>/dev/null || true
+  nohup python3 -m aiosmtpd -n -l 127.0.0.1:2525 > "$SHOTS/smtp.log" 2>&1 &
+  printf "SMTP_HOST=127.0.0.1\nSMTP_PORT=2525\nSMTP_FROM=\"BMT MES <mes@bmt.test>\"\n" >> .env.local
+fi
 NEXT_TELEMETRY_DISABLED=1 npx next build > /dev/null
 PIDFILE=.next/e2e-server.pid
 [[ -f $PIDFILE ]] && kill "$(cat $PIDFILE)" 2>/dev/null || true
