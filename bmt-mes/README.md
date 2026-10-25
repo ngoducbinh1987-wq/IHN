@@ -67,12 +67,14 @@ Kết quả lần chạy gần nhất:
 
 ## Đẩy lên Supabase
 
-```bash
-export SUPABASE_ACCESS_TOKEN=...   # đặt trong cấu hình môi trường, không dán vào chat
-scripts/deploy_supabase.sh
-```
+**Cách chính: GitHub Actions** (workflow `.github/workflows/bmt-mes-db-deploy.yml`, chạy `scripts/deploy_psql.sh`)
+1. Supabase Dashboard → project → nút **Connect** → chọn **Session pooler** → copy chuỗi `postgresql://postgres.<ref>:[YOUR-PASSWORD]@…pooler.supabase.com:5432/postgres`, thay `[YOUR-PASSWORD]` bằng mật khẩu database.
+2. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**: tên `SUPABASE_DB_URL`, giá trị là chuỗi trên.
+3. Tab **Actions** → **BMT MES – Deploy database** → **Run workflow**.
 
-Script này chỉ chạy những migration chưa có trong `supabase_migrations.schema_migrations`, rồi mở 12 schema cho Data API. Các bảng test cũ trong schema `public` được giữ nguyên.
+Script chỉ chạy migration chưa có trong `supabase_migrations.schema_migrations`, mỗi migration trong một transaction (lỗi thì dừng, không để dở dang), cuối cùng in số liệu kiểm tra. Chạy lại an toàn. Không đụng tới bảng cũ trong `public`.
+
+**Cách khác:** `scripts/deploy_supabase.sh` (Management API, cần `SUPABASE_ACCESS_TOKEN`) hoặc `SUPABASE_DB_URL=... scripts/deploy_psql.sh` trên máy có psql.
 
 ## Giới hạn hiện tại
 
