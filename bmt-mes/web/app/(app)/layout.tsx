@@ -9,9 +9,13 @@ import { signOut } from '../login/actions';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireMe();
   const supabase = await createClient();
-  const [{ count: myTurn }, { count: unread }] = await Promise.all([
+  const [{ count: myTurn }, { count: unread }, { count: maintDue }] = await Promise.all([
     supabase.schema('app').from('v_approvals').select('id', { count: 'exact', head: true }).eq('my_turn', true),
     supabase.schema('app').from('v_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
+    // Việc bảo dưỡng quá hạn chưa có phiếu (chỉ đếm khi có quyền xem máy)
+    can(me, 'machine', 'view')
+      ? supabase.schema('app').from('v_maint_plans').select('id', { count: 'exact', head: true }).eq('active', true).eq('state', 'OVERDUE').is('open_wo', null)
+      : Promise.resolve({ count: 0 }),
   ]);
 
   const items: NavItem[] = [
@@ -41,6 +45,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (can(me, 'production', 'view') || inv || can(me, 'cost', 'view')) items.push({ href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: 'chart', group: 'Báo cáo' });
   if (inv && office) items.push({ href: '/kho/so-cai', label: 'Nhập – xuất – tồn', icon: 'ledger', group: 'Báo cáo' });
   if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
+  if (can(me, 'machine', 'view')) {
+    items.push({ href: '/may', label: 'Danh sách máy', icon: 'machine', group: 'Quản lý máy' });
+    items.push({ href: '/may/checklist', label: 'Checklist đầu ca', icon: 'checklist', group: 'Quản lý máy' });
+    items.push({ href: '/may/bao-duong', label: 'Bảo dưỡng, sửa chữa', icon: 'wrench', group: 'Quản lý máy', badge: maintDue ?? 0 });
+    items.push({ href: '/may/toc-do', label: 'Tốc độ sản xuất', icon: 'speed', group: 'Quản lý máy' });
+    items.push({ href: '/may/kiem-tra', label: 'Kiểm tra năng lực', icon: 'capacity', group: 'Quản lý máy' });
+    items.push({ href: '/may/lich-su', label: 'Lịch sử vận hành', icon: 'history', group: 'Quản lý máy' });
+    items.push({ href: '/may/bao-cao', label: 'Báo cáo bảo trì', icon: 'report', group: 'Quản lý máy' });
+    if (can(me, 'machine', 'config') || me.roles.includes('BGD')) items.push({ href: '/may/cai-dat', label: 'Cài đặt máy', icon: 'settings', group: 'Quản lý máy' });
+  }
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' });
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' });
 
