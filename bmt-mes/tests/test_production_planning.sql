@@ -60,7 +60,7 @@ select pg_temp.expect('Lực sửa phút đổi máy', $q$select app.kh_save_cha
 select pg_temp.expect('Lực sửa tốc độ ngoài khoảng → chặn', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":500,"rate_large":80}]', 'x')$q$, false, 'từ 5 đến 300');
 select pg_temp.expect('Nhật ký có 4 dòng', 'do $x$ begin if (select count(*) from app.v_kh_param_log where at >= now()) <> 4 then raise exception ''sai số dòng %'', (select count(*) from app.v_kh_param_log where at >= now()); end if; end $x$', true);
 select pg_temp.expect('Lực cho ý kiến KT', $q$select app.kh_change_step((select id from plan.change_requests limit 1), 'approve', 'Đồng ý, cần purge')$q$, true);
-select pg_temp.expect('Lực duyệt mẫu đầu ca: đạt', $q$select app.kh_sample(date '2026-11-02', 'EXT-SI-01', '[{"kind":"Đầu ca","product_code":"PFR-2C-1","status":"PENDING"}]', 0, 'OK')$q$, true);
+select pg_temp.expect('Lực duyệt mẫu đầu ca: đạt', $q$select app.kh_sample(date '2026-11-02', 'EXT-SI-01', 'A', '[{"kind":"Đầu ca","product_code":"PFR-2C-1","status":"PENDING"}]', 0, 'OK')$q$, true);
 select pg_temp.expect('Lực phát lệnh → chặn', $q$select app.kh_release_day((select id from plan.production_plans limit 1), date '2026-11-02', null, '[]', '[]')$q$, false, 'Quản lý SX');
 
 -- Minh (người lập) duyệt bước Giám đốc của chính đề nghị mình → chặn

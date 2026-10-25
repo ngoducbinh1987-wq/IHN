@@ -14,7 +14,7 @@ left join master.core_types ct on ct.set_id = s.param_set_id and ct.code = s.cor
 where p.active and s.status = 'RELEASED';
 grant select on app.v_kh_products to authenticated, service_role;
 
-drop function if exists app.kh_sample(date, text, jsonb, integer, text);
+-- Bản cũ app.kh_sample(date, text, jsonb, integer, text) giữ lại (không dùng nữa) để migration không có lệnh xóa
 create or replace function app.kh_sample(p_date date, p_machine text, p_shift text, p_samples jsonb, p_index integer, p_result text) returns void
 language plpgsql security definer set search_path = pg_catalog, public as $$
 declare r mfg.shift_reports; s jsonb;
