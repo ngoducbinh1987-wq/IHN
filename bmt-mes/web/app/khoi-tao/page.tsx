@@ -25,7 +25,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
   return (
     <main className="grid min-h-full place-items-center px-4 py-10">
       <div className="w-full max-w-md">
-        <div className="mb-5 font-display text-[30px] font-bold">BMT <span className="text-copper">MES</span></div>
+        <div className="mb-5 text-[30px] font-bold">BMT <span className="text-brand">MES</span></div>
         <Flash err={sp.err} />
         <div className="card p-5">
           {needsAdmin ? (

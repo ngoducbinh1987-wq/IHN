@@ -1,5 +1,5 @@
 import { SubmitButton } from '@/components/submit-button';
-import { Flash, PageHeader, Pill } from '@/components/ui';
+import { Flash, Pill, Toolbar } from '@/components/ui';
 import { ROLE_NAMES, df } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -20,7 +20,7 @@ function RoleChecks({ selected, prefix }: { selected: string[]; prefix: string }
       <legend className="mb-1 text-[12px] text-muted">Vai trò</legend>
       {ROLES.map((r) => (
         <label key={r} className="flex items-center gap-2 text-[12.5px]">
-          <input type="checkbox" name="roles" value={r} defaultChecked={selected.includes(r)} id={`${prefix}-${r}`} className="accent-[rgb(var(--copper))]" />
+          <input type="checkbox" name="roles" value={r} defaultChecked={selected.includes(r)} id={`${prefix}-${r}`} className="accent-[rgb(var(--brand))]" />
           {ROLE_NAMES[r]}
         </label>
       ))}
@@ -28,7 +28,7 @@ function RoleChecks({ selected, prefix }: { selected: string[]; prefix: string }
   );
 }
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; sua?: string }> }) {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; sua?: string; them?: string }> }) {
   const sp = await searchParams;
   const me = await requirePerm('admin', 'view');
   const supabase = await createClient();
@@ -37,20 +37,20 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const editable = can(me, 'admin', 'edit');
   return (
     <>
-      <PageHeader title="Người dùng & quyền" sub="Quyền được thực thi trong database (RLS), không chỉ ẩn trên giao diện" />
-      <Flash ok={sp.ok} err={sp.err ?? error?.message} />
-      <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
+      <Toolbar title="Người dùng & quyền" reload="/quan-tri" add={editable ? { href: '/quan-tri?them=1', label: 'Thêm người dùng' } : undefined} />
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err ?? error?.message} /></div>
+      <div className={`grid gap-4 ${editing || sp.them ? 'xl:grid-cols-[1.4fr_1fr]' : ''}`}>
         <section className="card overflow-x-auto">
           <table className="tbl">
             <thead><tr><th>Họ tên</th><th>Email</th><th>Mã NV</th><th>Vai trò</th><th>Đăng nhập gần nhất</th><th>TT</th>{editable && <th />}</tr></thead>
             <tbody>
               {(data ?? []).map((u) => (
-                <tr key={u.id} className={u.id === sp.sua ? 'bg-copper-soft/40' : ''}>
+                <tr key={u.id} className={u.id === sp.sua ? 'bg-brand-soft/60' : ''}>
                   <td className="font-medium">{u.full_name}</td><td className="text-muted">{u.email}</td><td className="mono">{u.employee_code ?? '—'}</td>
-                  <td className="min-w-[180px]"><div className="flex flex-wrap gap-1">{u.roles.map((r) => <Pill key={r} tone="info">{ROLE_NAMES[r] ?? r}</Pill>)}</div></td>
+                  <td className="min-w-[180px]"><div className="flex flex-wrap gap-1">{u.roles.map((r) => <Pill key={r} tone="cu">{ROLE_NAMES[r] ?? r}</Pill>)}</div></td>
                   <td className="whitespace-nowrap">{df(u.last_sign_in_at, true)}</td>
                   <td><Pill tone={u.status === 'ACTIVE' ? 'ok' : 'warn'}>{u.status === 'ACTIVE' ? 'Hoạt động' : u.status === 'LOCKED' ? 'Tạm khóa' : 'Ngưng'}</Pill></td>
-                  {editable && <td><a className="btn" href={`/quan-tri?sua=${u.id}`}>Sửa</a></td>}
+                  {editable && <td><a className="btn btn-sm btn-soft" href={`/quan-tri?sua=${u.id}`}>Sửa</a></td>}
                 </tr>
               ))}
             </tbody>
@@ -60,7 +60,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         {editable && (
           editing ? (
             <form action={updateUser} className="card flex flex-col gap-3 p-4">
-              <h2 className="font-semibold">Sửa: {editing.full_name}</h2>
+              <h2 className="text-[16px] font-medium">Sửa: {editing.full_name}</h2>
               <input type="hidden" name="id" value={editing.id} />
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="lbl">Họ tên<input className="inp" name="full_name" defaultValue={editing.full_name} required /></label>
@@ -72,9 +72,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               <RoleChecks selected={editing.roles} prefix="e" />
               <div className="flex gap-2"><SubmitButton>Lưu</SubmitButton><a className="btn" href="/quan-tri">Hủy</a></div>
             </form>
-          ) : (
+          ) : sp.them ? (
             <form action={createUser} className="card flex flex-col gap-3 p-4">
-              <h2 className="font-semibold">Tạo tài khoản</h2>
+              <h2 className="text-[16px] font-medium">Tạo tài khoản</h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="lbl">Họ tên<input className="inp" name="full_name" required /></label>
                 <label className="lbl">Email công ty<input className="inp" type="email" name="email" required /></label>
@@ -85,9 +85,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               </div>
               <RoleChecks selected={[]} prefix="n" />
               <p className="text-[12px] text-muted">Gửi mật khẩu tạm cho người dùng qua kênh riêng và yêu cầu đổi sau lần đăng nhập đầu.</p>
-              <div><SubmitButton>Tạo tài khoản</SubmitButton></div>
+              <div className="flex gap-2"><SubmitButton>Tạo tài khoản</SubmitButton><a className="btn" href="/quan-tri">Hủy</a></div>
             </form>
-          )
+          ) : null
         )}
       </div>
     </>

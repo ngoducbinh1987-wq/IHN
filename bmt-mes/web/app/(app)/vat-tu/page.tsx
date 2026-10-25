@@ -1,4 +1,4 @@
-import { Flash, PageHeader, Pill } from '@/components/ui';
+import { Flash, Pill, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
 import { nf } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
@@ -27,13 +27,13 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <PageHeader title="Vật tư" sub={`${data?.length ?? 0} mã từ file Excel bản 3.0 · hao hụt do Kỹ thuật quản lý, điều kiện mua do Mua hàng quản lý`} />
+      <Toolbar title="Danh mục vật tư" reload="/vat-tu" search={{ placeholder: 'Tìm mã hoặc tên vật tư', value: sp.q }} hidden={{ thieu: sp.thieu }}
+        add={can(me, 'master', 'create') ? { href: '/vat-tu/moi', label: 'Thêm vật tư' } : undefined} />
+      <div className="mb-3 mt-4 flex flex-wrap items-center gap-2">
+        <a className={`btn btn-sm ${!sp.thieu ? 'btn-pri' : ''}`} href={`/vat-tu${q ? `?q=${encodeURIComponent(q)}` : ''}`}>Tất cả ({data?.length ?? 0})</a>
+        <a className={`btn btn-sm ${sp.thieu ? 'btn-pri' : ''}`} href={`/vat-tu?thieu=1${q ? `&q=${encodeURIComponent(q)}` : ''}`}>Thiếu giá hoặc lead time</a>
+      </div>
       <Flash ok={sp.ok} err={sp.err ?? error?.message} />
-      <form className="mb-3 flex flex-wrap items-end gap-2" role="search">
-        <label className="lbl w-64">Tìm mã hoặc tên<input className="inp" id="q" name="q" defaultValue={sp.q} /></label>
-        <label className="flex items-center gap-2 pb-1.5 text-[13px]"><input type="checkbox" name="thieu" value="1" defaultChecked={!!sp.thieu} /> Chỉ mã thiếu giá hoặc lead time</label>
-        <button className="btn" type="submit">Lọc</button>
-      </form>
       {editable && <p className="mb-2 text-[12px] text-muted">Ô vàng sửa được. Giá để trống nghĩa là chưa có giá (MRP không tính là 0). Bấm Lưu ở từng dòng.</p>}
       <div className="card overflow-x-auto">
         <table className="tbl">
@@ -48,7 +48,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
           <tbody>
             {rows.map((m) => (
               <tr key={m.id}>
-                <td className="mono font-semibold">{m.code}</td>
+                <td className="mono font-medium">{m.code}</td>
                 <td className="min-w-[200px]">{m.name}
                   <div className="flex gap-1">{m.has_expiry && <Pill tone="info">Có HSD</Pill>}{m.requires_coa && <Pill tone="cu">Cần COA</Pill>}</div>
                 </td>
@@ -67,7 +67,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
                     <td>
                       <form id={`f-${m.id}`} action={saveTerms}>
                         <input type="hidden" name="terms_id" value={m.terms_id} /><input type="hidden" name="code" value={m.code} />
-                        <SubmitButton className="btn" pendingText="…">Lưu</SubmitButton>
+                        <SubmitButton className="btn btn-sm btn-soft" pendingText="…">Lưu</SubmitButton>
                       </form>
                     </td>
                   </>

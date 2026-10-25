@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { can, requireMe } from '@/lib/session';
 import { createAdminClient, createClient } from '@/lib/supabase/server';
 
-const fail = (msg: string) => redirect('/quan-tri?err=' + encodeURIComponent(msg));
+const fail = (msg: string) => redirect('/quan-tri?them=1&err=' + encodeURIComponent(msg));
 
 function profileArgs(form: FormData, id: string) {
   return {

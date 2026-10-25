@@ -30,23 +30,33 @@ export function parseNum(raw: FormDataEntryValue | null): number | null {
 
 export const SPEC_STATUS: Record<string, [string, Tone]> = {
   DRAFT: ['Nháp', 'mute'],
-  PILOT_PENDING: ['Chờ pilot', 'info'],
-  PILOT: ['Pilot', 'info'],
-  PENDING_APPROVAL: ['Chờ duyệt', 'warn'],
+  PILOT_PENDING: ['Chờ pilot', 'warn'],
+  PILOT: ['Pilot', 'warn'],
+  PENDING_APPROVAL: ['Đang duyệt', 'info'],
   RELEASED: ['Đã phát hành', 'ok'],
   OBSOLETE: ['Ngưng dùng', 'mute'],
 };
 
 export const DOC_STATUS: Record<string, [string, Tone]> = {
   DRAFT: ['Nháp', 'mute'],
-  PENDING_APPROVAL: ['Chờ duyệt', 'warn'],
-  PENDING: ['Chờ duyệt', 'warn'],
-  APPROVED: ['Đã duyệt', 'ok'],
+  PENDING_APPROVAL: ['Đang xử lý', 'info'],
+  PENDING: ['Đang xử lý', 'info'],
+  APPROVED: ['Hoàn thành', 'ok'],
   REJECTED: ['Bị trả lại', 'bad'],
   CANCELLED: ['Đã hủy', 'mute'],
   CLOSED: ['Đã đóng', 'mute'],
   RELEASED: ['Đã phát hành', 'ok'],
+  PARTIAL_PO: ['Đã lên PO một phần', 'warn'],
 };
+
+// "Quá hạn 1 ngày" / "Quá hạn 5 giờ"
+export function overdueText(due: string | null | undefined): string | null {
+  if (!due) return null;
+  const ms = Date.now() - new Date(due).getTime();
+  if (ms <= 0) return null;
+  const h = Math.floor(ms / 3_600_000);
+  return h >= 24 ? `Quá hạn ${Math.floor(h / 24)} ngày` : `Quá hạn ${Math.max(h, 1)} giờ`;
+}
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'mute' | 'cu';
 

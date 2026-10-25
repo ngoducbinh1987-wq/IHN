@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { parseNum } from '@/lib/format';
+import { submitForApproval } from '@/lib/notify';
 import { createClient } from '@/lib/supabase/server';
 
 const back = (id: string, kind: 'ok' | 'err', msg: string) => redirect(`/ke-hoach/${id}?${kind}=${encodeURIComponent(msg)}`);
@@ -10,14 +11,14 @@ const back = (id: string, kind: 'ok' | 'err', msg: string) => redirect(`/ke-hoac
 export async function createPlan(form: FormData) {
   const supabase = await createClient();
   const { data: no, error: e1 } = await supabase.schema('core').rpc('next_no', { p_prefix: 'KH', p_width: 2 });
-  if (e1) redirect('/ke-hoach?err=' + encodeURIComponent(e1.message));
+  if (e1) redirect('/ke-hoach/moi?err=' + encodeURIComponent(e1.message));
   const { data, error } = await supabase.schema('plan').from('production_plans').insert({
     plan_no: no as string,
     period_label: String(form.get('period_label')).trim(),
     material_need_date: String(form.get('need_date')),
     mode: form.get('mode') === 'PRELIMINARY' ? 'PRELIMINARY' : 'OFFICIAL',
   }).select('id').single();
-  if (error) redirect('/ke-hoach?err=' + encodeURIComponent(error.message));
+  if (error) redirect('/ke-hoach/moi?err=' + encodeURIComponent(error.message));
   redirect(`/ke-hoach/${data.id}?ok=` + encodeURIComponent(`Đã tạo kế hoạch ${no}. Thêm các dòng sản phẩm bên dưới.`));
 }
 
@@ -68,13 +69,10 @@ export async function runMrp(form: FormData) {
 
 export async function submitPlan(form: FormData) {
   const planId = String(form.get('plan_id'));
-  const supabase = await createClient();
-  const { error } = await supabase.schema('wf').rpc('submit', {
-    p_doc_type: 'PLAN', p_doc_id: planId, p_doc_no: String(form.get('plan_no')), p_summary: String(form.get('summary')),
-  });
+  const { error } = await submitForApproval('PLAN', planId, String(form.get('plan_no')), String(form.get('summary')));
   if (error) back(planId, 'err', error.message);
-  revalidatePath(`/ke-hoach/${planId}`);
-  back(planId, 'ok', 'Đã gửi TP Sản xuất duyệt');
+  revalidatePath('/', 'layout');
+  back(planId, 'ok', 'Đã gửi duyệt. TP Sản xuất đã nhận thông báo.');
 }
 
 export async function createPr(form: FormData) {
@@ -83,5 +81,5 @@ export async function createPr(form: FormData) {
   const { data, error } = await supabase.schema('plan').rpc('create_pr_from_mrp', { p_run: String(form.get('run_id')) });
   if (error) back(planId, 'err', error.message);
   const { data: pr } = await supabase.schema('purchase').from('purchase_requests').select('pr_no').eq('id', data as string).single();
-  back(planId, 'ok', `Đã sinh ${pr?.pr_no ?? 'PR'} từ kết quả MRP`);
+  redirect(`/de-xuat/${data}?ok=` + encodeURIComponent(`Đã sinh ${pr?.pr_no ?? 'PR'} từ kết quả MRP. Kiểm tra rồi gửi duyệt.`));
 }

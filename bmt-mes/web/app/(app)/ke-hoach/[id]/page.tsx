@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { SubmitButton } from '@/components/submit-button';
-import { Empty, Flash, PageHeader, Pill, StatusPill } from '@/components/ui';
+import { StageBar, type Stage } from '@/components/stage-bar';
+import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
+import type { Approval } from '@/lib/approvals';
 import { DOC_STATUS, SPEC_STATUS, df, nf } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -29,6 +31,11 @@ export default async function PlanDetail({ params, searchParams }:
       ? supabase.schema('plan').from('mrp_runs').select('run_at, budget_vnd, missing_price_count').eq('id', plan.last_run_id).single()
       : Promise.resolve({ data: null }),
   ]);
+  const [{ data: req }, { data: flow }] = await Promise.all([
+    supabase.schema('app').from('v_approvals').select('*').eq('doc_id', id).order('submitted_at', { ascending: false }).limit(1).maybeSingle<Approval>(),
+    supabase.schema('wf').from('approval_steps').select('seq, level_label').eq('doc_type', 'PLAN').eq('enabled', true).order('seq'),
+  ]);
+  const stages: Stage[] = req?.steps ?? [{ seq: 0, label: 'Lập kế hoạch', state: 'current' }, ...(flow ?? []).map((s) => ({ seq: s.seq, label: s.level_label, state: 'todo' as const }))];
   const draft = plan.status === 'DRAFT';
   const editable = draft && can(me, 'plan', 'edit');
   const showPrice = me.can_see_price;
@@ -36,12 +43,11 @@ export default async function PlanDetail({ params, searchParams }:
 
   return (
     <>
-      <PageHeader title={`${plan.plan_no} · ${plan.period_label}`}
-        sub={<>Ngày cần vật tư {df(plan.material_need_date)} · {plan.mode === 'OFFICIAL' ? 'Chính thức' : 'Sơ bộ'} · <StatusPill map={DOC_STATUS} value={plan.status} /></>}
+      <Toolbar title={<span>{plan.plan_no} – {plan.period_label}</span>}
         actions={<>
-          <Link className="btn" href="/ke-hoach">← Danh sách</Link>
+          {req && <Link className="btn btn-soft" href={`/duyet/${req.id}`}>Xem quy trình duyệt</Link>}
           {can(me, 'plan', 'create') && (lines?.length ?? 0) > 0 && plan.status !== 'CLOSED' && (
-            <form action={runMrp}><input type="hidden" name="plan_id" value={id} /><SubmitButton className="btn">Chạy MRP</SubmitButton></form>
+            <form action={runMrp}><input type="hidden" name="plan_id" value={id} /><SubmitButton className="btn btn-soft">Chạy MRP</SubmitButton></form>
           )}
           {draft && plan.last_run_id && can(me, 'plan', 'create') && (
             <form action={submitPlan}>
@@ -51,23 +57,30 @@ export default async function PlanDetail({ params, searchParams }:
             </form>
           )}
           {plan.status === 'APPROVED' && plan.mode === 'OFFICIAL' && plan.last_run_id && can(me, 'plan', 'create') && (
-            <form action={createPr}><input type="hidden" name="plan_id" value={id} /><input type="hidden" name="run_id" value={plan.last_run_id} /><SubmitButton>Sinh PR</SubmitButton></form>
+            <form action={createPr}><input type="hidden" name="plan_id" value={id} /><input type="hidden" name="run_id" value={plan.last_run_id} /><SubmitButton>Sinh đề xuất mua (PR)</SubmitButton></form>
           )}
+          <Link className="btn" href="/ke-hoach">Đóng</Link>
         </>} />
+      <div className="-mx-4 mb-4 md:-mx-5"><StageBar stages={stages} /></div>
       <Flash ok={sp.ok} err={sp.err} />
+      <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-[14px]">
+        <span><span className="text-muted">Ngày cần vật tư:</span> {df(plan.material_need_date)}</span>
+        <span><span className="text-muted">Chế độ:</span> {plan.mode === 'OFFICIAL' ? 'Chính thức' : 'Sơ bộ'}</span>
+        <span><span className="text-muted">Trạng thái:</span> <StatusPill map={DOC_STATUS} value={plan.status} /></span>
+      </div>
 
       <section className="card mb-4 overflow-x-auto">
-        <div className="border-b border-line px-4 py-2.5 font-semibold">Dòng kế hoạch · {nf(plan.total_m)} m</div>
+        <div className="card-h">Dòng kế hoạch · {nf(plan.total_m)} m</div>
         <table className="tbl">
           <thead><tr><th>SKU</th><th>Quy cách</th><th>Spec</th><th className="num">Sản lượng (m)</th><th className="num">Số lô</th><th>Đóng gói</th><th className="num">m/kiện</th><th className="num">Số kiện</th><th className="num">kg/kiện</th><th>TH</th>{editable && <th />}</tr></thead>
           <tbody>
             {(lines ?? []).map((l) => (
               <tr key={l.id}>
-                <td className="mono font-semibold">{l.product_code}</td><td className="min-w-[200px]">{l.description}</td>
+                <td className="mono font-medium">{l.product_code}</td><td className="min-w-[200px]">{l.description}</td>
                 <td><StatusPill map={SPEC_STATUS} value={l.spec_status} /></td>
                 <td className="num">{nf(l.qty_m)}</td><td className="num">{l.run_lots}</td><td>{l.pack_type}</td>
                 <td className="num">{nf(l.m_per_pack)}</td><td className="num">{nf(l.packs)}</td>
-                <td className={`num ${Number(l.kg_per_pack) > 100 ? 'font-semibold text-bad' : ''}`}>{nf(l.kg_per_pack, 1)}</td>
+                <td className={`num ${Number(l.kg_per_pack) > 100 ? 'font-medium text-bad' : ''}`}>{nf(l.kg_per_pack, 1)}</td>
                 <td>{l.brand}</td>
                 {editable && (
                   <td><form action={deleteLine}><input type="hidden" name="plan_id" value={id} /><input type="hidden" name="line_id" value={l.id} /><SubmitButton className="btn btn-bad" pendingText="…">Xóa</SubmitButton></form></td>
@@ -99,8 +112,8 @@ export default async function PlanDetail({ params, searchParams }:
       </section>
 
       <section className="card overflow-x-auto">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-          <div className="font-semibold">Kết quả MRP · đề nghị mua</div>
+        <div className="card-h flex-wrap">
+          <div>Kết quả MRP · đề nghị mua</div>
           {run && <div className="text-[12px] text-muted">Chạy lúc {df(run.run_at, true)} · {toBuy} vật tư cần mua{showPrice && <> · ngân sách {nf(run.budget_vnd)} đ</>}{run.missing_price_count ? <> · <Pill tone="warn">{run.missing_price_count} mã thiếu giá</Pill></> : null}</div>}
         </div>
         {mrp && mrp.length > 0 ? (
@@ -109,11 +122,11 @@ export default async function PlanDetail({ params, searchParams }:
             <tbody>
               {mrp.map((m) => (
                 <tr key={m.id}>
-                  <td className="mono font-semibold">{m.material_code}</td><td className="min-w-[160px]">{m.material_name}</td><td>{m.uom}</td>
-                  <td className="num">{nf(m.theoretical, 2)}</td><td className="num font-semibold">{nf(m.total_issue, 2)}</td>
+                  <td className="mono font-medium">{m.material_code}</td><td className="min-w-[160px]">{m.material_name}</td><td>{m.uom}</td>
+                  <td className="num">{nf(m.theoretical, 2)}</td><td className="num font-medium">{nf(m.total_issue, 2)}</td>
                   <td className="num">{nf(m.available, 1)}</td><td className="num text-muted">{nf(m.in_quality, 1)}</td><td className="num">{nf(m.incoming, 1)}</td>
                   <td className={`num ${Number(m.net_short) > 0 ? 'text-bad' : 'text-muted'}`}>{nf(m.net_short, 2)}</td>
-                  <td className="num">{nf(m.pack_multiple)}</td><td className="num font-semibold">{nf(m.suggest_qty)}</td>
+                  <td className="num">{nf(m.pack_multiple)}</td><td className="num font-medium">{nf(m.suggest_qty)}</td>
                   {showPrice && <td className="num">{m.amount === null ? '—' : nf(m.amount)}</td>}
                   <td className="whitespace-nowrap">{df(m.latest_order_date)}</td>
                   <td><Pill tone={MRP_TONE[m.status] ?? 'mute'}>{m.status}</Pill></td>

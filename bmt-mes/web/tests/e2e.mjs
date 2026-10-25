@@ -1,4 +1,4 @@
-// Kiểm thử end-to-end giai đoạn 1 trên trình duyệt thật (Playwright).
+// Kiểm thử end-to-end trên trình duyệt thật (Playwright): giao diện kiểu Fastcon, thêm mới, quy trình duyệt, thông báo.
 // Chạy với môi trường thử cục bộ (dev/local_stack.sh up) và `next start -p 3000`.
 // node tests/e2e.mjs [thư_mục_ảnh]
 import { createRequire } from 'node:module';
@@ -51,10 +51,10 @@ await expectOk(page, 'Nhận vai trò quản trị đầu tiên');
 const users = [
   ['kt.nv@bmt.test', 'Lê Văn Kỹ', ['KT_NV']], ['qc@bmt.test', 'Trần Thị QC', ['QC']], ['kt.tp@bmt.test', 'Lê Minh Châu', ['KT_TP']],
   ['bgd@bmt.test', 'Nguyễn Văn An', ['BGD']], ['sx.kh@bmt.test', 'Phạm Kế Hoạch', ['SX_KH']], ['sx.tp@bmt.test', 'Đỗ Văn Khánh', ['SX_TP']],
-  ['mua.tp@bmt.test', 'Hoàng Thu Hà', ['MUA_TP']], ['vh@bmt.test', 'Công Nhân Vận Hành', ['VAN_HANH']],
+  ['mua.tp@bmt.test', 'Hoàng Thu Hà', ['MUA_TP']], ['mua.nv@bmt.test', 'Dương Thu Hương', ['MUA_NV']], ['vh@bmt.test', 'Công Nhân Vận Hành', ['VAN_HANH']],
 ];
 for (const [email, name, roles] of users) {
-  await page.goto(`${BASE}/quan-tri`);
+  await page.goto(`${BASE}/quan-tri?them=1`);
   await page.fill('input[name=full_name]', name);
   await page.fill('input[name=email]', email);
   await page.fill('input[name=password]', PASS);
@@ -102,19 +102,20 @@ async function approveAs(email, docNo, label) {
   await login(p, email);
   await p.goto(`${BASE}/duyet`);
   const link = p.locator(`a:has-text("${docNo}")`).first();
-  if (!(await link.count())) fail(`${email} không thấy ${docNo} trong hộp duyệt`);
+  if (!(await link.count())) fail(`${email} không thấy ${docNo} trong "Chờ tôi duyệt"`);
   await link.click();
   await p.waitForURL('**/duyet/**');
+  await p.waitForLoadState('networkidle');
   if (label === 'reject-empty') {
-    await clickNav(p, 'button:has-text("Trả lại")');
+    await p.click('summary[aria-label="Tùy chọn khác"]');
+    await clickNav(p, 'button:has-text("Trả lại người lập")');
     ok(`Trả lại không lý do bị chặn → ${await flash(p)}`);
     await c.close();
     return;
   }
-  await p.fill('#comment', `${label} đồng ý`);
-  await clickNav(p, 'button:has-text("Phê duyệt")');
-  await expectOk(p, `${label} phê duyệt ${docNo}`);
-  if (label === 'BGĐ' && docNo.startsWith('SPEC')) await p.screenshot({ path: `${SHOTS}/04-duyet.png`, fullPage: true });
+  await clickNav(p, 'button:has-text("Chuyển giai đoạn tiếp")');
+  await expectOk(p, `${label} chuyển giai đoạn ${docNo}`);
+  if (label === 'TP KT' && docNo.startsWith('SPEC')) await p.screenshot({ path: `${SHOTS}/04-duyet-chi-tiet.png`, fullPage: true });
   await c.close();
 }
 await approveAs('qc@bmt.test', 'SPEC PFR-2C-1p5', 'reject-empty');
@@ -124,20 +125,20 @@ await approveAs('bgd@bmt.test', 'SPEC PFR-2C-1p5', 'BGĐ');
 [ctx, page] = await ctxFor();
 await login(page, 'kt.nv@bmt.test');
 await page.goto(`${BASE}/san-pham/PFR-2C-1p5`);
-if (!(await page.textContent('h1 + div')).includes('Đã phát hành')) fail('Spec phải ở trạng thái Đã phát hành');
+if (!(await page.textContent('main aside')).includes('Đã phát hành')) fail('Spec phải ở trạng thái Đã phát hành');
 ok('Spec PFR-2C-1p5 Đã phát hành sau 3 cấp duyệt');
 await ctx.close();
 
 // 6. Kế hoạch: tạo, thêm dòng, chạy MRP, gửi duyệt, duyệt 2 cấp, sinh PR
 [ctx, page] = await ctxFor();
 await login(page, 'sx.kh@bmt.test');
-await page.goto(`${BASE}/ke-hoach`);
+await page.goto(`${BASE}/ke-hoach/moi`);
 await page.fill('input[name=period_label]', 'Tháng 11/2026');
 await page.fill('input[name=need_date]', '2026-11-20');
 await Promise.all([page.waitForURL('**/ke-hoach/**'), page.click('button:has-text("Tạo kế hoạch")')]);
 await expectOk(page, 'Tạo kế hoạch');
 const planUrl = page.url().split('?')[0];
-const planNo = (await page.textContent('h1')).split(' · ')[0];
+const planNo = (await page.textContent('main h1')).split(' – ')[0];
 await page.selectOption('select[name=product_id]', { label: (await page.locator('option', { hasText: 'PFR-2C-1p5 ·' }).first().textContent()) });
 await page.fill('input[name=qty_m]', '3.500');
 await clickNav(page, 'button:has-text("Thêm dòng")');
@@ -173,8 +174,94 @@ await approveAs('bgd@bmt.test', planNo, 'BGĐ');
 [ctx, page] = await ctxFor();
 await login(page, 'sx.kh@bmt.test');
 await page.goto(planUrl);
-await clickNav(page, 'button:has-text("Sinh PR")');
+await clickNav(page, 'button:has-text("Sinh đề xuất mua (PR)")');
+if (!page.url().includes('/de-xuat/')) fail('Sinh PR phải chuyển sang trang đề xuất mua');
 await expectOk(page, 'Sinh PR sau khi BGĐ duyệt kế hoạch');
+await ctx.close();
+
+// 6b. Thêm mới: vật tư, đề xuất mua thủ công → người duyệt tiếp theo nhận thông báo → duyệt
+[ctx, page] = await ctxFor();
+await login(page, 'mua.nv@bmt.test');
+await page.goto(`${BASE}/vat-tu`);
+await clickNav(page, 'a:has-text("Thêm vật tư")');
+await page.fill('input[name=code]', 'tape-new');
+await page.fill('input[name=name]', 'Băng quấn thử nghiệm');
+await page.fill('input[name=lead]', '10');
+await page.fill('input[name=price]', '45.500');
+await clickNav(page, 'button:has-text("Lưu vật tư")');
+await expectOk(page, 'Thêm vật tư mới TAPE-NEW');
+if (!(await page.textContent('tbody')).includes('TAPE-NEW')) fail('Vật tư mới phải hiện trong danh mục');
+await page.goto(`${BASE}/de-xuat`);
+await clickNav(page, 'a:has-text("Thêm đề xuất")');
+await page.fill('input[name=note]', 'Mua bổ sung đồng cho đơn gấp');
+await page.fill('input[name=need_date]', '2026-11-05');
+const matInputs = page.locator('input[name=material_code]');
+const qtyInputs = page.locator('input[name=qty]');
+await matInputs.nth(0).fill('CU-024 · Đồng');
+await qtyInputs.nth(0).fill('1.200');
+await matInputs.nth(1).fill('TAPE-NEW');
+await qtyInputs.nth(1).fill('12,5');
+await clickNav(page, 'button:has-text("Lưu và gửi duyệt")');
+await expectOk(page, 'Lập đề xuất mua 2 dòng và gửi duyệt');
+const prNo = (await page.textContent('main h1')).split(' – ')[0].trim();
+const prBody = await page.textContent('main');
+if (!prBody.includes('1.200') || !prBody.includes('12,5')) fail('Số lượng đề xuất phải là 1.200 và 12,5');
+ok('Số lượng "1.200" và "12,5" được hiểu đúng');
+const stageText = await page.locator('ol[aria-label="Các giai đoạn duyệt"]').innerText();
+if (!stageText.includes('Đỗ Văn Khánh')) fail(`Thanh giai đoạn phải ghi người duyệt tiếp theo: ${stageText}`);
+ok(`Thanh giai đoạn hiện người duyệt tiếp theo: Đỗ Văn Khánh (TP SX) · ${prNo}`);
+await page.screenshot({ path: `${SHOTS}/09-de-xuat.png`, fullPage: true });
+await ctx.close();
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'sx.tp@bmt.test');
+  const bell = await p.getAttribute('a[href="/thong-bao"][aria-label]', 'aria-label');
+  if (!/[1-9]/.test(bell ?? '')) fail(`TP SX phải có thông báo chưa đọc: ${bell}`);
+  await p.goto(`${BASE}/thong-bao`);
+  if (!(await p.textContent('main')).includes(`Chờ duyệt: ${prNo}`)) fail('TP SX phải nhận thông báo chờ duyệt đề xuất');
+  ok(`TP SX nhận thông báo "Chờ duyệt: ${prNo}" (${bell})`);
+  await p.goto(`${BASE}/duyet`);
+  const row = await p.locator(`tr:has-text("${prNo}")`).innerText();
+  if (!row.includes('[2/2]')) fail(`Danh sách duyệt phải hiện [2/2]: ${row}`);
+  ok('Hộp duyệt hiện giai đoạn [2/2] kiểu Fastcon');
+  await p.screenshot({ path: `${SHOTS}/10-hop-duyet.png`, fullPage: true });
+  await c.close();
+}
+await approveAs('sx.tp@bmt.test', prNo, 'TP SX');
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'mua.nv@bmt.test');
+  await p.goto(`${BASE}/de-xuat?tab=da-duyet`);
+  if (!(await p.locator(`tr:has-text("${prNo}")`).innerText()).includes('Hoàn thành')) fail('Đề xuất phải Hoàn thành sau khi TP SX duyệt');
+  await p.goto(`${BASE}/thong-bao`);
+  if (!(await p.textContent('main')).includes(`Đã duyệt: ${prNo}`)) fail('Người lập phải nhận thông báo đã duyệt');
+  ok('Người lập nhận thông báo "Đã duyệt" và đề xuất chuyển Hoàn thành');
+  await c.close();
+}
+
+// 6c. Thêm spec mới từ mã mẫu, sửa BOM, gửi duyệt → hiện người duyệt bước QC
+[ctx, page] = await ctxFor();
+await login(page, 'kt.nv@bmt.test');
+await page.goto(`${BASE}/san-pham`);
+await clickNav(page, 'a:has-text("Thêm spec mới")');
+await page.selectOption('select[name=mau]', 'PFR-2C-1p5');
+await clickNav(page, 'button:has-text("Sao chép thông số")');
+await page.fill('input[name=new_code]', 'PFR-2C-1p0');
+await page.fill('input[name=description]', 'Cáp chống cháy 2 lõi 1,0 mm² (thử)');
+await page.fill('input[name=wire_count]', '32');
+await clickNav(page, 'button:has-text("Tạo spec nháp")');
+await expectOk(page, 'Tạo spec mới PFR-2C-1p0 từ mẫu PFR-2C-1p5');
+{ const u = new URL(page.url()); u.searchParams.delete('ok'); u.searchParams.set('tab', 'bom'); await page.goto(u.href); }
+await page.fill('input[name=material_code]', 'TAPE-NEW');
+await page.fill('input[name=qty]', '0,5');
+await clickNav(page, 'button:has-text("Lưu dòng")');
+await expectOk(page, 'Thêm dòng BOM vật tư mới vào spec nháp');
+await clickNav(page, 'button:has-text("Gửi duyệt phát hành")');
+await expectOk(page, 'Gửi duyệt spec mới');
+const st2 = await page.locator('ol[aria-label="Các giai đoạn duyệt"]').innerText();
+if (!st2.includes('Trần Thị QC')) fail(`Bước QC phải hiện tên người duyệt: ${st2}`);
+ok('Spec mới: thanh giai đoạn hiện người duyệt bước QC là Trần Thị QC');
+await page.screenshot({ path: `${SHOTS}/11-spec-moi.png`, fullPage: true });
 await ctx.close();
 
 // 7. Phân quyền: vận hành không vào trang Vật tư/Quản trị, menu bị ẩn
@@ -197,7 +284,7 @@ await ctx.close();
 await login(page, 'bgd@bmt.test');
 await page.screenshot({ path: `${SHOTS}/07-tong-quan-bgd.png`, fullPage: true });
 await page.setViewportSize({ width: 390, height: 844 });
-await page.goto(`${BASE}/san-pham`);
+await page.goto(`${BASE}/duyet?tab=tat-ca`);
 await page.screenshot({ path: `${SHOTS}/08-dien-thoai.png` });
 await ctx.close();
 

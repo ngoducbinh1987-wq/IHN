@@ -1,4 +1,6 @@
-import { Sidebar, type NavItem } from '@/components/sidebar';
+import Link from 'next/link';
+import { Bell, LogOut } from 'lucide-react';
+import { MobileMenu, Sidebar, type NavItem } from '@/components/sidebar';
 import { can, requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_NAMES } from '@/lib/format';
@@ -7,43 +9,60 @@ import { signOut } from '../login/actions';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireMe();
   const supabase = await createClient();
-  const { count: myTurn } = await supabase.schema('app').from('v_approvals')
-    .select('id', { count: 'exact', head: true }).eq('my_turn', true);
+  const [{ count: myTurn }, { count: unread }] = await Promise.all([
+    supabase.schema('app').from('v_approvals').select('id', { count: 'exact', head: true }).eq('my_turn', true),
+    supabase.schema('app').from('v_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
+  ]);
 
   const items: NavItem[] = [
-    { href: '/', label: 'Tổng quan', code: '◧', group: 'Điều hành' },
-    { href: '/duyet', label: 'Hộp duyệt', code: '✓', group: 'Điều hành', badge: myTurn ?? 0 },
+    { href: '/', label: 'Tổng quan', icon: 'gauge', group: 'Điều hành' },
+    { href: '/duyet', label: 'Quy trình duyệt', icon: 'check', group: 'Điều hành', badge: myTurn ?? 0 },
+    { href: '/thong-bao', label: 'Thông báo', icon: 'bell', group: 'Điều hành', badge: unread ?? 0 },
   ];
-  if (can(me, 'plan', 'view')) items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', code: 'KH', group: 'Sản xuất' });
-  if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', code: 'KT', group: 'Kỹ thuật/QA' });
-  if (can(me, 'master', 'view')) items.push({ href: '/vat-tu', label: 'Vật tư', code: 'VT', group: 'Danh mục' });
-  if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', code: 'QT', group: 'Hệ thống' });
+  if (can(me, 'purchase', 'view')) items.push({ href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' });
+  if (can(me, 'master', 'view')) items.push({ href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' });
+  if (can(me, 'plan', 'view')) items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' });
+  if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
+  if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' });
 
   const initials = me.full_name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase();
+  const roleText = me.roles.map((r) => ROLE_NAMES[r] ?? r).join(', ') || 'Chưa có vai trò';
   return (
-    <div className="grid min-h-full md:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="bg-side px-2.5 py-3 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:py-4">
-        <div className="hidden px-2.5 pb-2 font-display text-[22px] font-bold tracking-wide text-white md:block">BMT <span className="text-[#E9A06E]">MES</span></div>
-        <div className="hidden md:block"><Sidebar items={items} /></div>
-        {/* Điện thoại: menu thu gọn */}
-        <details className="md:hidden">
-          <summary className="flex cursor-pointer list-none items-center justify-between px-2.5 font-display text-[20px] font-bold text-white">
-            <span>BMT <span className="text-[#E9A06E]">MES</span></span>
-            <span className="font-sans text-[13px] font-semibold text-[#C4D1DA]">Menu ▾</span>
-          </summary>
-          <Sidebar items={items} />
-        </details>
+    <div className="min-h-full lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
+      <aside className="hidden bg-side lg:sticky lg:top-0 lg:block lg:h-screen lg:overflow-y-auto">
+        <Link href="/" className="flex items-center gap-3 px-4 py-3.5">
+          <span className="rounded bg-white px-2 py-1.5"><img src="/logo-bmt.png" alt="BMTcable" className="h-6 w-auto" /></span>
+          <span className="text-[19px] font-medium text-white">MES</span>
+        </Link>
+        <Sidebar items={items} />
       </aside>
       <div className="flex min-w-0 flex-col">
-        <header className="flex items-center justify-end gap-3 border-b border-line bg-surface px-4 py-2.5 md:px-6">
-          <div className="text-right text-[12px] leading-tight">
-            <div className="font-semibold">{me.full_name}</div>
-            <div className="text-muted">{me.roles.map((r) => ROLE_NAMES[r] ?? r).join(', ') || 'Chưa có vai trò'}</div>
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 md:px-5">
+          <MobileMenu items={items} />
+          <Link href="/" className="lg:hidden"><img src="/logo-bmt.png" alt="BMTcable" className="h-6 w-auto" /></Link>
+          <div className="ml-auto flex items-center gap-2">
+            <Link href="/thong-bao" className="relative rounded-full p-2 text-brand hover:bg-brand-soft" aria-label={`Thông báo, ${unread ?? 0} chưa đọc`}>
+              <Bell size={22} />
+              {!!unread && <span className="absolute -right-0.5 -top-0.5 min-w-[18px] rounded-full bg-bad px-1 text-center text-[11px] font-medium leading-[18px] text-white">{unread}</span>}
+            </Link>
+            <details className="relative">
+              <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-1.5 py-1 hover:bg-sunk">
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-brand text-[13px] font-medium text-white">{initials}</span>
+                <span className="hidden text-left leading-tight sm:block">
+                  <span className="block text-[14px] font-medium uppercase">{me.full_name}</span>
+                  <span className="block max-w-[220px] truncate text-[12px] text-muted">{roleText}</span>
+                </span>
+              </summary>
+              <div className="absolute right-0 mt-1 w-64 rounded border border-line bg-surface p-3 shadow-lg">
+                <div className="text-[14px] font-medium">{me.full_name}</div>
+                <div className="mb-2 text-[12.5px] text-muted">{me.email}</div>
+                <div className="mb-3 text-[12.5px] text-muted">{roleText}</div>
+                <form action={signOut}><button className="btn w-full" type="submit"><LogOut size={15} />Đăng xuất</button></form>
+              </div>
+            </details>
           </div>
-          <div className="grid h-8 w-8 place-items-center rounded-full bg-copper-soft text-[11px] font-bold text-copper">{initials}</div>
-          <form action={signOut}><button className="btn" type="submit">Đăng xuất</button></form>
         </header>
-        <main className="min-w-0 flex-1 px-4 py-5 md:px-6">{children}</main>
+        <main className="min-w-0 flex-1 p-4 md:p-5">{children}</main>
       </div>
     </div>
   );
