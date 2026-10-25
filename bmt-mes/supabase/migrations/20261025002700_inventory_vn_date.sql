@@ -38,3 +38,7 @@ end $$;
 
 -- 3. Mã kiểm chứng từ: cột thời gian đổi ra chữ theo UTC (như mọi phiên web hiện nay) để hồ sơ đang chờ duyệt không bị lệch
 alter function wf.doc_hash(text, uuid) set timezone = 'UTC';
+
+-- 4. Cố định search_path cho 2 hàm phụ của kho (cảnh báo function_search_path_mutable)
+alter function inv.hu_type_for(text) set search_path = pg_catalog, public;
+alter function inv.scrap_category(text) set search_path = pg_catalog, public;
