@@ -151,7 +151,7 @@ insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty, unit_cost) select
 select inv.post_doc((select id from inv.stock_docs where doc_no = 'SC-T1'));
 select pg_temp.ok((select unit_cost from inv.stock_moves where doc_id = (select id from inv.stock_docs where doc_no = 'SC-T1')) = 0, 'Phế nhập kho phế liệu với giá trị 0');
 insert into inv.stock_docs (doc_no, doc_type, warehouse_id) select 'ADJ-T1', 'ADJ', id from inv.warehouses where code = 'KNL';
-select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'ADJ-T1'))$$, 'BGĐ phê duyệt', 'Điều chỉnh kiểm kê phải được phê duyệt trước khi ghi sổ');
+select pg_temp.fails($$select inv.post_doc((select id from inv.stock_docs where doc_no = 'ADJ-T1'))$$, 'cần được phê duyệt', 'Điều chỉnh kiểm kê phải được phê duyệt trước khi ghi sổ');
 select pg_temp.ok((select count(*) from integ.sync_queue where entity = 'STOCK_DOC') = 3, 'Phiếu nhập mua + xuất SX được đưa vào hàng đợi MISA');
 
 -- ================================================================ 6. Lệnh SX + truy xuất
@@ -189,10 +189,9 @@ select pg_temp.ok(exists (select 1 from mfg.trace_forward((select id from inv.lo
 -- ================================================================ 7. SO: duyệt, ATP, giữ hàng
 select pg_temp.as_user('U_QC');
 update inv.lots set qc_status = 'PASSED' where lot_no = 'BB-T1-001';
-select pg_temp.as_user('U_KHO');
-insert into inv.stock_docs (doc_no, doc_type, warehouse_id) select 'FG-T1', 'FG_IN', id from inv.warehouses where code = 'KTP';
-insert into inv.stock_doc_lines (doc_id, line_no, lot_id, qty) select (select id from inv.stock_docs where doc_no = 'FG-T1'), 1, id, 500 from inv.lots where lot_no = 'BB-T1-001';
-select inv.post_doc((select id from inv.stock_docs where doc_no = 'FG-T1'));
+-- Từ 2300: ghi đầu ra CĐ6 tự nhập kho thành phẩm (chờ FQC); không lập phiếu FG_IN tay
+select pg_temp.ok((select qty = 500 and status = 'ACTIVE' from inv.handling_units h join inv.lots l on l.id = h.lot_id where l.lot_no = 'BB-T1-001'),
+  'Bobin BB-T1-001 đã nằm trong kho thành phẩm (500 m)');
 select pg_temp.as_user('U_KDNV');
 insert into sales.sales_orders (so_no, customer_id, label_brand, required_date)
 select 'SO-T1', id, 'KAVIX', current_date + 14 from core.partners where code = 'KAVIX';

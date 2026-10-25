@@ -9,6 +9,7 @@ export type Me = {
   email: string | null;
   status: string;
   roles: string[];
+  delegated_roles?: string[];   // vai trò đang được ủy quyền: "THU_KHO:Tên người ủy quyền"
   perms: string[];
   can_see_price: boolean;
 };

@@ -23,15 +23,33 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (can(me, 'purchase', 'view')) items.push({ href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' });
   if (can(me, 'master', 'view')) items.push({ href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' });
   if (can(me, 'plan', 'view')) items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' });
+  const inv = can(me, 'inventory', 'view');
+  const floor = me.roles.some((r) => r === 'VAN_HANH' || r === 'TO_TRUONG');
+  const office = me.roles.some((r) => r !== 'VAN_HANH' && r !== 'TO_TRUONG');   // công nhân, tổ trưởng chỉ thấy việc tại máy
+  if (inv || can(me, 'production', 'view') || floor) {
+    items.push({ href: '/kho', label: 'Tổng quan kho', icon: 'warehouse', group: 'Kho' });
+    items.push({ href: '/kho/quet', label: 'Quét mã QR', icon: 'scan', group: 'Kho' });
+    items.push({ href: '/kho/cap-phat', label: 'Cấp NVL cho SX', icon: 'issue', group: 'Kho' });
+  }
+  if (floor) items.push({ href: '/kho/nhan-nvl', label: 'Nhận NVL tại máy', icon: 'receive', group: 'Kho' });
+  if (inv && office) {
+    items.push({ href: '/kho/ton', label: 'Tồn kho', icon: 'mat', group: 'Kho' });
+    items.push({ href: '/kho/phieu', label: 'Phiếu kho', icon: 'spec', group: 'Kho' });
+    items.push({ href: '/kho/kiem-ke', label: 'Kiểm kê', icon: 'count', group: 'Kho' });
+  }
+  if (office && (inv || can(me, 'sales', 'view'))) items.push({ href: '/kho/xuat-ban', label: 'Xuất giao hàng', icon: 'truck', group: 'Kho' });
+  if (can(me, 'production', 'view') || inv || can(me, 'cost', 'view')) items.push({ href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: 'chart', group: 'Báo cáo' });
+  if (inv && office) items.push({ href: '/kho/so-cai', label: 'Nhập – xuất – tồn', icon: 'ledger', group: 'Báo cáo' });
   if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' });
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' });
 
   const initials = me.full_name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase();
-  const roleText = me.roles.map((r) => ROLE_NAMES[r] ?? r).join(', ') || 'Chưa có vai trò';
+  const delegated = (me.delegated_roles ?? []).map((d) => d.split(':')[0]);
+  const roleText = me.roles.map((r) => (ROLE_NAMES[r] ?? r) + (delegated.includes(r) ? ' (ủy quyền)' : '')).join(', ') || 'Chưa có vai trò';
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
-      <aside className="hidden bg-side lg:sticky lg:top-0 lg:block lg:h-screen lg:overflow-y-auto">
+      <aside className="hidden bg-side print:!hidden lg:sticky lg:top-0 lg:block lg:h-screen lg:overflow-y-auto">
         <Link href="/" className="flex items-center gap-3 px-4 py-3.5">
           <span className="rounded bg-white px-2 py-1.5"><img src="/logo-bmt.png" alt="BMTcable" className="h-6 w-auto" /></span>
           <span className="text-[19px] font-medium text-white">MES</span>
@@ -39,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Sidebar items={items} />
       </aside>
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 md:px-5">
+        <header className="sticky top-0 z-30 flex print:hidden h-14 items-center gap-3 border-b border-line bg-surface px-4 md:px-5">
           <MobileMenu items={items} />
           <Link href="/" className="lg:hidden"><img src="/logo-bmt.png" alt="BMTcable" className="h-6 w-auto" /></Link>
           <div className="ml-auto flex items-center gap-2">
@@ -64,7 +82,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </details>
           </div>
         </header>
-        <main className="min-w-0 flex-1 p-4 md:p-5">{children}</main>
+        <main className="min-w-0 flex-1 p-4 md:p-5 print:p-0">{children}</main>
       </div>
     </div>
   );
