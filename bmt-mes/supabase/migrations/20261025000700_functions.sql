@@ -65,16 +65,16 @@ begin
      and coalesce(s.rdc_deviation_note, '') = '' then
     msgs := msgs || format('Rdc tính %s > giới hạn %s Ω/km: cần kết quả pilot đạt hoặc phiếu chấp nhận sai lệch', round(r.rdc_calc, 3), r.rdc_limit);
   end if;
-  if r.rdc_limit is null then msgs := msgs || 'Chưa có giới hạn Rdc (AWG): QA nhập giới hạn hoặc kết quả đo'; end if;
+  if r.rdc_limit is null then msgs := msgs || 'Chưa có giới hạn Rdc (AWG): QA nhập giới hạn hoặc kết quả đo'::text; end if;
   if r.total_kgkm * coalesce(s.m_per_pack, 0) / 1000 > master.param(s.param_set_id, 'maxPack') then
-    msgs := msgs || 'Kiện quá tải: giảm m/kiện';
+    msgs := msgs || 'Kiện quá tải: giảm m/kiện'::text;
   end if;
-  if s.wire_count > 50 then msgs := msgs || 'Xác nhận quy trình bện nhiều cấp'; end if;
+  if s.wire_count > 50 then msgs := msgs || 'Xác nhận quy trình bện nhiều cấp'::text; end if;
   if s.drain_mat = 'Không' and not (s.brand = 'KAVIX' and s.insulation = 'SIL') then
-    msgs := msgs || 'Drain Không chỉ cho FR KAVIX';
+    msgs := msgs || 'Drain Không chỉ cho FR KAVIX'::text;
   end if;
-  if s.cores = 1 and s.sheath <> 'Không' then msgs := msgs || 'Dây 1 lõi không có vỏ'; end if;
-  if s.cores > 1 and s.sheath = 'Không' then msgs := msgs || 'Cáp nhiều lõi phải có vỏ'; end if;
+  if s.cores = 1 and s.sheath <> 'Không' then msgs := msgs || 'Dây 1 lõi không có vỏ'::text; end if;
+  if s.cores > 1 and s.sheath = 'Không' then msgs := msgs || 'Cáp nhiều lõi phải có vỏ'::text; end if;
   if g.allowed_brands is not null and not (s.brand = any(g.allowed_brands)) then
     msgs := msgs || format('Nhóm %s chỉ cho thương hiệu %s', g.code, array_to_string(g.allowed_brands, ', '));
   end if;
