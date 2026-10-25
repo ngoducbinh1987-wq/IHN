@@ -240,8 +240,13 @@ do $$ begin
     raise exception 'FAIL: vận hành không được đọc giá';
   exception when insufficient_privilege then raise notice 'PASS: Vận hành không đọc được cột giá trên sổ cái kho';
   end;
-  if (select count(*) from cost.v_stock_moves_valued) <> 0 then raise exception 'FAIL: view giá phải rỗng với vận hành'; end if;
-  raise notice 'PASS: View giá trị kho rỗng với người không có quyền xem giá';
+  if (select count(*) from cost.stock_moves_valued()) <> 0 then raise exception 'FAIL: giá trị kho phải rỗng với vận hành'; end if;
+  raise notice 'PASS: Giá trị kho rỗng với người không có quyền xem giá';
+  begin
+    perform 1 from iot.telemetry_default limit 1;
+    raise exception 'FAIL: không được đọc thẳng phân vùng dữ liệu máy';
+  exception when insufficient_privilege then raise notice 'PASS: Không đọc thẳng được phân vùng dữ liệu máy';
+  end;
   begin
     insert into purchase.purchase_orders (po_no, supplier_id) values ('PO-X', (select id from core.partners limit 1));
     raise exception 'FAIL: vận hành không được tạo PO';
@@ -257,7 +262,7 @@ reset role;
 select pg_temp.as_user('U_KTGT');
 set local role authenticated;
 do $$ begin
-  if (select count(*) from cost.v_stock_moves_valued) = 0 then raise exception 'FAIL: kế toán phải thấy giá trị kho'; end if;
+  if (select count(*) from cost.stock_moves_valued()) = 0 then raise exception 'FAIL: kế toán phải thấy giá trị kho'; end if;
   raise notice 'PASS: Kế toán giá thành xem được giá trị kho';
 end $$;
 reset role;
