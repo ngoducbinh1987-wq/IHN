@@ -482,7 +482,8 @@ update wf.approval_steps set level_label = 'Kế toán trưởng chốt', fallba
 update wf.approval_steps set enabled = false where doc_type = 'COST_CLOSE' and seq = 2;
 
 -- Spec mã mới: TP KT/QA lập → Quản lý SX xác nhận sản xuất được → Giám đốc phát hành
-update wf.approval_flows set submit_role = 'KT_TP', submit_label = 'TP Kỹ thuật/QA lập spec' where doc_type = 'SPEC_NEW';
+update wf.approval_flows set submit_role = 'KT_TP', submit_label = 'TP Kỹ thuật/QA lập spec', name = 'Spec + BOM (mã mới, phiên bản mới)'
+ where doc_type = 'SPEC_NEW';
 update wf.approval_steps set level_label = 'Quản lý SX xác nhận sản xuất được', role_code = 'SX_TP', assignee_ids = '{}', enabled = true
  where doc_type = 'SPEC_NEW' and seq = 1;
 update wf.approval_steps set enabled = false where doc_type = 'SPEC_NEW' and seq = 2;

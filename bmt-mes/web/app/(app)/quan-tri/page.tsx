@@ -109,7 +109,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               <h2 className="text-[16px] font-medium">Tạo tài khoản</h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="lbl">Họ tên<input className="inp" name="full_name" required /></label>
-                <label className="lbl">Email công ty<input className="inp" type="email" name="email" required placeholder="Công nhân: email nội bộ, vd nv01@bmtcable.vn" /></label>
+                <label className="lbl">Email công ty<input className="inp" type="email" name="email" required placeholder="vd nv01@bmtcable.vn" /></label>
                 <label className="lbl">Mật khẩu tạm (≥ 10 ký tự)<input className="inp" type="text" name="password" minLength={10} required autoComplete="off" /></label>
                 <label className="lbl">Mã nhân viên<input className="inp" name="employee_code" /></label>
                 <label className="lbl">Phòng ban<select className="inp" name="department"><option value="">—</option>{DEPTS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}</select></label>
