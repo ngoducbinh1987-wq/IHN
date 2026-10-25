@@ -620,11 +620,12 @@ begin
                                       scrap_kg, scrap_reason, note, saved_by, saved_at)
   values (p_date, coalesce(p->>'shift_code', 'A'), p_machine, p->>'operator_code', nullif(p->>'plan_id', '')::uuid,
           coalesce(p->>'source', 'MANUAL'), coalesce(p->'lines', '[]'), coalesce(p->'downtime', '[]'),
-          coalesce(case when found then r.samples end, p->'samples', '[]'),
+          coalesce(p->'samples', '[]'),
           coalesce((p->>'scrap_kg')::numeric, 0), p->>'scrap_reason', p->>'note', auth.uid(), now())
   on conflict (work_date, shift_code, machine_code) do update set
     operator_code = excluded.operator_code, plan_id = excluded.plan_id, source = excluded.source, lines = excluded.lines,
     downtime = excluded.downtime, scrap_kg = excluded.scrap_kg, scrap_reason = excluded.scrap_reason, note = excluded.note,
+    samples = case when jsonb_array_length(t.samples) = 0 then excluded.samples else t.samples end,
     saved_by = auth.uid(), saved_at = now()
   returning id into v_id;
   return v_id;
@@ -681,9 +682,9 @@ declare r mfg.shift_reports; s jsonb;
 begin
   if not app.kh_has_any(array['KT_TP','QC']) then raise exception 'Chỉ TP Kỹ thuật/QA hoặc QC duyệt mẫu'; end if;
   if p_result not in ('OK','NG') then raise exception 'Kết quả không hợp lệ'; end if;
-  insert into mfg.shift_reports (work_date, shift_code, machine_code, samples) values (p_date, 'A', p_machine, coalesce(p_samples, '[]'))
+  insert into mfg.shift_reports as t (work_date, shift_code, machine_code, samples) values (p_date, 'A', p_machine, coalesce(p_samples, '[]'))
   on conflict (work_date, shift_code, machine_code) do update set
-    samples = case when jsonb_array_length(mfg.shift_reports.samples) = 0 then excluded.samples else mfg.shift_reports.samples end;
+    samples = case when jsonb_array_length(t.samples) = 0 then excluded.samples else t.samples end;
   select * into r from mfg.shift_reports where work_date = p_date and shift_code = 'A' and machine_code = p_machine for update;
   if r.status = 'CONFIRMED' then raise exception 'Ca đã xác nhận'; end if;
   s := r.samples -> p_index;
