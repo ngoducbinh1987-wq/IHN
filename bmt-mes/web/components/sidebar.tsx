@@ -4,14 +4,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
-  Bell, Boxes, CheckSquare, ClipboardList, Factory, FileText, Gauge, Search, ShoppingCart, Users, Workflow,
+  Bell, Boxes, CheckSquare, ClipboardList, Factory, FileText, Gauge, Monitor, Search, ShoppingCart, Users, Workflow,
 } from 'lucide-react';
 
-export type NavItem = { href: string; label: string; icon: string; group: string; badge?: number };
+export type NavItem = { href: string; label: string; icon: string; group: string; badge?: number; static?: boolean };
 
 const ICONS = {
   gauge: Gauge, check: CheckSquare, bell: Bell, plan: ClipboardList, spec: FileText, mat: Boxes,
-  cart: ShoppingCart, users: Users, factory: Factory, flow: Workflow,
+  cart: ShoppingCart, users: Users, factory: Factory, flow: Workflow, screen: Monitor,
 } as const;
 
 export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
@@ -33,13 +33,19 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
             {shown.filter((i) => i.group === g).map((i) => {
               const on = i.href === '/' ? path === '/' : path.startsWith(i.href) && !shown.some((o) => o.href.length > i.href.length && o.href.startsWith(i.href) && path.startsWith(o.href));
               const Icon = ICONS[i.icon as keyof typeof ICONS] ?? FileText;
-              return (
-                <Link key={i.href} href={i.href} onClick={onNavigate} aria-current={on ? 'page' : undefined}
-                  className={`flex items-center gap-3 border-l-4 px-4 py-3 text-[15px] ${on ? 'border-brand bg-side-2 text-white' : 'border-transparent text-side-ink hover:bg-white/5 hover:text-white'}`}>
+              const cls = `flex items-center gap-3 border-l-4 px-4 py-3 text-[15px] ${on ? 'border-brand bg-side-2 text-white' : 'border-transparent text-side-ink hover:bg-white/5 hover:text-white'}`;
+              const inner = (
+                <>
                   <Icon size={18} className="shrink-0" />
                   <span className="flex-1">{i.label}</span>
                   {!!i.badge && <span className="rounded-full bg-bad px-2 text-[12px] font-medium text-white">{i.badge}</span>}
-                </Link>
+                </>
+              );
+              // Trang tĩnh (không thuộc app router) mở bằng liên kết thường
+              return i.static ? (
+                <a key={i.href} href={i.href} onClick={onNavigate} className={cls}>{inner}</a>
+              ) : (
+                <Link key={i.href} href={i.href} onClick={onNavigate} aria-current={on ? 'page' : undefined} className={cls}>{inner}</Link>
               );
             })}
           </div>

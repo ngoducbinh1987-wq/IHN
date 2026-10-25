@@ -16,6 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const items: NavItem[] = [
     { href: '/', label: 'Tổng quan', icon: 'gauge', group: 'Điều hành' },
+    { href: '/dieu-hanh', label: 'Trung tâm điều hành', icon: 'screen', group: 'Điều hành', static: true },
     { href: '/duyet', label: 'Quy trình duyệt', icon: 'check', group: 'Điều hành', badge: myTurn ?? 0 },
     { href: '/thong-bao', label: 'Thông báo', icon: 'bell', group: 'Điều hành', badge: unread ?? 0 },
   ];
