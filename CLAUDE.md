@@ -6,7 +6,7 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - Code: thư mục `bmt-mes/` (repo GitHub `ngoducbinh1987-wq/IHN`). Đẩy lên `main` = Vercel tự deploy production.
 - Web: Next.js 15 + React 19 + Tailwind, `bmt-mes/web/`. Chạy tại https://ihn-ten.vercel.app
 - Database: Supabase project `critwnuscvdchdbvwygv` (PG17). Schema: core, master, sales, plan, purchase, inv, mfg, qa, cost, wf, iot, integ, app (view/hàm cho web).
-- Migration: `bmt-mes/supabase/migrations/` (mới nhất: `20261026002300_production_planning_2.sql`; `20261025002300_machines.sql` và 2200 đã áp lên Supabase). Số phiên bản migration không được trùng: kiểm `supabase_migrations.schema_migrations` trước khi đặt tên.
+- Migration: `bmt-mes/supabase/migrations/` (mới nhất: `20261026002300_production_planning_2.sql`, đã áp lên Supabase). Số phiên bản migration không được trùng: kiểm `supabase_migrations.schema_migrations` trước khi đặt tên.
 - Quyền: RLS qua `core.has_perm(module, action)`, `core.has_role(role)`. Luồng duyệt: `wf.submit`, `wf.act`, cấu hình đóng băng vào `wf.approval_requests.flow_snapshot`.
 - Thông báo: `wf.notifications`; email qua `lib/notify.ts` (SMTP) và `/api/cron/notify` (CRON_SECRET). pg_cron: `bmt-mes-sla` (wf.check_sla 10 phút/lần), `bmt-mes-email` (pg_net gọi /api/cron/notify, cần Vault `mes_app_url`, `mes_cron_secret`).
 
