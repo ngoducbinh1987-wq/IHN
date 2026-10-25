@@ -1,0 +1,1484 @@
+<title>BMT MES — Tài liệu BA</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap&subset=vietnamese">
+<style>
+/* Layout: tài liệu kỹ thuật hai cột — mục lục dính bên trái, nội dung 68ch; mockup và bảng mở rộng toàn bề ngang cột phải. Tông thép nguội + điểm nhấn màu đồng (lõi cáp). */
+:root{
+  --bg:#F3F5F7; --surface:#FFFFFF; --sunk:#E9EDF1; --ink:#13202A; --muted:#566571; --line:#D5DCE2;
+  --copper:#9E4F1C; --copper-soft:#F5E6DA; --steel:#2C4A5F; --steel-soft:#E3ECF2;
+  --ok:#2A7A4B; --ok-soft:#E1F2E8; --warn:#9A6412; --warn-soft:#FBF0D9; --bad:#B0362E; --bad-soft:#F9E3E1; --info:#2D679A; --info-soft:#E2EDF7;
+  --f-display:"Barlow Condensed","Arial Narrow",sans-serif; --f-body:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",sans-serif; --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1418; --surface:#151D23; --sunk:#1B252C; --ink:#E4EAEE; --muted:#93A2AD; --line:#29353E;
+  --copper:#E28A52; --copper-soft:#3A2416; --steel:#9DBBD0; --steel-soft:#1E2D38;
+  --ok:#5BC489; --ok-soft:#163323; --warn:#E5B04C; --warn-soft:#3A2C10; --bad:#F07B71; --bad-soft:#3D1A17; --info:#76AEE0; --info-soft:#17293A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1418; --surface:#151D23; --sunk:#1B252C; --ink:#E4EAEE; --muted:#93A2AD; --line:#29353E;
+  --copper:#E28A52; --copper-soft:#3A2416; --steel:#9DBBD0; --steel-soft:#1E2D38;
+  --ok:#5BC489; --ok-soft:#163323; --warn:#E5B04C; --warn-soft:#3A2C10; --bad:#F07B71; --bad-soft:#3D1A17; --info:#76AEE0; --info-soft:#17293A; color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.62}
+a{color:var(--copper)}
+:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+.wrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:40px;max-width:1360px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 80px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 20px);align-self:start;max-height:calc(100vh - 40px);overflow:auto;font-size:13px;padding-right:8px}
+nav.toc .brand{font-family:var(--f-display);font-weight:700;font-size:22px;letter-spacing:.02em;line-height:1.1;margin-bottom:4px}
+nav.toc .brand span{color:var(--copper)}
+nav.toc .ver{color:var(--muted);font-size:12px;margin-bottom:18px}
+nav.toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+nav.toc a{display:block;color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:4px;border-left:2px solid transparent}
+nav.toc a:hover{color:var(--ink);background:var(--sunk)}
+nav.toc a.on{color:var(--ink);border-left-color:var(--copper);background:var(--sunk)}
+nav.toc .grp{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:14px 8px 4px;font-weight:600}
+main{min-width:0}
+.prose{max-width:72ch}
+header.doc{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:12px}
+.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--copper);font-weight:600}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(34px,5vw,52px);line-height:1.02;margin:8px 0 14px;text-wrap:balance;letter-spacing:.005em}
+h2{font-family:var(--f-display);font-weight:700;font-size:32px;line-height:1.1;margin:0 0 6px;text-wrap:balance}
+h3{font-size:18px;margin:30px 0 8px;font-weight:700;text-wrap:balance}
+h4{font-size:15px;margin:20px 0 6px;font-weight:700}
+section.ch{padding-top:52px;scroll-margin-top:12px}
+.chno{font-family:var(--f-mono);font-size:13px;color:var(--copper);font-weight:600}
+.lede{color:var(--muted);font-size:16px;max-width:70ch}
+p{margin:0 0 12px}
+ul,ol{padding-left:22px;margin:0 0 12px}
+li{margin-bottom:4px}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+code{background:var(--sunk);padding:1px 5px;border-radius:3px}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 24px;margin-top:20px;font-size:13px}
+.meta dt{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.meta dd{margin:2px 0 0;font-weight:600}
+.tbl{overflow-x:auto;margin:12px 0 20px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--sunk);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.callout{border:1px solid var(--line);border-left:3px solid var(--copper);background:var(--surface);padding:14px 18px;border-radius:4px;margin:16px 0;max-width:72ch}
+.callout.warn{border-left-color:var(--warn)}
+.callout.bad{border-left-color:var(--bad)}
+.callout.ok{border-left-color:var(--ok)}
+.callout b.t{display:block;margin-bottom:4px}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 8px;border-radius:999px;white-space:nowrap;line-height:1.6}
+.p-ok{background:var(--ok-soft);color:var(--ok)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-bad{background:var(--bad-soft);color:var(--bad)}.p-info{background:var(--info-soft);color:var(--info)}.p-mute{background:var(--sunk);color:var(--muted)}.p-cu{background:var(--copper-soft);color:var(--copper)}
+.br{font-family:var(--f-mono);font-size:12px;color:var(--copper);font-weight:600;white-space:nowrap}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin:12px 0 20px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px 18px;min-width:0}
+.card h4{margin-top:0}
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px;overflow-x:auto;margin:12px 0 20px}
+pre.mermaid{margin:0;background:transparent;font-family:var(--f-body);text-align:center}
+pre.code{background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:14px 16px;overflow-x:auto;font-family:var(--f-mono);font-size:12.5px;line-height:1.55;margin:12px 0 20px}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps>li{counter-increment:s;position:relative;padding-left:38px;margin-bottom:10px}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:50%;background:var(--steel-soft);color:var(--steel);font-weight:700;font-size:12.5px;display:grid;place-items:center;font-family:var(--f-mono)}
+.formula{font-family:var(--f-mono);font-size:13px;background:var(--sunk);padding:2px 6px;border-radius:3px;white-space:nowrap}
+.tag{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+details.fold{border:1px solid var(--line);border-radius:6px;background:var(--surface);margin:10px 0}
+details.fold>summary{cursor:pointer;padding:10px 14px;font-weight:600}
+details.fold>div{padding:0 14px 12px}
+
+/* ===== MOCKUP ===== */
+.mk-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 10px}
+.mk-tabs button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 12px;border-radius:999px;cursor:pointer}
+.mk-tabs button[aria-selected="true"]{background:var(--steel);border-color:var(--steel);color:var(--surface)}
+.mk-scroll{overflow-x:auto;border-radius:10px}
+.app{min-width:980px;display:grid;grid-template-columns:196px 1fr;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg);font-size:13px;box-shadow:0 6px 24px rgba(19,32,42,.08)}
+.app-side{background:var(--steel);color:#E8EEF2;padding:14px 10px;display:flex;flex-direction:column;gap:2px}
+:root[data-theme="dark"] .app-side{background:#0A1014}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .app-side{background:#0A1014}}
+.app-side .logo{font-family:var(--f-display);font-weight:700;font-size:20px;padding:2px 8px 12px;letter-spacing:.03em}
+.app-side .logo span{color:#E9A06E}
+.app-side button{all:unset;cursor:pointer;padding:7px 10px;border-radius:5px;color:#C4D1DA;font-size:12.5px;display:flex;gap:8px;align-items:center}
+.app-side button:hover{background:rgba(255,255,255,.07);color:#fff}
+.app-side button.on{background:rgba(233,160,110,.18);color:#fff}
+.app-side button:focus-visible{outline:2px solid #E9A06E}
+.app-side .ico{width:16px;text-align:center;font-family:var(--f-mono);font-size:11px;opacity:.8}
+.app-side .sep{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#8EA3B2;padding:12px 10px 4px}
+.app-main{min-width:0;display:flex;flex-direction:column}
+.app-top{display:flex;align-items:center;gap:12px;padding:10px 18px;background:var(--surface);border-bottom:1px solid var(--line)}
+.app-top .crumb{color:var(--muted);font-size:12px}
+.app-top .crumb b{color:var(--ink)}
+.app-top .sp{flex:1}
+.app-top .search{border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--muted);background:var(--bg);width:220px;font-size:12px}
+.app-top .user{display:flex;align-items:center;gap:8px;font-size:12px}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--copper-soft);color:var(--copper);display:grid;place-items:center;font-weight:700;font-size:11px}
+.app-body{padding:18px;min-height:560px}
+.app-body h5{font-size:17px;margin:0 0 2px;font-weight:700}
+.app-body .sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.kpi .v{font-family:var(--f-display);font-size:28px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi .d{font-size:11.5px;color:var(--muted)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0;overflow-x:auto}
+.mt .mono,.mt td:first-child{white-space:nowrap}
+.mt td.nm{min-width:170px}
+.panel .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-weight:700;font-size:13px}
+.cols{display:grid;gap:12px}
+.c2{grid-template-columns:1fr 1fr}.c3{grid-template-columns:1fr 1fr 1fr}.c21{grid-template-columns:2fr 1fr}.c12{grid-template-columns:1fr 2fr}
+.mt{width:100%;border-collapse:collapse;font-size:12.5px}
+.mt th{background:transparent;font-size:10.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.mt td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.mt tr.click{cursor:pointer}.mt tr.click:hover td{background:var(--sunk)}
+.mt tr.sel td{background:var(--copper-soft)}
+.mt td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.btn{font:inherit;font-size:12.5px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 12px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--sunk)}
+.btn.pri{background:var(--copper);border-color:var(--copper);color:#fff}
+.btn.pri:hover{filter:brightness(1.07)}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.bad{color:var(--bad);border-color:var(--bad)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.inp{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:5px 8px;border-radius:5px;width:100%}
+.inp.y{background:var(--warn-soft);border-color:var(--warn)}
+.inp.n{text-align:right;font-variant-numeric:tabular-nums}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--muted)}
+.fgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px}
+.stepper{display:flex;gap:0;margin:8px 0 12px}
+.stepper .st{flex:1;position:relative;padding-top:22px;font-size:11.5px;text-align:center;color:var(--muted)}
+.stepper .st::before{content:"";position:absolute;top:8px;left:0;right:0;height:2px;background:var(--line)}
+.stepper .st::after{content:"";position:absolute;top:3px;left:calc(50% - 6px);width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--line)}
+.stepper .st.done{color:var(--ok)}.stepper .st.done::after{background:var(--ok);border-color:var(--ok)}.stepper .st.done::before{background:var(--ok)}
+.stepper .st.cur{color:var(--copper);font-weight:700}.stepper .st.cur::after{border-color:var(--copper);background:var(--copper-soft)}
+.stepper .st.rej{color:var(--bad)}.stepper .st.rej::after{background:var(--bad);border-color:var(--bad)}
+.toast{position:absolute;right:18px;bottom:18px;background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:6px;font-size:12.5px;box-shadow:0 6px 18px rgba(0,0,0,.2)}
+.app-main{position:relative}
+.bar{height:8px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--copper)}
+.bar.ok i{background:var(--ok)}.bar.warn i{background:var(--warn)}
+.mach{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.mcard{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;border-top:3px solid var(--line)}
+.mcard.run{border-top-color:var(--ok)}.mcard.stop{border-top-color:var(--bad)}.mcard.idle{border-top-color:var(--warn)}
+.mcard .nm{font-weight:700}.mcard .id{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.mcard .big{font-family:var(--f-display);font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.mcard .kv{display:grid;grid-template-columns:1fr auto;gap:2px 8px;font-size:11.5px;margin-top:8px}
+.mcard .kv span:nth-child(odd){color:var(--muted)}
+.mcard .kv span:nth-child(even){font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+svg.spark{width:100%;height:70px;display:block}
+.tree{font-size:12.5px}
+.tree details{margin-left:16px;border-left:1px dashed var(--line);padding-left:10px}
+.tree>details{margin-left:0}
+.tree summary{cursor:pointer;padding:4px 0;list-style:none}
+.tree summary::-webkit-details-marker{display:none}
+.tree summary::before{content:"▸";display:inline-block;width:14px;color:var(--muted);transition:transform .15s}
+.tree details[open]>summary::before{transform:rotate(90deg)}
+.tree .leaf{margin-left:16px;padding:4px 0 4px 24px;border-left:1px dashed var(--line)}
+.nd{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap}
+.nd .k{font-family:var(--f-mono);font-weight:600}
+.tablet{width:720px;max-width:100%;margin:0 auto;border:10px solid #1D262D;border-radius:22px;background:var(--bg);padding:14px}
+.tablet .bigbtn{font:inherit;font-size:16px;font-weight:700;padding:16px;border-radius:10px;border:0;cursor:pointer;color:#fff;width:100%}
+.qr{display:grid;grid-template-columns:repeat(21,1fr);width:120px;height:120px;background:#fff;padding:6px;border:1px solid var(--line)}
+.qr i{background:#111}
+.qr b{background:#fff}
+.lbl{display:flex;gap:12px;background:#fff;color:#111;border:1px solid #999;border-radius:4px;padding:10px;width:max-content;font-size:11.5px}
+.lbl .t{font-weight:700;font-size:14px}
+.mx td{text-align:center}
+.mx td:first-child{text-align:left}
+.chk{width:16px;height:16px;accent-color:var(--copper)}
+.wf{display:flex;align-items:flex-end;gap:10px;height:180px;padding:8px 4px 0;border-bottom:1px solid var(--line)}
+.wf .b{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;font-size:10.5px;color:var(--muted);height:100%}
+.wf .b i{display:block;width:100%;border-radius:3px 3px 0 0}
+.legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.note-ex{font-size:11px;color:var(--warn);background:var(--warn-soft);padding:2px 8px;border-radius:4px;display:inline-block}
+
+@media (max-width:900px){
+  .wrap{grid-template-columns:minmax(0,1fr);gap:0}
+  nav.toc{position:static;max-height:none;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:8px}
+  nav.toc ol{display:none}
+  nav.toc .grp{display:none}
+  nav.toc details.mtoc ol{display:flex}
+  nav.toc details.mtoc .grp{display:block}
+}
+nav.toc details.mtoc>summary{display:none}
+@media (max-width:900px){nav.toc details.mtoc>summary{display:block;cursor:pointer;font-weight:600;color:var(--copper);padding:6px 0}}
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Mục lục">
+  <div class="brand">BMT <span>MES</span></div>
+  <div class="ver">Tài liệu BA · v1.0 · 25/10/2026</div>
+  <details class="mtoc" open>
+  <summary>Mục lục</summary>
+  <div class="grp">Bối cảnh</div>
+  <ol>
+    <li><a href="#tong-quan">1. Tổng quan và phạm vi</a></li>
+    <li><a href="#hien-trang">2. Hiện trạng file Excel</a></li>
+    <li><a href="#to-chuc">3. Tổ chức và vai trò</a></li>
+    <li><a href="#kien-truc">4. Bản đồ phân hệ</a></li>
+  </ol>
+  <div class="grp">Quy trình nghiệp vụ</div>
+  <ol>
+    <li><a href="#p-dathang">5. Đặt hàng: SO và đề xuất mua</a></li>
+    <li><a href="#p-spec">6. Spec và BOM mã hàng</a></li>
+    <li><a href="#p-mrp">7. Kế hoạch SX và dự trù vật tư</a></li>
+    <li><a href="#p-mua">8. Mua hàng và nhập kho</a></li>
+    <li><a href="#p-sx">9. Lệnh SX và công đoạn</a></li>
+    <li><a href="#p-kho">10. Quản lý kho và lô</a></li>
+    <li><a href="#p-trace">11. Truy xuất nguồn gốc</a></li>
+    <li><a href="#p-gia">12. Giá thành sản xuất</a></li>
+    <li><a href="#p-nvl">13. Danh mục NVL và tham số</a></li>
+    <li><a href="#p-tk">14. Tài khoản và phân quyền</a></li>
+    <li><a href="#p-duyet">15. Ma trận duyệt phân cấp</a></li>
+  </ol>
+  <div class="grp">Hệ thống</div>
+  <ol>
+    <li><a href="#quy-tac">16. Quy tắc tính toán</a></li>
+    <li><a href="#du-lieu">17. Mô hình dữ liệu</a></li>
+    <li><a href="#database">18. Database và kết nối máy</a></li>
+    <li><a href="#misa">19. Tích hợp MISA</a></li>
+    <li><a href="#ui">20. Mockup UI/UX</a></li>
+    <li><a href="#nfr">21. Yêu cầu phi chức năng</a></li>
+    <li><a href="#lo-trinh">22. Lộ trình triển khai</a></li>
+    <li><a href="#mo">23. Điểm cần xác nhận</a></li>
+  </ol>
+  </details>
+</nav>
+
+<main>
+<header class="doc">
+  <div class="eyebrow">Business Analysis · Phần mềm điều hành sản xuất</div>
+  <h1>Hệ thống quản trị sản xuất nhà máy cáp BMT</h1>
+  <p class="lede">Tài liệu phân tích nghiệp vụ để xây dựng phần mềm thay thế file <code>BMT_Du_tru_vat_tu_san_xuat</code> bản 3.0. Phạm vi bao gồm đơn bán hàng, đề xuất mua, duyệt spec và BOM, dự trù vật tư, mua hàng, kho theo lô, lệnh sản xuất theo công đoạn, truy xuất nguồn gốc, giá thành, tài khoản và lộ trình kết nối dây chuyền Siemens.</p>
+  <dl class="meta">
+    <div><dt>Nguồn dữ liệu</dt><dd>File Excel bản 3.0 (24/10/2026)</dd></div>
+    <div><dt>Danh mục hiện có</dt><dd>78 SKU · 6 nhóm · 51 vật tư</dd></div>
+    <div><dt>Nền tảng</dt><dd>Supabase (PostgreSQL) + Web app</dd></div>
+    <div><dt>Trạng thái</dt><dd><span class="pill p-warn">Chờ anh/chị duyệt</span></dd></div>
+  </dl>
+</header>
+
+<!-- 1 -->
+<section class="ch" id="tong-quan">
+  <div class="chno">01</div>
+  <h2>Tổng quan và phạm vi</h2>
+  <div class="prose">
+  <h3>Mục tiêu</h3>
+  <ol>
+    <li><b>Số hóa chuỗi nghiệp vụ</b> từ đơn bán hàng đến thành phẩm nhập kho, trên một nguồn dữ liệu và có luồng duyệt rõ người, rõ thời điểm.</li>
+    <li><b>Đưa logic tính toán của file Excel vào hệ thống</b> (hình học lõi, định mức kg/km, phối trộn phr, hao hụt, mua ròng) và quản lý theo phiên bản. Mỗi lệnh sản xuất gắn với đúng phiên bản spec và BOM đã duyệt.</li>
+    <li><b>Quản lý tồn kho theo lô</b> ở 4 kho: nguyên liệu, bán thành phẩm, thành phẩm và phế liệu. Truy xuất được từ cuộn thành phẩm về lô nguyên vật liệu và nhà cung cấp.</li>
+    <li><b>Tính giá thành hai lớp</b>: giá định mức để lập kế hoạch và báo giá, giá thực tế theo lệnh sản xuất, kèm phân tích chênh lệch. Phế phẩm không được ghi giảm giá thành.</li>
+    <li><b>Chuẩn bị nền dữ liệu cho dây chuyền</b>: thiết kế sẵn danh mục máy, công đoạn và bảng dữ liệu thời gian thực. Giai đoạn sau kết nối PLC Siemens (Profinet/Modbus TCP) để lấy mét chạy, tốc độ, nhiệt độ, OD và thời gian dừng.</li>
+  </ol>
+  <h3>Phạm vi chức năng</h3>
+  </div>
+  <div class="tbl"><table>
+    <thead><tr><th>Phân hệ</th><th>Trong phạm vi</th><th>Ngoài phạm vi (giai đoạn này)</th></tr></thead>
+    <tbody>
+      <tr><td><b>Bán hàng</b></td><td>Đơn bán (SO), kiểm tra tồn thành phẩm khả dụng, giữ hàng, yêu cầu sản xuất, lệnh giao hàng</td><td>CRM, báo giá tự động theo giá đồng, hóa đơn điện tử (do MISA đảm nhận)</td></tr>
+      <tr><td><b>Kỹ thuật/QA</b></td><td>Spec sản phẩm theo phiên bản, BOM, tham số công nghệ, pilot, IQC/IPQC/FQC, NCR</td><td>Phòng thí nghiệm (LIMS) đầy đủ</td></tr>
+      <tr><td><b>Kế hoạch</b></td><td>Kế hoạch theo kỳ, MRP (dự trù vật tư), lịch máy cơ bản</td><td>Lập lịch tối ưu tự động (APS)</td></tr>
+      <tr><td><b>Mua hàng</b></td><td>Đề xuất mua tối ưu, PR, PO, theo dõi hàng về, nhận hàng kèm COA</td><td>Đấu thầu nhà cung cấp</td></tr>
+      <tr><td><b>Kho</b></td><td>4 kho, vị trí, lô, QR, nhập/xuất/chuyển/kiểm kê, FEFO</td><td>WMS robot, cân tự động (để sau)</td></tr>
+      <tr><td><b>Sản xuất</b></td><td>Lệnh SX, công đoạn, cấp NVL theo lô, ghi nhận BTP/TP, phế, dừng máy</td><td>Bảo trì (CMMS) đầy đủ</td></tr>
+      <tr><td><b>Giá thành</b></td><td>Giá định mức, giá thực tế theo lệnh SX, phân bổ chi phí, chênh lệch</td><td>Lập báo cáo tài chính (do MISA đảm nhận)</td></tr>
+      <tr><td><b>Hệ thống</b></td><td>Tài khoản, vai trò, phân quyền, nhật ký, ủy quyền duyệt, kết nối MISA, nền tảng IoT</td><td>SSO doanh nghiệp (tùy chọn sau)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="prose">
+  <h3>Giả định dùng trong tài liệu</h3>
+  <ul>
+    <li>Nhà máy BMT là một pháp nhân. <b>KAVIX và HEIZKA là pháp nhân độc lập</b>, nên được quản lý trong danh mục <i>đối tác</i> (là khách hàng mua thành phẩm mang nhãn của mình) và trong danh mục <i>thương hiệu</i> (để chọn nhãn in, mã nhãn LABEL-K/LABEL-H và quy tắc màu). Đơn của đại lý có thể đứng tên đại lý hoặc pháp nhân thương hiệu. Xem câu hỏi mở số 1.</li>
+    <li>Duyệt <b>theo phân cấp chức danh</b>, không theo hạn mức tiền (theo trả lời của anh/chị).</li>
+    <li>Mã hàng đã có spec ở trạng thái <span class="pill p-ok">Đã phát hành</span> thì không cần Kỹ thuật/QA duyệt BOM khi ra lệnh. Mã mới, hoặc mã đổi cấu trúc, phải qua cổng duyệt spec và BOM trước khi được mua NVL và sản xuất.</li>
+    <li>Đơn vị tính chính: thành phẩm và bán thành phẩm tính bằng <b>mét</b> (quy đổi kg theo kg/km), nguyên liệu tính theo ĐVT mua (kg, bộ, cái, m). Lead time tính theo ngày lịch. Đơn giá chưa gồm VAT và cước.</li>
+  </ul>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="ch" id="hien-trang">
+  <div class="chno">02</div>
+  <h2>Hiện trạng file Excel và cách chuyển thành phân hệ</h2>
+  <p class="lede">File chạy theo một chuỗi: chọn sản lượng, cấu hình, định mức, BOM chi tiết, đề nghị mua. Hai sheet gốc là <code>Nguon_spec</code> và <code>Tham_so</code>. Hệ thống giữ nguyên logic này, nhưng tách thành dữ liệu có phiên bản và có trạng thái duyệt.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Sheet</th><th>Vai trò hiện tại</th><th>Chuyển thành trong phần mềm</th></tr></thead>
+    <tbody>
+      <tr><td><code>Chon_san_luong</code></td><td>Nhập mét, số lô, m/kiện, đóng gói, màu, thương hiệu, vỏ cho 78 SKU; cảnh báo "Cần xác nhận"</td><td>Màn hình <b>Kế hoạch sản xuất theo kỳ</b> (dòng kế hoạch) + bộ kiểm tra hợp lệ trước khi phát hành kế hoạch</td></tr>
+      <tr><td><code>Thiet_ke</code></td><td>Cấu hình sản phẩm: số lõi, cặp, cách điện, vỏ, bước bện, drain, shield, màu, "Duyệt thiết kế"</td><td><b>Spec sản phẩm (có phiên bản)</b> + cổng duyệt Kỹ thuật/QA</td></tr>
+      <tr><td><code>Dinh_muc</code></td><td>Hình học, OD, kg/km từng lớp, Rdc tính và giới hạn, số kiện, khởi động</td><td><b>Bộ tính định mức</b> (chạy trong DB/Edge Function), kết quả lưu theo phiên bản spec</td></tr>
+      <tr><td><code>BOM_chi_tiet</code></td><td>2.798 dòng SKU × vật tư: suất, hao hụt, khởi động, tổng cấp</td><td><b>BOM có phiên bản</b> (bom_headers/bom_lines), cơ sở suất: theo km, theo kiện, theo pallet, theo lô</td></tr>
+      <tr><td><code>Mua_hang</code></td><td>Tổng hợp nhu cầu, tồn, hàng về, dự phòng, MOQ, bội số, giá, lead time, ngày đặt chậm nhất</td><td><b>MRP</b>, sinh <b>PR</b>. Tồn và hàng về lấy tự động từ kho và PO</td></tr>
+      <tr><td><code>Tham_so</code></td><td>Tỷ trọng, phr, phế khởi động, đóng gói, bảng lõi M0.75…A14</td><td><b>Tham số công nghệ có phiên bản</b>, chỉ Kỹ thuật/QA được sửa</td></tr>
+      <tr><td><code>Nguon_spec</code></td><td>Dữ liệu gốc catalog S1/S2, danh mục SKU, danh mục 51 vật tư</td><td><b>Danh mục sản phẩm, lõi, vật tư</b>; nhập ban đầu từ Excel</td></tr>
+      <tr><td><code>Huong_dan</code></td><td>Quy trình 9 bước và cơ sở tính</td><td>Quy tắc nghiệp vụ (mục 16) và hướng dẫn trong ứng dụng</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Phát hiện từ dữ liệu cần xử lý khi chuyển đổi</h3>
+  <div class="grid2">
+    <div class="callout bad" style="margin:0"><b class="t">78/78 SKU đang "Chưa duyệt"</b>Cột <code>Thiet_ke!Q</code> chưa có mã nào được duyệt thiết kế. Theo quy tắc "mã có sẵn đã duyệt spec thì bỏ qua QA", khi go-live phải có một đợt <b>Kỹ thuật/QA rà soát và phát hành spec v1</b> cho các mã đang sản xuất thật. Nếu không, mọi lệnh SX đều bị chặn.</div>
+    <div class="callout warn" style="margin:0"><b class="t">22 SKU có Rdc tính vượt tham chiếu</b>Ví dụ <code>PFR-2C-0p75</code>: Rdc tính 26,014 Ω/km so với giới hạn 26. Ngoài ra 16 SKU AWG chưa có giới hạn Rdc. Hệ thống chặn phát hành spec cho đến khi QA nhập kết quả đo pilot hoặc chấp nhận sai lệch có lý do.</div>
+    <div class="callout warn" style="margin:0"><b class="t">Lead time và MOQ đang bằng 0</b>Cả 51 vật tư đều có lead time 0 ngày và MOQ 0. Đơn giá chưa nhập. MRP sẽ báo "Thiếu dữ liệu" và không tính ngày đặt chậm nhất cho đến khi Mua hàng cập nhật.</div>
+    <div class="callout" style="margin:0"><b class="t">Nhiều tham số đang "tạm tính"</b>Gồm tỷ trọng TCCA, LSZH, silicone, chiều dày AL/PET, phế khởi động. Hệ thống gắn nhãn <span class="pill p-warn">Tạm tính</span> cho các tham số này. Sau giai đoạn IoT, tham số được hiệu chỉnh từ số cân và mét thực.</div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="ch" id="to-chuc">
+  <div class="chno">03</div>
+  <h2>Tổ chức và vai trò người dùng</h2>
+  <p class="lede">Gồm 7 phòng ban, mỗi phòng ban có cấp nhân viên và cấp trưởng phòng. Quyền được gán theo <b>vai trò</b>. Một người có thể giữ nhiều vai trò, ví dụ Trưởng phòng Kỹ thuật kiêm QA.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Phòng ban</th><th>Vai trò hệ thống</th><th>Trách nhiệm chính trên phần mềm</th></tr></thead>
+    <tbody>
+      <tr><td><b>Ban giám đốc</b></td><td><code>BGD</code></td><td>Phê duyệt cấp cuối: kế hoạch kỳ, PO, đề xuất mua tối ưu, điều chỉnh kiểm kê, chốt giá thành kỳ. Xem toàn bộ dashboard</td></tr>
+      <tr><td><b>Kinh doanh</b></td><td><code>KD_NV</code>, <code>KD_TP</code></td><td>Lập SO, theo dõi tiến độ, yêu cầu giao hàng. TP duyệt SO</td></tr>
+      <tr><td><b>Kỹ thuật/QA</b></td><td><code>KT_NV</code>, <code>KT_TP</code>, <code>QC</code></td><td>Spec, BOM, tham số công nghệ, pilot, kiểm tra đầu vào/trong quá trình/thành phẩm, NCR, giải phóng lô</td></tr>
+      <tr><td><b>Kho</b></td><td><code>KHO_NV</code>, <code>THU_KHO</code></td><td>Nhận hàng, nhập/xuất/chuyển kho, in tem QR, kiểm kê, quản lý kho phế liệu</td></tr>
+      <tr><td><b>Mua hàng</b></td><td><code>MUA_NV</code>, <code>MUA_TP</code></td><td>Xử lý PR, lập PO, theo dõi hàng về, quản lý nhà cung cấp và giá. TP lập đề xuất mua tối ưu</td></tr>
+      <tr><td><b>Kế toán</b></td><td><code>KT_KHO</code>, <code>KT_GT</code>, <code>KTT</code></td><td>Đối chiếu kho, nhập chi phí kỳ (nhân công, điện, khấu hao, SXC), tính và chốt giá thành, đồng bộ MISA</td></tr>
+      <tr><td><b>Sản xuất</b></td><td><code>SX_TP</code>, <code>SX_KH</code>, <code>TO_TRUONG</code>, <code>VAN_HANH</code></td><td>Lập kế hoạch và MRP, phát lệnh SX, phân máy, ghi nhận công đoạn trên tablet, ghi phế, dừng máy</td></tr>
+      <tr><td><b>Quản trị hệ thống</b></td><td><code>ADMIN</code></td><td>Tài khoản, vai trò, cấu hình luồng duyệt, danh mục máy, kết nối MISA và IoT</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 4 -->
+<section class="ch" id="kien-truc">
+  <div class="chno">04</div>
+  <h2>Bản đồ phân hệ và luồng dữ liệu</h2>
+  <p class="lede">Đơn bán và đề xuất mua là hai cửa vào. Spec và BOM đã phát hành là điều kiện để chạy MRP và sản xuất. Kho theo lô là xương sống cho truy xuất và giá thành.</p>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  SO["Đơn bán SO<br/>Kinh doanh"] --> ATP{"Đủ tồn TP<br/>khả dụng?"}
+  ATP -->|Đủ| GIU["Giữ hàng<br/>Lệnh giao"]
+  ATP -->|Thiếu| YC["Yêu cầu SX"]
+  YC --> SPEC{"Spec + BOM<br/>đã phát hành?"}
+  SPEC -->|Chưa / mã mới| KT["Kỹ thuật/QA<br/>Spec - Pilot - BOM"]
+  KT --> SPEC
+  SPEC -->|Rồi| KH["Kế hoạch kỳ<br/>Sản xuất"]
+  KH --> MRP["MRP<br/>Dự trù vật tư"]
+  MRP --> PR["PR"]
+  DXM["Đề xuất mua tối ưu<br/>TP Mua"] --> PO
+  PR --> PO["PO<br/>Mua hàng"]
+  PO --> GRN["Nhận hàng + IQC<br/>Nhập kho theo lô"]
+  GRN --> KNL[("Kho NL")]
+  KH --> LSX["Lệnh SX<br/>theo công đoạn"]
+  KNL --> LSX
+  LSX <--> KBTP[("Kho BTP")]
+  LSX --> FQC["FQC"] --> KTP[("Kho TP")]
+  LSX --> KPL[("Kho phế liệu")]
+  KTP --> GIU
+  LSX --> GT["Giá thành<br/>thực tế"]
+  GT --> MISA["MISA"]
+  GRN --> MISA
+  IOT["PLC Siemens<br/>máy đùn, bện, xoắn, in, đo"] -.-> LSX
+  </pre></div>
+</section>
+
+<!-- 5 -->
+<section class="ch" id="p-dathang">
+  <div class="chno">05</div>
+  <h2>Quy trình đặt hàng: đơn bán và đề xuất mua tối ưu</h2>
+  <p class="lede">Hệ thống có hai nguồn phát sinh nhu cầu. <b>Đơn bán (SO)</b> sinh nhu cầu thành phẩm. <b>Đề xuất mua tối ưu</b> do TP Mua chủ động lập, dùng khi muốn gom MOQ, mua lúc giá đồng tốt hoặc bổ sung tồn mục tiêu.</p>
+
+  <h3>5.1 Đơn bán hàng (SO)</h3>
+  <div class="diagram"><pre class="mermaid">
+flowchart TD
+  A["NV Kinh doanh lập SO<br/>khách hàng, thương hiệu nhãn, SKU, mét, ngày giao"] --> B["Hệ thống kiểm tra<br/>SKU, quy tắc màu/vỏ/thương hiệu, công nợ"]
+  B --> C["Gửi duyệt"]
+  C --> D{"TP Kinh doanh"}
+  D -->|Trả lại| A
+  D -->|Duyệt| E{"BGĐ phê duyệt<br/>nếu cấu hình yêu cầu"}
+  E -->|Duyệt| F["ATP: tồn TP Đạt QC trừ hàng đã giữ"]
+  F -->|Đủ| G["Giữ hàng theo lô/bobin<br/>Tạo lệnh giao"]
+  F -->|Thiếu một phần| H["Giữ phần có<br/>Phần thiếu thành Yêu cầu SX"]
+  H --> I{"Spec + BOM<br/>đã phát hành?"}
+  I -->|Có| J["Đưa vào kế hoạch kỳ"]
+  I -->|Không| K["Chuyển Kỹ thuật/QA<br/>quy trình 6"]
+  G --> L["Xuất kho TP, giao hàng<br/>đồng bộ MISA xuất bán"]
+  </pre></div>
+  <div class="prose">
+  <h4>Trường dữ liệu chính của SO</h4>
+  <p>Số SO (tự sinh <code>SO-YYMM-####</code>), khách hàng/đại lý, pháp nhân thương hiệu, thương hiệu in nhãn (KAVIX/HEIZKA), ngày đặt, ngày giao yêu cầu, điều khoản giao, người phụ trách. Mỗi dòng gồm SKU, phiên bản spec, mét đặt, quy cách đóng gói (bobin gỗ/cuộn PE), m/kiện, màu dây đơn (nếu có), đơn giá, ghi chú kỹ thuật.</p>
+  <h4>Quy tắc nghiệp vụ</h4>
+  </div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-SO-01</td><td>Chỉ chọn được SKU có spec ở trạng thái <i>Đã phát hành</i>. Nếu là mã mới, KD tạo <b>yêu cầu mã mới</b> (quy trình 6) và gắn với SO. SO vẫn được duyệt nhưng dòng đó ở trạng thái <span class="pill p-warn">Chờ spec</span>.</td></tr>
+    <tr><td class="br">BR-SO-02</td><td>Ràng buộc nhóm, thương hiệu và vỏ lấy từ file: PFR chỉ KAVIX, vỏ FR-PVC xanh RAL 6037; SFR vỏ LSZH cam RAL 2004; CTL vỏ PVC xám, lõi HDPE trắng/đen. Màu áp dụng theo nhóm kể cả khi đổi thương hiệu.</td></tr>
+    <tr><td class="br">BR-SO-03</td><td>ATP = tồn TP trạng thái <i>Đạt</i> − hàng đã giữ cho SO khác − hàng đang cách ly. Hàng giữ theo từng bobin/cuộn. Không giữ lô <i>Chờ QC</i>.</td></tr>
+    <tr><td class="br">BR-SO-04</td><td>Mét SX yêu cầu = mét thiếu, làm tròn lên theo m/kiện nếu khách yêu cầu kiện chẵn. Mặc định không tự tăng mét (theo quy tắc đóng gói của file).</td></tr>
+    <tr><td class="br">BR-SO-05</td><td>Sửa SO đã duyệt: tạo <b>phiên bản điều chỉnh</b> và duyệt lại từ cấp TP KD. Phần đã giữ hoặc đã có lệnh SX phải được hủy liên kết trước.</td></tr>
+    <tr><td class="br">BR-SO-06</td><td>Kinh doanh xem được tiến độ từng dòng: Đã giữ → Trong kế hoạch → Đang SX (mét đã chạy theo công đoạn) → Chờ QC → Sẵn sàng giao.</td></tr>
+  </tbody></table></div>
+
+  <h3>5.2 Đề xuất mua tối ưu (TP Mua lập)</h3>
+  <div class="prose">
+  <p>Đây là kênh mua <b>không xuất phát từ một kế hoạch cụ thể</b>. Hệ thống gợi ý số lượng, TP Mua điều chỉnh và ghi lý do, BGĐ phê duyệt. Lượng được duyệt chuyển thành PO và được tính vào <i>hàng đang về</i> trong các lần chạy MRP sau. Cách này tránh mua trùng, đúng tinh thần ghi chú "không cộng tồn mục tiêu 2,5 tháng lần hai" trong file.</p>
+  </div>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  A["Hệ thống gợi ý<br/>tồn mục tiêu - tồn - hàng về + nhu cầu đã cam kết"] --> B["TP Mua điều chỉnh SL<br/>chọn lý do: giá, gom MOQ, rủi ro cung ứng"]
+  B --> C["Kế toán xem<br/>ảnh hưởng dòng tiền"]
+  C --> D{"BGĐ"}
+  D -->|Phê duyệt| E["Sinh PO nháp"]
+  D -->|Trả lại| B
+  E --> F["MRP lần sau trừ<br/>vào hàng đang về"]
+  </pre></div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-DXM-01</td><td>Tồn mục tiêu = tiêu thụ bình quân/tháng (lấy từ xuất kho thực tế 3 tháng gần nhất) × số tháng mục tiêu. Mặc định 2,5 tháng, cấu hình riêng cho từng vật tư.</td></tr>
+    <tr><td class="br">BR-DXM-02</td><td>Gợi ý = MAX(0, tồn mục tiêu + nhu cầu MRP đã duyệt chưa cấp − tồn khả dụng − hàng đang về). Sau đó làm tròn theo MOQ và bội số mua.</td></tr>
+    <tr><td class="br">BR-DXM-03</td><td>Nếu TP Mua chỉnh lệch hơn ±20% so với gợi ý thì bắt buộc nhập lý do. Ngưỡng này theo % số lượng, không theo tiền.</td></tr>
+    <tr><td class="br">BR-DXM-04</td><td>Lưu giá tham chiếu tại thời điểm đề xuất, ví dụ giá đồng LME hoặc báo giá NCC, để BGĐ so với lần mua trước.</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 6 -->
+<section class="ch" id="p-spec">
+  <div class="chno">06</div>
+  <h2>Spec sản xuất và BOM: cổng duyệt cho mã hàng</h2>
+  <p class="lede">Đây là điểm phân nhánh quan trọng nhất. <b>Mã có sẵn</b> có spec đã phát hành thì đi thẳng vào kế hoạch. <b>Mã mới</b>, hoặc mã đổi cấu trúc (đổi số sợi, chiều dày, vật liệu, drain/shield), phải qua Kỹ thuật/QA trước khi được mua NVL và làm các bước tiếp theo.</p>
+  <div class="diagram"><pre class="mermaid">
+flowchart TD
+  R["Yêu cầu mã mới<br/>từ KD hoặc KT"] --> S1["KT lập Spec nháp<br/>cấu trúc lõi, cách điện, vỏ, shield, drain, màu"]
+  S1 --> S2["Hệ thống tính định mức<br/>Acu, D bó, K bện, kg/km, OD, Rdc"]
+  S2 --> S3{"Kiểm tra tự động<br/>Rdc, kiện quá tải, ràng buộc màu/vỏ"}
+  S3 -->|Lỗi| S1
+  S3 -->|Đạt hoặc có cảnh báo| P["Lệnh pilot<br/>chạy thử, cân kg/km, đo Rdc, OD, cao áp"]
+  P --> Q["QA nhập kết quả đo<br/>so với định mức"]
+  Q --> A1{"TP Kỹ thuật/QA<br/>duyệt Spec + BOM"}
+  A1 -->|Trả lại| S1
+  A1 -->|Duyệt| A2{"BGĐ phê duyệt<br/>phát hành mã mới"}
+  A2 -->|Phát hành| REL["Spec vN Đã phát hành<br/>BOM vN khóa"]
+  REL --> MUA["Cho phép MRP, PR, PO, LSX"]
+  </pre></div>
+  <div class="grid2">
+    <div class="card"><h4>Trạng thái spec</h4>
+      <p><span class="pill p-mute">Nháp</span> → <span class="pill p-info">Chờ pilot</span> → <span class="pill p-info">Pilot</span> → <span class="pill p-warn">Chờ duyệt</span> → <span class="pill p-ok">Đã phát hành</span> → <span class="pill p-mute">Ngưng dùng</span></p>
+      <p style="margin:0;color:var(--muted);font-size:13.5px">Spec đã phát hành không sửa trực tiếp được. Mọi thay đổi tạo phiên bản mới, ví dụ v2. Lệnh SX đang chạy giữ phiên bản cũ.</p></div>
+    <div class="card"><h4>Mức thay đổi</h4>
+      <p style="margin:0 0 6px"><b>Nhỏ</b> (đổi m/kiện, nhãn, ghi chú): TP KT duyệt, không cần pilot.</p>
+      <p style="margin:0 0 6px"><b>Lớn</b> (đổi cấu trúc, vật liệu, chiều dày): đi lại đủ luồng có pilot.</p>
+      <p style="margin:0;color:var(--muted);font-size:13.5px">Đổi tham số công nghệ dùng chung (tỷ trọng, phr) tạo phiên bản tham số mới. Hệ thống liệt kê các SKU bị ảnh hưởng để KT quyết định tính lại.</p></div>
+  </div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-SP-01</td><td>Khi chưa có spec <i>Đã phát hành</i>: MRP chỉ chạy được ở chế độ <b>sơ bộ</b> (theo hướng dẫn bước 7 của file) và không sinh PR chính thức. Không được phát lệnh SX. Riêng lệnh pilot được cấp NVL với giới hạn mét do KT đặt.</td></tr>
+    <tr><td class="br">BR-SP-02</td><td>Kiểm tra bắt buộc trước khi gửi duyệt, chuyển từ cột "Cần xác nhận" của file: Rdc tính ≤ giới hạn; kg/kiện ≤ <code>maxPack</code> (100 kg); số sợi > 50 thì phải xác nhận quy trình bện nhiều cấp; "Drain Không" chỉ áp dụng cho FR KAVIX; số lõi 1 thì vỏ phải là "Không".</td></tr>
+    <tr><td class="br">BR-SP-03</td><td>Rdc vượt giới hạn: chỉ được phát hành khi có kết quả đo pilot đạt, hoặc phiếu <b>chấp nhận sai lệch</b> do TP KT/QA ký kèm lý do.</td></tr>
+    <tr><td class="br">BR-SP-04</td><td>BOM phát hành cùng spec, ghi rõ cơ sở suất (theo km, theo kiện, theo pallet, theo lô), hao hụt %, phế khởi động. Định mức từ pilot được ưu tiên hơn định mức lý thuyết nếu QA chọn.</td></tr>
+    <tr><td class="br">BR-SP-05</td><td>Mã vật tư mới (ví dụ phụ gia SIL-ADD đã chốt NCC) phải được tạo trong danh mục NVL và có ít nhất một NCC trước khi phát hành BOM.</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 7 -->
+<section class="ch" id="p-mrp">
+  <div class="chno">07</div>
+  <h2>Kế hoạch sản xuất và dự trù vật tư (MRP)</h2>
+  <p class="lede">Thay cho sheet <code>Chon_san_luong</code> và <code>Mua_hang</code>. Mỗi kỳ là một kế hoạch riêng có mã và phiên bản. Hệ thống không gộp nhiều kỳ vào một cột mét (bước 9 trong file).</p>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  A["Nguồn nhu cầu<br/>Yêu cầu SX từ SO + SX tồn kho"] --> B["SX_KH lập kế hoạch kỳ<br/>SKU, mét, số lô, m/kiện, ngày cần NVL"]
+  B --> C["Kiểm tra hợp lệ<br/>Cần xác nhận, kiện quá tải, thiếu lô"]
+  C --> D["Chạy MRP<br/>BOM × km + hao hụt + khởi động + đóng gói"]
+  D --> E["Thiếu ròng theo vật tư<br/>trừ tồn khả dụng, hàng về kịp"]
+  E --> F["Làm tròn MOQ, bội số<br/>Ngày đặt chậm nhất"]
+  F --> G{"TP SX duyệt"}
+  G --> H{"BGĐ duyệt kế hoạch"}
+  H --> I["Sinh PR theo NCC<br/>Sinh LSX nháp theo SKU/lô"]
+  </pre></div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-KH-01</td><td>Tồn khả dụng = tồn kho NL ở trạng thái <i>Đạt</i> − lượng đã cấp phát cho LSX khác đã phát lệnh. Lô <i>Chờ QC</i> không được tính, nhưng được hiển thị riêng ở cột "Đang kiểm".</td></tr>
+    <tr><td class="br">BR-KH-02</td><td>Hàng về kịp = số lượng PO còn lại có ngày về dự kiến ≤ ngày cần vật tư.</td></tr>
+    <tr><td class="br">BR-KH-03</td><td>Giá trống không được hiểu là giá 0. Thành tiền hiện "Cập nhật giá" và không cộng vào ngân sách.</td></tr>
+    <tr><td class="br">BR-KH-04</td><td>Kế hoạch đã duyệt bị khóa. Muốn sửa thì tạo phiên bản điều chỉnh. Hệ thống tính phần chênh nhu cầu và chỉ sinh PR bổ sung cho phần tăng thêm.</td></tr>
+    <tr><td class="br">BR-KH-05</td><td>Máy đùn PVC/LSZH/PE dùng chung cho bọc cách điện HDPE/PVC và bọc vỏ. Kế hoạch phải hiển thị tải máy theo giờ để tránh xung đột.</td></tr>
+    <tr><td class="br">BR-KH-06</td><td>Mỗi lần chạy MRP được lưu thành ảnh chụp (mrp_run) để đối chiếu sau, kèm phiên bản BOM và tham số đã dùng.</td></tr>
+  </tbody></table></div>
+  <p>Mockup <b>M3 Kế hoạch và MRP</b> ở mục 20 tính trực tiếp bằng BOM thật của 4 SKU lấy từ file.</p>
+</section>
+
+<!-- 8 -->
+<section class="ch" id="p-mua">
+  <div class="chno">08</div>
+  <h2>Mua hàng, nhận hàng và kiểm tra đầu vào</h2>
+  <div class="diagram"><pre class="mermaid">
+flowchart TD
+  PR["PR từ MRP<br/>hoặc PR thủ công"] --> TPSX{"TP SX duyệt PR"}
+  TPSX --> NV["NV Mua gom PR theo NCC<br/>lập PO, chọn giá, ngày về"]
+  DXM["Đề xuất mua tối ưu<br/>đã BGĐ phê duyệt"] --> NV
+  NV --> TPM{"TP Mua duyệt PO"}
+  TPM --> BGD{"BGĐ phê duyệt PO"}
+  BGD --> SEND["Gửi PO cho NCC<br/>theo dõi xác nhận, ngày về"]
+  SEND --> GRN["Kho nhận hàng<br/>đếm, cân, ghi số lô NCC, chụp COA"]
+  GRN --> LOT["Tạo lô nội bộ + tem QR<br/>trạng thái Chờ QC"]
+  LOT --> IQC{"QC kiểm tra đầu vào<br/>COA, tỷ trọng, Ø sợi, ngoại quan"}
+  IQC -->|Đạt| OK["Lô Đạt → tồn khả dụng"]
+  IQC -->|Không đạt| NG["Cách ly, NCR<br/>trả NCC hoặc nhận có điều kiện"]
+  OK --> MISA["Phiếu nhập mua → MISA"]
+  </pre></div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-MH-01</td><td>Một PO chỉ có một NCC. Một PO có thể gom nhiều PR. Mỗi dòng PO giữ liên kết về PR/đề xuất gốc.</td></tr>
+    <tr><td class="br">BR-MH-02</td><td>Nhận hàng vượt PO quá dung sai cấu hình theo vật tư (mặc định +5%) phải được TP Mua xác nhận.</td></tr>
+    <tr><td class="br">BR-MH-03</td><td>Các mã DCBP, SIL-ADD, màu, mực, compound, băng phải chốt <b>mã hàng NCC</b> trước khi đặt (bước 8 của file). PO thiếu mã NCC không gửi duyệt được.</td></tr>
+    <tr><td class="br">BR-MH-04</td><td>Vật tư có hạn dùng (silicone HCR, DCBP paste, mực) bắt buộc nhập NSX/HSD khi nhận hàng. Lô còn dưới 30 ngày (cấu hình được) hiện cảnh báo.</td></tr>
+    <tr><td class="br">BR-MH-05</td><td>Tỷ trọng thực trên COA khác tham số hơn ±3% thì tạo cảnh báo cho KT để xem xét cập nhật tham số (ví dụ rhoTCCA đang tạm tính 3,7).</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 9 -->
+<section class="ch" id="p-sx">
+  <div class="chno">09</div>
+  <h2>Lệnh sản xuất và theo dõi công đoạn</h2>
+  <p class="lede">Mỗi lệnh SX (LSX) gắn một SKU, một phiên bản spec/BOM và một quy trình công đoạn (routing). Mỗi công đoạn tạo ra lô bán thành phẩm có mã riêng. Đây là cơ sở để truy xuất và để nối dữ liệu máy sau này.</p>
+  <h3>9.1 Quy trình công đoạn theo nhóm sản phẩm</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Công đoạn</th><th>Máy</th><th>Đầu vào</th><th>Đầu ra (lô)</th><th>PFR</th><th>SFR</th><th>CFR</th><th>CTL</th><th>SIF/PVC</th></tr></thead>
+    <tbody>
+      <tr><td>CĐ0 Phối trộn silicone</td><td>Cán trộn (chưa có trong danh sách máy)</td><td>SIL-9710G, DCBP-50, màu SI-*</td><td>Mẻ hỗn hợp <code>MX-</code></td><td>✓</td><td>✓</td><td>✓</td><td>–</td><td>SIF</td></tr>
+      <tr><td>CĐ1 Bện ruột dẫn</td><td>Máy bện</td><td>CU-024 / TC-020 / TC-024</td><td>Lõi đồng bện <code>CB-</code> (m, kg)</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+      <tr><td>CĐ2 Bọc cách điện</td><td>Máy đùn silicone hoặc máy đùn PVC/LSZH/PE</td><td>CB- + mẻ MX- hoặc HDPE-I/PVC-I + màu</td><td>Lõi bọc theo màu <code>LB-</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+      <tr><td>CĐ3 Xoắn cặp / ghép lõi</td><td>Máy xoắn</td><td>LB- + PP-FILL, PET-20, drain TCCA</td><td>Bó lõi <code>BL-</code></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>–</td></tr>
+      <tr><td>CĐ4 Quấn băng chống nhiễu</td><td>Đầu quấn băng (xác nhận vị trí máy)</td><td>BL- + ALP-20/25/40/60</td><td>Bó lõi có shield <code>BS-</code></td><td>–</td><td>✓</td><td>–</td><td>✓</td><td>–</td></tr>
+      <tr><td>CĐ5 Bọc vỏ + in</td><td>Máy đùn PVC/LSZH/PE + máy in + máy đo chiều dày</td><td>BL-/BS- + PVC-FR/LSZH-S/PVC-S + màu + TALC + INK</td><td>Cáp hoàn thiện</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>in trên CĐ2</td></tr>
+      <tr><td>CĐ6 Kiểm tra + đóng gói</td><td>QC: Rdc, cao áp, OD</td><td>Cáp + REEL-W/PE-PACK/PP-STRAP/LABEL/END-TAPE</td><td>Bobin/cuộn TP <code>BB-</code> + tem QR</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    </tbody>
+  </table></div>
+  <h3>9.2 Luồng lệnh SX</h3>
+  <div class="diagram"><pre class="mermaid">
+flowchart TD
+  A["LSX nháp từ kế hoạch đã duyệt"] --> B{"Spec/BOM<br/>đã phát hành?"}
+  B -->|Không| X["Chặn<br/>chuyển quy trình 6"]
+  B -->|Có| C["TP SX phát lệnh<br/>phân máy, ca, ngày"]
+  C --> D["Phiếu cấp NVL theo BOM<br/>Kho gợi ý lô theo FEFO"]
+  D --> E["Tổ trưởng quét QR lô NVL<br/>tại máy"]
+  E --> F["Vận hành ghi nhận công đoạn<br/>bắt đầu, mét ra, kg phế, dừng máy"]
+  F --> G["Nhập kho BTP<br/>tạo lô CB-/LB-/BL-"]
+  G --> H["Công đoạn tiếp theo<br/>quét lô BTP"]
+  H --> I["FQC đo Rdc, OD, cao áp"]
+  I -->|Đạt| J["Đóng gói, in tem QR<br/>nhập kho TP"]
+  I -->|Không đạt| K["NCR: sửa, hạ cấp<br/>hoặc nhập kho phế"]
+  J --> L["Đóng LSX<br/>trả NVL thừa, chốt giá thành"]
+  </pre></div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-SX-01</td><td>Cấp NVL vượt định mức BOM (tính cả hao hụt và khởi động) quá dung sai (mặc định 3%) phải có <b>phiếu cấp bổ sung</b>: Tổ trưởng đề nghị, TP SX duyệt, ghi mã nguyên nhân.</td></tr>
+    <tr><td class="br">BR-SX-02</td><td>Công đoạn sau chỉ nhận lô BTP đã được ghi nhận ở công đoạn trước và đúng SKU/màu. Quét sai mã thì báo lỗi ngay trên tablet.</td></tr>
+    <tr><td class="br">BR-SX-03</td><td>Phế được ghi theo <b>mã nguyên nhân</b> (khởi động, đứt dây, sai OD, sai màu, lỗi in, cao áp hỏng, đuôi bobin…), theo công đoạn, máy, ca và người vận hành. Phế được nhập kho phế liệu bằng kg với <b>giá trị 0</b> (xem mục 12).</td></tr>
+    <tr><td class="br">BR-SX-04</td><td>Dừng máy quá 5 phút (cấu hình được) bắt buộc chọn lý do: chờ NVL, đổi màu, thay khuôn, hỏng máy, vệ sinh/purge, chờ QC… Từ giai đoạn IoT, PLC tự phát hiện dừng máy và người vận hành chỉ chọn lý do.</td></tr>
+    <tr><td class="br">BR-SX-05</td><td>Một LSX có thể tách nhiều lô chạy (số lô trong file). Phế khởi động định mức được tính theo số lô chạy thực tế.</td></tr>
+    <tr><td class="br">BR-SX-06</td><td>Đóng LSX khi: tất cả công đoạn hoàn tất, TP đã nhập kho hoặc đã có NCR, NVL thừa đã trả kho. Sau khi đóng thì giá thành thực tế được tính.</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 10 -->
+<section class="ch" id="p-kho">
+  <div class="chno">10</div>
+  <h2>Quản lý kho và lô</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Kho</th><th>Đối tượng</th><th>ĐVT quản lý</th><th>Đơn vị lô</th><th>Nghiệp vụ đặc thù</th></tr></thead>
+    <tbody>
+      <tr><td><b>KNL</b> Nguyên liệu</td><td>51 mã vật tư: đồng, compound, phụ gia, băng, bao bì</td><td>kg / bộ / cái / m</td><td>Lô NCC + lô nội bộ; bao/cuộn có QR</td><td>IQC, FEFO, hạn dùng, cách ly, trả NCC</td></tr>
+      <tr><td><b>KBTP</b> Bán thành phẩm</td><td>Mẻ MX-, lõi đồng CB-, lõi bọc LB-, bó lõi BL-/BS-</td><td>m (kèm kg)</td><td>Theo bobin trung gian, có QR</td><td>Nhập/xuất giữa công đoạn, không bán</td></tr>
+      <tr><td><b>KTP</b> Thành phẩm</td><td>78 SKU × thương hiệu nhãn</td><td>m, kiện</td><td>Bobin/cuộn BB-, có QR</td><td>FQC giải phóng, giữ hàng cho SO, xuất bán</td></tr>
+      <tr><td><b>KPL</b> Phế liệu</td><td>Phế đồng, phế silicone, phế PVC/LSZH/PE, purge, cáp lỗi</td><td>kg</td><td>Theo bao/ngày/công đoạn</td><td>Giá trị 0; xuất bán phế cần BGĐ phê duyệt</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-KHO-01</td><td>Mọi biến động kho ghi vào <b>sổ cái kho bất biến</b> (stock_moves). Chứng từ đã ghi sổ không sửa được, chỉ hủy bằng chứng từ đảo.</td></tr>
+    <tr><td class="br">BR-KHO-02</td><td>Trạng thái lô: <span class="pill p-info">Chờ QC</span> <span class="pill p-ok">Đạt</span> <span class="pill p-warn">Cách ly</span> <span class="pill p-bad">Không đạt</span> <span class="pill p-mute">Hết</span>. Chỉ lô <i>Đạt</i> được cấp cho SX hoặc giao bán.</td></tr>
+    <tr><td class="br">BR-KHO-03</td><td>Gợi ý lô xuất theo FEFO (hết hạn trước xuất trước) với vật tư có hạn dùng, FIFO với vật tư khác. Kho được chọn lô khác nhưng phải ghi lý do.</td></tr>
+    <tr><td class="br">BR-KHO-04</td><td>Tem QR mã hóa: mã lô, mã hàng, số lượng, ĐVT, ngày, URL tra cứu. Thành phẩm in kèm thương hiệu (KAVIX/HEIZKA) theo mẫu nhãn của từng pháp nhân.</td></tr>
+    <tr><td class="br">BR-KHO-05</td><td>Kiểm kê theo kỳ hoặc theo vị trí bằng quét QR. Chênh lệch tạo phiếu điều chỉnh: Thủ kho lập, Kế toán kho kiểm tra, BGĐ phê duyệt.</td></tr>
+    <tr><td class="br">BR-KHO-06</td><td>Quy đổi m ↔ kg cho BTP/TP theo kg/km của phiên bản spec. Cân thực tế khi nhập kho BTP được lưu để hiệu chỉnh định mức sau này.</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 11 -->
+<section class="ch" id="p-trace">
+  <div class="chno">11</div>
+  <h2>Truy xuất nguồn gốc</h2>
+  <p class="lede">Mỗi lần công đoạn tiêu thụ một lô để tạo lô mới, hệ thống ghi một cạnh <b>cha → con</b> kèm số lượng vào bảng <code>lot_genealogy</code>. Truy xuất ngược là đi từ bobin thành phẩm về lô đồng/compound và PO/NCC. Truy xuất xuôi là đi từ một lô NVL lỗi ra danh sách bobin và khách hàng bị ảnh hưởng, phục vụ thu hồi.</p>
+  <div class="diagram"><pre class="mermaid">
+flowchart RL
+  BB["BB-…-007<br/>Bobin TP 500 m<br/>SO-2610-0012"] --> V["CĐ5 Bọc vỏ<br/>EXT-TP-01, ca B"]
+  V --> BL["BL-…-022<br/>Bó lõi 2 lõi"]
+  V --> PF["PVC-FR lô PF-2609-031"]
+  V --> PG["PF-G lô màu"]
+  BL --> LBN["LB-…-014<br/>Lõi bọc nâu"]
+  BL --> LBT["LB-…-015<br/>Lõi bọc trắng"]
+  LBN --> MX["MX-…-006<br/>Mẻ silicone"]
+  MX --> SIL["SIL-9710G<br/>lô NCC"]
+  MX --> DC["DCBP-50 lô"]
+  LBN --> CB["CB-…-009<br/>Lõi đồng bện"]
+  CB --> CU["CU-024<br/>lô NCC + COA<br/>PO-2609-044"]
+  </pre></div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-TX-01</td><td>Một lô con có nhiều lô cha (ghép lõi). Một lô cha có thể đi vào nhiều lô con (một cuộn đồng dùng cho nhiều lõi). Lượng phân bổ ghi theo thực tế quét.</td></tr>
+    <tr><td class="br">BR-TX-02</td><td>Kết quả truy xuất hiển thị cả: máy, ca, người vận hành, thông số máy trong khoảng thời gian chạy (từ giai đoạn IoT), kết quả QC từng công đoạn.</td></tr>
+    <tr><td class="br">BR-TX-03</td><td>Mục tiêu hiệu năng: truy xuất 1 bobin dưới 2 giây, truy xuất xuôi 1 lô NVL dưới 5 giây với dữ liệu 3 năm.</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 12 -->
+<section class="ch" id="p-gia">
+  <div class="chno">12</div>
+  <h2>Giá thành sản xuất</h2>
+  <p class="lede">Theo phương án B: <b>giá định mức</b> dùng cho kế hoạch và báo giá, <b>giá thực tế theo lệnh SX</b> dùng để đánh giá hiệu quả. Hệ thống phân tích chênh lệch theo từng yếu tố.</p>
+
+  <h3>12.1 Tư vấn phương pháp tính giá xuất kho</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Tiêu chí</th><th>Bình quân gia quyền di động (tức thời)</th><th>Bình quân cuối kỳ</th><th>FIFO</th><th>Đích danh theo lô</th></tr></thead>
+    <tbody>
+      <tr><td>Có giá thực tế ngay khi đóng LSX</td><td><span class="pill p-ok">Có</span></td><td><span class="pill p-bad">Chờ cuối tháng</span></td><td><span class="pill p-ok">Có</span></td><td><span class="pill p-ok">Có</span></td></tr>
+      <tr><td>Phản ánh biến động giá đồng</td><td>Làm mượt hợp lý</td><td>Làm mượt cả tháng</td><td>Theo lớp nhập</td><td>Chính xác theo lô</td></tr>
+      <tr><td>Độ phức tạp khi xuất lẻ, trả lại, điều chỉnh</td><td>Thấp</td><td>Thấp</td><td>Cao (tính lại lớp)</td><td>Cao</td></tr>
+      <tr><td>Đối chiếu được với MISA</td><td><span class="pill p-ok">MISA hỗ trợ</span></td><td><span class="pill p-ok">MISA hỗ trợ</span></td><td><span class="pill p-ok">MISA hỗ trợ</span></td><td><span class="pill p-warn">Khó đồng bộ</span></td></tr>
+      <tr><td>Phù hợp quản lý lô và truy xuất</td><td>Có, vì lô dùng cho số lượng, giá đi theo mã</td><td>Có</td><td>Có</td><td>Có</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout ok">
+    <b class="t">Đề xuất: bình quân gia quyền di động theo mã vật tư, theo kho</b>
+    Lô dùng để quản lý <b>số lượng và truy xuất</b>, còn giá vốn đi theo mã vật tư. Có ba lý do. (1) Giá thành thực tế có ngay khi đóng LSX, không phải chờ khóa sổ tháng. (2) Giá đồng biến động mạnh, bình quân di động phản ánh được xu hướng mà không làm giá thành giữa các lệnh trong cùng tuần chênh nhau vô lý. (3) MISA hỗ trợ phương pháp này, nên hai hệ thống chạy cùng phương pháp và đối chiếu được giá trị kho hằng tháng.
+    <br><br>Kèm theo, hệ thống có báo cáo quản trị <b>"giá đồng theo lô thực dùng"</b>, giúp BGĐ biết lô hàng nào dùng đồng giá cao. Báo cáo này không ảnh hưởng sổ sách. Phương pháp tính giá phải được Kế toán trưởng xác nhận và áp dụng nhất quán trong năm tài chính.
+  </div>
+
+  <h3>12.2 Cấu trúc giá thành</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Yếu tố</th><th>Định mức</th><th>Thực tế theo LSX</th><th>Cơ sở phân bổ</th></tr></thead>
+    <tbody>
+      <tr><td><b>NVL trực tiếp</b> (đồng, compound, màu, băng, drain, độn)</td><td>BOM × km × giá chuẩn kỳ</td><td>Σ lượng xuất thực theo lô × giá bình quân tại thời điểm xuất − trả kho</td><td>Trực tiếp theo LSX</td></tr>
+      <tr><td><b>Vật tư đóng gói</b> (bobin, PE, đai, nhãn, pallet)</td><td>Theo số kiện/pallet</td><td>Xuất thực</td><td>Trực tiếp</td></tr>
+      <tr><td><b>Nhân công trực tiếp</b></td><td>Giờ công chuẩn/km × đơn giá giờ</td><td>Quỹ lương SX kỳ phân bổ</td><td>Giờ chạy máy theo LSX (từ tablet, sau đó từ PLC)</td></tr>
+      <tr><td><b>Điện năng</b></td><td>kWh chuẩn/km × giá điện</td><td>Hóa đơn điện kỳ</td><td>Giai đoạn 1: giờ máy × công suất định mức. Giai đoạn IoT: kWh đo theo máy</td></tr>
+      <tr><td><b>Khấu hao máy</b></td><td>Khấu hao/giờ máy</td><td>Khấu hao kỳ (từ MISA)</td><td>Giờ máy theo từng máy</td></tr>
+      <tr><td><b>Chi phí SX chung khác</b></td><td>Tỷ lệ chuẩn</td><td>Tập hợp kỳ</td><td>Giờ máy hoặc kg đồng</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>12.3 Phế phẩm: không ghi giảm giá thành</h3>
+  <div class="prose">
+  <ul>
+    <li>Phế nhập kho phế liệu bằng <b>kg với giá trị 0</b>. Toàn bộ chi phí NVL đã tiêu hao nằm trong giá thành của mét thành phẩm đạt, nên phế càng nhiều thì giá thành/mét càng cao. Như vậy phế lộ ra trên mọi báo cáo.</li>
+    <li>Tách phế <b>trong định mức</b> (khởi động, hao hụt % của BOM) và phế <b>vượt định mức</b>. Phần vượt hiện thành chênh lệch đỏ theo LSX, máy, ca, người vận hành và mã nguyên nhân.</li>
+    <li>Khi bán phế liệu, tiền thu được ghi vào thu nhập khác, không quay lại giảm giá thành LSX. Ghi chú kế toán: theo VAS 02, chi phí NVL và nhân công vượt mức bình thường không tính vào giá gốc hàng tồn kho mà ghi vào giá vốn trong kỳ. Kế toán trưởng xác nhận cách hạch toán phần vượt định mức trên MISA.</li>
+  </ul>
+  </div>
+  <div class="tbl"><table><tbody>
+    <tr><td class="br">BR-GT-01</td><td>Giá định mức tính cho mỗi phiên bản spec và mỗi kỳ giá chuẩn (Kế toán giá thành cập nhật giá chuẩn đầu tháng hoặc khi giá đồng biến động quá ngưỡng %).</td></tr>
+    <tr><td class="br">BR-GT-02</td><td>Chênh lệch NVL tách làm hai: <b>chênh lượng</b> = (lượng thực − lượng định mức) × giá chuẩn; <b>chênh giá</b> = (giá thực − giá chuẩn) × lượng thực.</td></tr>
+    <tr><td class="br">BR-GT-03</td><td>Chốt giá thành kỳ: KT giá thành lập, KTT duyệt, BGĐ phê duyệt. Sau khi chốt, LSX của kỳ bị khóa, giá trị BTP dở dang được chuyển kỳ.</td></tr>
+    <tr><td class="br">BR-GT-04</td><td>BTP dở dang cuối kỳ được đánh giá theo NVL thực đã tiêu hao cho lô BTP, cộng chi phí chế biến theo giờ máy đã chạy.</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 13 -->
+<section class="ch" id="p-nvl">
+  <div class="chno">13</div>
+  <h2>Danh mục nguyên vật liệu và tham số công nghệ</h2>
+  <p class="lede">Nhập ban đầu 51 mã từ <code>Nguon_spec</code>. Mỗi mã có thông tin kỹ thuật (do KT quản lý) và thông tin mua (do Mua hàng quản lý), tách quyền sửa.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Nhóm</th><th>Mã trong file</th><th>Thuộc tính đặc thù</th></tr></thead>
+    <tbody>
+      <tr><td>Kim loại dẫn</td><td>CU-024, TC-020, TC-024, TCCA-020</td><td>Ø sợi, tỷ trọng, điện trở suất, COA bắt buộc</td></tr>
+      <tr><td>Compound cách điện/vỏ</td><td>SIL-9710G, HDPE-I, PVC-I, PVC-FR, LSZH-S, PVC-S</td><td>Tỷ trọng, hệ carrier tương thích màu, hạn dùng (HCR)</td></tr>
+      <tr><td>Phụ gia, lưu hóa</td><td>DCBP-50, SIL-ADD, TALC</td><td>phr, hạn dùng, điều kiện bảo quản</td></tr>
+      <tr><td>Màu</td><td>SI-C0…C4, SI-W, HD-C0/C1, HD-W/B, PI-C0…C4, LS-G/O, PF-G/O, PV-G/O, PV-GR</td><td>Hệ nhựa, mã RAL, sơ đồ màu lõi. Mã màu cũ giữ riêng để không lẫn tồn</td></tr>
+      <tr><td>Băng, độn</td><td>ALP-20/25/40/60, PET-20, PP-FILL</td><td>Khổ, chiều dày Al/PET, keo g/m²</td></tr>
+      <tr><td>In, vệ sinh</td><td>INK, SOLVENT, PURGE</td><td>Tương thích máy in/máy đùn</td></tr>
+      <tr><td>Đóng gói</td><td>REEL-W, PE-PACK, PP-STRAP, LABEL-K, LABEL-H, END-TAPE, PALLET</td><td>Tải trọng bobin, kiện/pallet, mẫu nhãn theo thương hiệu</td></tr>
+    </tbody>
+  </table></div>
+  <div class="prose">
+  <h4>Thông tin mua theo từng NCC (bảng material_suppliers)</h4>
+  <p>Mã hàng NCC, quy cách mua, MOQ, bội số mua, lead time (ngày lịch), đơn giá hiện hành và lịch sử giá, NCC ưu tiên, dung sai nhận hàng, tồn an toàn, số tháng tồn mục tiêu.</p>
+  <h4>Tham số công nghệ</h4>
+  <p>Gồm 59 tham số trong <code>Tham_so</code> (rhoCu 8,89; rhoSi 1,45; dcPhr 1,5; startSi 2 kg/lần/lõi; maxPack 100 kg; pitchRef 30 mm…) và bảng lõi (M0.75…M6, A20…A14). Mỗi tham số có: giá trị, đơn vị, căn cứ, nhãn <i>Tạm tính</i> hoặc <i>Đã xác nhận</i>, người xác nhận và ngày. Tập tham số được quản lý theo phiên bản. Spec phát hành tham chiếu đến một phiên bản tham số cố định.</p>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="ch" id="p-tk">
+  <div class="chno">14</div>
+  <h2>Quản lý tài khoản và phân quyền</h2>
+  <div class="grid2">
+    <div class="card"><h4>Tài khoản</h4><ul style="margin:0">
+      <li>Đăng nhập bằng email công ty và mật khẩu (Supabase Auth). Bật xác thực 2 lớp bắt buộc cho BGĐ, KTT và ADMIN.</li>
+      <li>Công nhân vận hành đăng nhập tablet bằng <b>mã nhân viên + PIN</b> hoặc quét thẻ QR, gắn với máy và ca.</li>
+      <li>Vòng đời tài khoản: Mời → Kích hoạt → Tạm khóa → Ngưng. Không xóa cứng tài khoản để giữ lịch sử.</li>
+      <li>Khóa tài khoản sau 5 lần sai mật khẩu. Phiên làm việc trên tablet tự hết hạn khi đổi ca.</li></ul></div>
+    <div class="card"><h4>Phân quyền</h4><ul style="margin:0">
+      <li>Theo mô hình <b>vai trò → quyền</b> (phân hệ × hành động: Xem, Tạo, Sửa, Duyệt, Xuất file, Cấu hình).</li>
+      <li>Giới hạn dữ liệu theo phạm vi: kho được giao, máy/ca được giao, khách hàng được giao (KD).</li>
+      <li>Giá mua và giá thành chỉ hiện với Mua, Kế toán, BGĐ. Sản xuất và Kho chỉ thấy số lượng.</li>
+      <li>Thực thi ở tầng cơ sở dữ liệu bằng <b>Row Level Security</b> của Supabase, không chỉ ẩn trên giao diện.</li></ul></div>
+    <div class="card"><h4>Ủy quyền và nhật ký</h4><ul style="margin:0">
+      <li>Người duyệt có thể ủy quyền có thời hạn cho người cùng cấp hoặc cấp trên. Mọi duyệt ủy quyền đều ghi "thay mặt".</li>
+      <li>Nhật ký thao tác (audit log): ai, lúc nào, bản ghi nào, giá trị trước và sau. Lưu tối thiểu 5 năm.</li></ul></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="ch" id="p-duyet">
+  <div class="chno">15</div>
+  <h2>Ma trận duyệt theo phân cấp</h2>
+  <p class="lede">Duyệt theo chức danh, không theo hạn mức tiền. ADMIN cấu hình được bước nào bật hoặc tắt cho từng loại chứng từ, nhưng không bỏ được bước của người lập.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Chứng từ</th><th>Người lập</th><th>Cấp 1 · Kiểm tra</th><th>Cấp 2 · Duyệt</th><th>Cấp 3 · Phê duyệt</th></tr></thead>
+    <tbody>
+      <tr><td>Đơn bán (SO)</td><td>KD_NV</td><td>Hệ thống (ràng buộc SKU, tồn)</td><td>KD_TP</td><td>BGĐ <span class="tag">(tùy chọn)</span></td></tr>
+      <tr><td>Yêu cầu mã mới</td><td>KD_NV / KT_NV</td><td>—</td><td>KT_TP tiếp nhận</td><td>—</td></tr>
+      <tr><td>Spec + BOM mã mới / thay đổi lớn</td><td>KT_NV</td><td>QC (kết quả pilot)</td><td>KT_TP</td><td>BGĐ</td></tr>
+      <tr><td>Thay đổi nhỏ spec, tham số</td><td>KT_NV</td><td>—</td><td>KT_TP</td><td>—</td></tr>
+      <tr><td>Kế hoạch SX kỳ + MRP</td><td>SX_KH</td><td>—</td><td>SX_TP</td><td>BGĐ</td></tr>
+      <tr><td>PR</td><td>Hệ thống / SX_KH</td><td>—</td><td>SX_TP</td><td>—</td></tr>
+      <tr><td>Đề xuất mua tối ưu</td><td>MUA_TP</td><td>KTT (dòng tiền, xem)</td><td>—</td><td>BGĐ</td></tr>
+      <tr><td>PO</td><td>MUA_NV</td><td>—</td><td>MUA_TP</td><td>BGĐ</td></tr>
+      <tr><td>Lệnh SX (mã đã phát hành)</td><td>SX_KH</td><td>Hệ thống (spec, tồn NVL)</td><td>SX_TP phát lệnh</td><td>—</td></tr>
+      <tr><td>Cấp NVL bổ sung vượt định mức</td><td>TO_TRUONG</td><td>—</td><td>SX_TP</td><td>— <span class="tag">(KT_TP xem nguyên nhân)</span></td></tr>
+      <tr><td>NCR / chấp nhận sai lệch</td><td>QC</td><td>—</td><td>KT_TP</td><td>BGĐ nếu giao khách</td></tr>
+      <tr><td>Điều chỉnh kiểm kê</td><td>THU_KHO</td><td>KT_KHO</td><td>—</td><td>BGĐ</td></tr>
+      <tr><td>Xuất bán / hủy phế liệu</td><td>THU_KHO</td><td>KT_KHO</td><td>—</td><td>BGĐ</td></tr>
+      <tr><td>Chốt giá thành kỳ</td><td>KT_GT</td><td>—</td><td>KTT</td><td>BGĐ</td></tr>
+    </tbody>
+  </table></div>
+  <div class="prose">
+  <h4>Quy tắc chung của luồng duyệt</h4>
+  <ul>
+    <li>Người lập không tự duyệt chứng từ của mình, kể cả khi có quyền duyệt.</li>
+    <li>Trả lại phải nhập lý do. Chứng từ quay về người lập ở trạng thái <i>Nháp</i> và giữ toàn bộ lịch sử bình luận.</li>
+    <li>Thông báo trong ứng dụng và qua email khi có việc chờ duyệt. Chứng từ chờ quá 24 giờ được nhắc lại, quá 48 giờ được báo lên cấp trên.</li>
+    <li>Mỗi bước duyệt ghi lại phiên bản dữ liệu tại thời điểm duyệt (hash), nên sửa sau khi duyệt sẽ bị phát hiện.</li>
+  </ul>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="ch" id="quy-tac">
+  <div class="chno">16</div>
+  <h2>Quy tắc tính toán chuyển từ Excel</h2>
+  <p class="lede">Đây là các công thức hệ thống phải tính đúng như file. Kiểm thử chấp nhận: kết quả của 78 SKU phải khớp file bản 3.0 với sai số ≤ 0,01%.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Mã</th><th>Nội dung</th><th>Công thức</th></tr></thead>
+    <tbody>
+      <tr><td class="br">CAL-01</td><td>Tiết diện tổng sợi</td><td><span class="formula">A = n · π · d² / 4</span></td></tr>
+      <tr><td class="br">CAL-02</td><td>Đường kính bó đồng</td><td><span class="formula">D_bó = √(4·A / π / lấp_đầy)</span></td></tr>
+      <tr><td class="br">CAL-03</td><td>Bước bện và hệ số dài</td><td><span class="formula">L = 30·(A_dn/1,5)^0,5</span> (ghi đè được theo mã lõi); <span class="formula">r = (D_bó − d)/2 · 0,7071</span>; <span class="formula">K = √(1 + (2πr/L)²)</span></td></tr>
+      <tr><td class="br">CAL-04</td><td>Kim loại lõi kg/km</td><td><span class="formula">A · ρCu · K · số_lõi · K_ghép</span></td></tr>
+      <tr><td class="br">CAL-05</td><td>Nhựa cách điện kg/km</td><td><span class="formula">[π/4·(P² − D_bó²) + fillCu·(π/4·D_bó² − A)] · ρ · số_lõi · K_ghép</span>, với <span class="formula">P = D_bó + 2t</span></td></tr>
+      <tr><td class="br">CAL-06</td><td>Điện trở DC</td><td><span class="formula">Rdc = ρR · 1000 · K · K_ghép / A</span> ≤ Rdc giới hạn. Không dùng A điện tương đương để tính kg kim loại</td></tr>
+      <tr><td class="br">CAL-07</td><td>Khe trong vỏ, độn PP</td><td>Void theo vòng bao bó lõi trừ lõi và drain; độn PP chiếm tỷ lệ đặt trước; vỏ lấp phần còn lại theo <code>profile</code> = 0,15</td></tr>
+      <tr><td class="br">CAL-08</td><td>Băng AL/PET</td><td>Khối lượng = Al + PET + keo; <span class="formula">K_dài = MAX(1, πD / [khổ·(1 − chồng_mí)])</span></td></tr>
+      <tr><td class="br">CAL-09</td><td>Phối trộn phr</td><td><span class="formula">nền = hỗn_hợp / (1 + Σphr/100)</span>; <span class="formula">phụ_gia_i = nền · phr_i / 100</span></td></tr>
+      <tr><td class="br">CAL-10</td><td>Drain nội suy</td><td><span class="formula">số_sợi = ROUNDUP(8 · A/A18)</span> ở Ø0,20; TC: <span class="formula">ROUNDUP[n18·(A/A18)·(d18/d_chọn)²]</span></td></tr>
+      <tr><td class="br">CAL-11</td><td>Nhu cầu cấp SX</td><td><span class="formula">lý_thuyết / (1 − hao_hụt) + khởi_động</span>. Khởi động: silicone 2 kg/lần/lõi, HDPE 2, PVC CĐ 3, vỏ 5 kg/lần; nhân số lô</td></tr>
+      <tr><td class="br">CAL-12</td><td>Đóng gói</td><td><span class="formula">kiện = ROUNDUP(m / m_kiện)</span>; <span class="formula">pallet = ROUNDUP(kiện / 25)</span> với bobin, 40 với cuộn, làm tròn theo từng SKU</td></tr>
+      <tr><td class="br">CAL-13</td><td>Kiện quá tải</td><td><span class="formula">kg/kiện = kg/km · m_kiện / 1000 &gt; maxPack</span> thì cảnh báo</td></tr>
+      <tr><td class="br">CAL-14</td><td>Mua ròng</td><td><span class="formula">thiếu = MAX(0, cấp_SX + dự_phòng − tồn_khả_dụng − hàng_về_kịp)</span>; <span class="formula">mua = ROUNDUP(MAX(thiếu, MOQ)/bội_số)·bội_số</span></td></tr>
+      <tr><td class="br">CAL-15</td><td>Ngày đặt chậm nhất</td><td><span class="formula">ngày_cần − lead_time</span> (ngày lịch). Nếu nhỏ hơn hôm nay thì <span class="pill p-bad">Trễ</span></td></tr>
+      <tr><td class="br">CAL-16</td><td>Màu lõi</td><td>PFR: nâu/trắng lặp (3 lõi = 2 nâu + 1 trắng; 4 lõi = 2+2). SFR: mỗi cặp nâu/trắng. CTL: mỗi cặp trắng/đen. Silicone trắng mặc định 0 phr pigment</td></tr>
+    </tbody>
+  </table></div>
+  <p class="prose">Kiểm tra mẫu với <code>PFR-2C-0p75</code>: A = 15·π·0,24²/4 = 0,6786 mm²; K = 1,004; Cu = 0,6786·8,89·1,004·2·1,02 = <b>12,35 kg/km</b>; Rdc = 0,017241·1000·1,004·1,02/0,6786 = <b>26,01 Ω/km</b>. Kết quả khớp file và đúng là vượt giới hạn 26.</p>
+</section>
+
+<!-- 17 -->
+<section class="ch" id="du-lieu">
+  <div class="chno">17</div>
+  <h2>Mô hình dữ liệu</h2>
+  <p class="lede">PostgreSQL trên Supabase, chia theo schema nghiệp vụ. Khóa chính dùng <code>uuid</code>, mã nghiệp vụ là <code>text</code> duy nhất. Mọi bảng có <code>created_at/by</code>, <code>updated_at/by</code>.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Schema</th><th>Bảng chính</th></tr></thead>
+    <tbody>
+      <tr><td><code>core</code></td><td>profiles, departments, roles, permissions, role_permissions, user_roles, user_scopes, delegations, audit_log, attachments, partners (khách hàng, NCC, pháp nhân thương hiệu), brands, uoms, number_sequences</td></tr>
+      <tr><td><code>master</code></td><td>materials, material_suppliers, price_history, core_types (M0.75…A14), products (SKU), product_specs (phiên bản), spec_results (kết quả tính định mức), tech_param_sets, tech_params, bom_headers, bom_lines, color_rules, routings, routing_ops, machines, work_centers, reason_codes</td></tr>
+      <tr><td><code>sales</code></td><td>sales_orders, so_lines, so_reservations, deliveries, delivery_lines</td></tr>
+      <tr><td><code>plan</code></td><td>production_plans, plan_lines, mrp_runs, mrp_lines, purchase_proposals, proposal_lines</td></tr>
+      <tr><td><code>purchase</code></td><td>purchase_requests, pr_lines, purchase_orders, po_lines, goods_receipts, gr_lines</td></tr>
+      <tr><td><code>inv</code></td><td>warehouses, locations, lots, handling_units (bobin/bao có QR), stock_docs, stock_doc_lines, stock_moves (sổ cái), stock_balances (bảng tổng hợp), stock_counts</td></tr>
+      <tr><td><code>mfg</code></td><td>work_orders, wo_operations, wo_material_issues, wo_outputs, lot_genealogy, scrap_records, downtime_events, shift_logs, operator_sessions</td></tr>
+      <tr><td><code>qa</code></td><td>inspection_plans, inspections, test_results (Rdc, cao áp, OD, chiều dày, kg/km), ncrs, deviations</td></tr>
+      <tr><td><code>cost</code></td><td>cost_periods, standard_costs, cost_pools, cost_allocations, wo_costs, wo_cost_lines, variances, item_valuation (bình quân di động)</td></tr>
+      <tr><td><code>wf</code></td><td>approval_flows, approval_steps, approval_requests, approval_actions, notifications</td></tr>
+      <tr><td><code>iot</code></td><td>machine_tags, telemetry (phân vùng theo ngày), telemetry_1m, machine_state (trạng thái mới nhất), machine_events, energy_readings</td></tr>
+      <tr><td><code>integ</code></td><td>misa_mappings, sync_queue, sync_logs</td></tr>
+    </tbody>
+  </table></div>
+  <div class="diagram"><pre class="mermaid">
+erDiagram
+  products ||--o{ product_specs : "phiên bản"
+  product_specs ||--|| bom_headers : "phát hành cùng"
+  bom_headers ||--o{ bom_lines : ""
+  materials ||--o{ bom_lines : ""
+  materials ||--o{ material_suppliers : ""
+  sales_orders ||--o{ so_lines : ""
+  so_lines }o--|| products : ""
+  production_plans ||--o{ plan_lines : ""
+  plan_lines ||--o{ work_orders : "sinh"
+  mrp_runs ||--o{ mrp_lines : ""
+  mrp_lines ||--o{ pr_lines : "sinh"
+  purchase_orders ||--o{ po_lines : ""
+  po_lines ||--o{ gr_lines : "nhận"
+  gr_lines ||--|| lots : "tạo lô"
+  lots ||--o{ stock_moves : ""
+  work_orders ||--o{ wo_operations : ""
+  wo_operations ||--o{ wo_material_issues : "tiêu thụ lô"
+  wo_operations ||--o{ wo_outputs : "tạo lô"
+  lots ||--o{ lot_genealogy : "cha"
+  lots ||--o{ lot_genealogy : "con"
+  machines ||--o{ wo_operations : ""
+  machines ||--o{ telemetry : ""
+  work_orders ||--|| wo_costs : ""
+  </pre></div>
+  <details class="fold"><summary>DDL mẫu các bảng lõi (để duyệt trước khi tạo trên Supabase)</summary><div>
+<pre class="code">-- Lô hàng: dùng chung cho NVL, BTP, TP, phế
+create table inv.lots (
+  id            uuid primary key default gen_random_uuid(),
+  lot_no        text unique not null,              -- CU24-2610-0118, LB-261024-014, BB-…
+  item_type     text not null check (item_type in ('MAT','WIP','FG','SCRAP')),
+  material_id   uuid references master.materials,
+  product_id    uuid references master.products,
+  spec_id       uuid references master.product_specs,
+  supplier_id   uuid references core.partners,
+  supplier_lot  text,
+  wo_op_id      uuid references mfg.wo_operations,  -- công đoạn tạo ra lô (WIP/FG)
+  qc_status     text not null default 'PENDING'
+                check (qc_status in ('PENDING','PASSED','QUARANTINE','REJECTED','CONSUMED')),
+  mfg_date      date, exp_date date,
+  coa_file_id   uuid references core.attachments,
+  attrs         jsonb default '{}'                  -- màu, Ø sợi, tỷ trọng COA…
+);
+
+-- Sổ cái kho bất biến
+create table inv.stock_moves (
+  id            bigint generated always as identity primary key,
+  moved_at      timestamptz not null default now(),
+  doc_line_id   uuid not null references inv.stock_doc_lines,
+  warehouse_id  uuid not null references inv.warehouses,
+  location_id   uuid references inv.locations,
+  lot_id        uuid not null references inv.lots,
+  qty           numeric(18,4) not null,             -- + nhập, − xuất (ĐVT gốc)
+  qty_alt       numeric(18,4),                      -- quy đổi (kg ↔ m)
+  unit_cost     numeric(18,4),                      -- bình quân tại thời điểm ghi sổ
+  move_type     text not null                       -- GR, ISSUE_WO, RETURN_WO, WIP_IN, FG_IN, SCRAP_IN, SALE, ADJ, TRANSFER
+);
+revoke update, delete on inv.stock_moves from authenticated;
+
+-- Phả hệ lô (truy xuất)
+create table mfg.lot_genealogy (
+  parent_lot_id uuid not null references inv.lots,
+  child_lot_id  uuid not null references inv.lots,
+  wo_op_id      uuid not null references mfg.wo_operations,
+  qty_used      numeric(18,4) not null,
+  primary key (parent_lot_id, child_lot_id, wo_op_id)
+);
+-- Truy xuất ngược: with recursive t as (select … where child_lot_id = :bobin
+--   union all select g.* from mfg.lot_genealogy g join t on g.child_lot_id = t.parent_lot_id) …
+
+-- Dữ liệu máy: phân vùng theo ngày (pg_partman), giữ thô 90 ngày
+create table iot.telemetry (
+  machine_id  uuid not null references master.machines,
+  ts          timestamptz not null,
+  wo_op_id    uuid,                                  -- gắn lệnh đang chạy
+  speed_mpm   real, length_m double precision, od_mm real, od_dev_mm real,
+  temps       real[], current_a real, kwh double precision, state smallint,
+  extra       jsonb
+) partition by range (ts);</pre>
+  </div></details>
+</section>
+
+<!-- 18 -->
+<section class="ch" id="database">
+  <div class="chno">18</div>
+  <h2>Database đề xuất và kiến trúc kết nối dây chuyền</h2>
+  <div class="callout ok">
+    <b class="t">Đề xuất để anh/chị duyệt</b>
+    Dùng <b>Supabase PostgreSQL</b> làm cơ sở dữ liệu duy nhất cho cả nghiệp vụ và dữ liệu máy ở giai đoạn đầu. Dữ liệu máy được thiết kế theo dạng phân vùng thời gian, nên khi cần tách sang cơ sở dữ liệu chuyên dụng sau này thì không phải đổi ứng dụng.
+    <ul style="margin:8px 0 0">
+      <li><b>Môi trường</b>: dùng project hiện tại <code>critwnuscvdchdbvwygv</code> làm <b>TEST/STAGING</b>, tạo các schema mới như mục 17 (không đụng bảng test cũ). Khi go-live, tạo project <b>PROD</b> riêng ở region Singapore, gói Pro, có Point-in-Time Recovery.</li>
+      <li><b>Thành phần Supabase dùng</b>: Auth (tài khoản), RLS (phân quyền), Storage (COA, ảnh lỗi, file đính kèm), Realtime (dashboard và trạng thái máy), Edge Functions (bộ tính định mức, MRP, đồng bộ MISA), pg_cron (tổng hợp dữ liệu máy, nhắc duyệt), Queues/pgmq (hàng đợi đồng bộ MISA), pg_partman (phân vùng dữ liệu máy).</li>
+      <li><b>Lưu ý</b>: Supabase đã ngừng hỗ trợ extension TimescaleDB trên PostgreSQL 17. Vì vậy tài liệu dùng phân vùng gốc của Postgres cùng bảng tổng hợp theo phút, không phụ thuộc TimescaleDB.</li>
+    </ul>
+  </div>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph OT["Xưởng · mạng OT (VLAN riêng)"]
+    P1["PLC Siemens<br/>Máy đùn silicone"]
+    P2["PLC Siemens<br/>Máy đùn PVC/LSZH/PE"]
+    P3["PLC máy bện"]
+    P4["PLC máy xoắn"]
+    P5["Máy in"]
+    P6["Máy đo chiều dày / OD"]
+  end
+  subgraph EDGE["Gateway tại xưởng (IPC, 2 cổng mạng)"]
+    D1["Driver S7 (ISO-on-TCP 102)<br/>hoặc OPC UA S7-1500"]
+    D2["Driver Modbus TCP"]
+    N["Chuẩn hóa tag<br/>gắn mã máy, mã LSX"]
+    B[("MQTT broker cục bộ<br/>đệm khi mất mạng")]
+  end
+  subgraph CLOUD["Supabase"]
+    I["Ingest Edge Function<br/>ghi lô mỗi 5 giây"]
+    T[("iot.telemetry<br/>phân vùng theo ngày")]
+    S[("iot.machine_state<br/>trạng thái mới nhất")]
+    A["pg_cron<br/>tổng hợp 1 phút, OEE"]
+    APP["Web app<br/>Realtime dashboard"]
+  end
+  P1 & P2 & P3 & P4 --> D1
+  P5 & P6 --> D2
+  D1 & D2 --> N --> B --> I
+  I --> T
+  I --> S
+  T --> A
+  S --> APP
+  </pre></div>
+  <div class="tbl"><table>
+    <thead><tr><th>Hạng mục</th><th>Thiết kế</th></tr></thead>
+    <tbody>
+      <tr><td>Giao thức với PLC</td><td>Profinet là mạng trường giữa PLC và IO, không dùng để đọc dữ liệu lên phần mềm. Gateway đọc qua <b>S7 (ISO-on-TCP, cổng 102)</b>, cần bật PUT/GET và tạo DB tag không tối ưu, hoặc qua <b>OPC UA</b> nếu dùng S7-1500 có license. Thiết bị khác đọc qua <b>Modbus TCP</b> (holding registers). Chỉ đọc, không ghi xuống PLC trong giai đoạn 1–4.</td></tr>
+      <tr><td>Tag tối thiểu mỗi máy</td><td>Trạng thái chạy/dừng/lỗi, tốc độ m/phút, bộ đếm mét, nhiệt độ các vùng, dòng/tải động cơ, mã lỗi. Máy đùn: áp suất đầu, tốc độ trục vít. Máy đo: OD, độ lệch tâm, chiều dày min/max. Công tơ điện theo máy nếu có.</td></tr>
+      <tr><td>Tần suất và dung lượng</td><td>Gateway gom 1 bản ghi/giây/máy. 6 máy ≈ 518.000 dòng/ngày, khoảng 15 triệu dòng/tháng. Dữ liệu thô giữ 90 ngày, bảng 1 phút giữ lâu dài. Dung lượng ước tính dưới 10 GB/năm, phù hợp gói Pro có tăng compute.</td></tr>
+      <tr><td>Gắn dữ liệu máy với LSX</td><td>Khi vận hành bấm "Bắt đầu công đoạn" trên tablet, hệ thống ghi <code>machine_id + wo_op_id</code> vào machine_state. Gateway gắn wo_op_id vào mọi bản ghi sau đó. Bộ đếm mét của PLC đối chiếu với mét người vận hành khai báo.</td></tr>
+      <tr><td>An ninh</td><td>Không mở cổng từ internet vào xưởng. Gateway chỉ kết nối ra ngoài (HTTPS/MQTT TLS) bằng khóa dịch vụ riêng, có quyền ghi duy nhất vào schema <code>iot</code>. Mạng OT tách VLAN với mạng văn phòng.</td></tr>
+      <tr><td>Khi nào cần tách DB riêng</td><td>Khi cần lấy mẫu dưới 1 giây (ví dụ đo OD 10 Hz để phân tích SPC) hoặc nhiều hơn khoảng 20 máy. Lúc đó đưa dữ liệu thô sang một TimescaleDB tự quản lý, Supabase chỉ giữ dữ liệu tổng hợp.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="prose">
+  <h4>Công nghệ ứng dụng đề xuất</h4>
+  <p>Next.js + TypeScript, thư viện giao diện shadcn/ui, Supabase JS. Ứng dụng cài được trên tablet xưởng (PWA), quét QR bằng camera tablet hoặc máy quét cầm tay. Gateway chạy Node-RED hoặc dịch vụ Node.js trong Docker. Mã nguồn quản lý trên GitHub, triển khai tự động lên staging trước khi lên prod.</p>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="ch" id="misa">
+  <div class="chno">19</div>
+  <h2>Tích hợp MISA</h2>
+  <p class="lede">Nguyên tắc: <b>phần mềm sản xuất là nguồn số lượng</b> (kho, lô, sản xuất). <b>MISA là nguồn sổ sách</b> (công nợ, thuế, hóa đơn, báo cáo tài chính). Hai bên dùng cùng phương pháp tính giá và đối chiếu giá trị kho hằng tháng.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Dữ liệu</th><th>Chiều</th><th>Thời điểm</th><th>Ghi chú</th></tr></thead>
+    <tbody>
+      <tr><td>Danh mục vật tư, thành phẩm, kho</td><td>BMT MES → MISA</td><td>Khi tạo hoặc sửa</td><td>Map mã hàng, ĐVT, tài khoản kho 152/154/155</td></tr>
+      <tr><td>Khách hàng, NCC</td><td>MISA → BMT MES</td><td>Đồng bộ định kỳ</td><td>MISA giữ mã số thuế, công nợ</td></tr>
+      <tr><td>Phiếu nhập mua (theo PO)</td><td>BMT MES → MISA</td><td>Khi ghi sổ nhận hàng</td><td>MISA hạch toán công nợ NCC và hóa đơn đầu vào</td></tr>
+      <tr><td>Phiếu xuất NVL cho SX, trả NVL</td><td>BMT MES → MISA</td><td>Cuối ngày hoặc khi đóng LSX</td><td>Gắn đối tượng tập hợp chi phí theo LSX</td></tr>
+      <tr><td>Nhập kho thành phẩm</td><td>BMT MES → MISA</td><td>Khi FQC đạt</td><td>Số lượng; giá trị cập nhật khi chốt giá thành</td></tr>
+      <tr><td>Xuất bán theo lệnh giao</td><td>BMT MES → MISA</td><td>Khi xuất kho</td><td>MISA lập hóa đơn điện tử</td></tr>
+      <tr><td>Chi phí kỳ: lương, điện, khấu hao, SXC</td><td>MISA → BMT MES</td><td>Cuối tháng</td><td>Đầu vào để phân bổ giá thành thực tế</td></tr>
+      <tr><td>Giá thành đơn vị đã chốt</td><td>BMT MES → MISA</td><td>Sau khi BGĐ phê duyệt</td><td>Cập nhật giá nhập kho thành phẩm</td></tr>
+    </tbody>
+  </table></div>
+  <p class="prose">Cách kết nối phụ thuộc phiên bản MISA. Với <b>MISA AMIS Kế toán</b> (bản đám mây), dùng API kết nối dành cho đối tác (cần đăng ký với MISA). Với <b>MISA SME</b> (bản cài đặt), giai đoạn đầu dùng xuất/nhập file Excel theo mẫu chuẩn của MISA, do Kế toán kho bấm từ phần mềm. Mọi lần đồng bộ đi qua hàng đợi, có nhật ký và nút gửi lại khi lỗi.</p>
+</section>
+
+<!-- 20 -->
+<section class="ch" id="ui">
+  <div class="chno">20</div>
+  <h2>Mockup UI/UX các màn hình chính</h2>
+  <p class="lede">Bấm các nút bên dưới hoặc menu trái trong khung để chuyển màn hình. Các nút như Duyệt, Giữ hàng, Bắt đầu công đoạn đều bấm được. <span class="note-ex">Số liệu tồn, giá, khách hàng, lô là dữ liệu ví dụ</span>. Định mức BOM, kg/km, hao hụt và bội số mua lấy từ file Excel thật.</p>
+  <div class="prose">
+  <h4>Nguyên tắc thiết kế</h4>
+  <ul>
+    <li><b>Văn phòng</b> (KD, Mua, Kế toán, BGĐ): máy tính, dày thông tin, bảng lọc nhanh, thanh trạng thái bằng màu và nhãn.</li>
+    <li><b>Xưởng</b> (Tổ trưởng, Vận hành): tablet 10 inch, nút lớn tối thiểu 48 px, quét QR là thao tác chính, ít gõ phím, chữ to, chế độ tương phản cao.</li>
+    <li>Màu trạng thái thống nhất toàn hệ thống: xanh = đạt/chạy, vàng = chờ/cảnh báo, đỏ = lỗi/dừng/trễ, xanh dương = đang xử lý. Màu đồng dành cho hành động chính.</li>
+    <li>Ô người dùng được phép nhập có nền vàng nhạt, giữ đúng thói quen "ô vàng" trong file Excel.</li>
+  </ul>
+  </div>
+  <div class="mk-tabs" role="tablist" id="mkTabs"></div>
+  <div class="mk-scroll">
+    <div class="app" id="app">
+      <aside class="app-side" id="appSide"></aside>
+      <div class="app-main">
+        <div class="app-top"><div class="crumb" id="crumb"></div><div class="sp"></div><div class="search">Tìm SO, LSX, lô, SKU…</div><div class="user"><span id="topUser">Đỗ Văn Khánh · TP Sản xuất</span><div class="avatar" id="topAv">ĐK</div></div></div>
+        <div class="app-body" id="appBody"></div>
+        <div class="toast" id="toast" hidden></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="ch" id="nfr">
+  <div class="chno">21</div>
+  <h2>Yêu cầu phi chức năng</h2>
+  <div class="tbl"><table><tbody>
+    <tr><td><b>Ngôn ngữ, định dạng</b></td><td>Tiếng Việt. Số theo kiểu Việt Nam (1.234,56). Múi giờ Asia/Ho_Chi_Minh. Ngày dd/mm/yyyy</td></tr>
+    <tr><td><b>Hiệu năng</b></td><td>Màn hình danh sách tải dưới 1,5 giây. MRP cho 78 SKU × 51 vật tư chạy dưới 5 giây. Dashboard máy cập nhật trong vòng 2 giây</td></tr>
+    <tr><td><b>Khả dụng</b></td><td>99,5% giờ làm việc. Tablet xưởng chịu mất Wi-Fi ngắn: lưu thao tác tạm, gửi lại khi có mạng. Gateway đệm dữ liệu máy ít nhất 24 giờ</td></tr>
+    <tr><td><b>Bảo mật</b></td><td>RLS trên mọi bảng, 2FA cho cấp duyệt cao, mã hóa đường truyền TLS, khóa dịch vụ không xuất hiện trên trình duyệt</td></tr>
+    <tr><td><b>Sao lưu</b></td><td>PITR 7 ngày trên prod, xuất bản sao hằng tuần ra kho lưu trữ riêng</td></tr>
+    <tr><td><b>Kiểm thử</b></td><td>Bộ kiểm thử đối chiếu 78 SKU với file Excel bản 3.0. Kịch bản UAT theo từng quy trình 5–12</td></tr>
+    <tr><td><b>Thiết bị</b></td><td>Trình duyệt Chrome/Edge bản mới. Tablet Android 10 inch có camera. Máy in tem nhiệt 100×70 mm cho bobin và bao NVL</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 22 -->
+<section class="ch" id="lo-trinh">
+  <div class="chno">22</div>
+  <h2>Lộ trình triển khai đề xuất</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Giai đoạn</th><th>Nội dung</th><th>Kết quả nghiệm thu</th><th class="num">Thời lượng ước tính</th></tr></thead>
+    <tbody>
+      <tr><td><b>GĐ0</b> Chuẩn bị</td><td>Duyệt BA, tạo schema trên TEST, nhập 78 SKU/51 vật tư/tham số. QA rà soát spec v1 cho mã đang sản xuất. Mua hàng nhập lead time, MOQ, giá</td><td>Bộ tính định mức khớp Excel 78/78</td><td class="num">3–4 tuần</td></tr>
+      <tr><td><b>GĐ1</b> Lõi nghiệp vụ</td><td>Tài khoản và phân quyền, danh mục, spec/BOM có duyệt, kế hoạch và MRP, PR/PO, đề xuất mua tối ưu, kho NL theo lô + QR, hộp duyệt</td><td>Ngừng dùng Excel cho dự trù và mua hàng</td><td class="num">10–12 tuần</td></tr>
+      <tr><td><b>GĐ2</b> Bán hàng và sản xuất</td><td>SO + ATP, lệnh SX theo công đoạn trên tablet, kho BTP/TP/phế, QC, NCR, truy xuất</td><td>Truy xuất 1 bobin đến lô đồng</td><td class="num">10 tuần</td></tr>
+      <tr><td><b>GĐ3</b> Giá thành và MISA</td><td>Giá định mức, giá thực tế, phân bổ, chênh lệch, chốt kỳ, đồng bộ MISA</td><td>Chốt giá thành tháng đầu tiên, đối chiếu kho khớp MISA</td><td class="num">6–8 tuần</td></tr>
+      <tr><td><b>GĐ4</b> Kết nối máy (pilot)</td><td>Gateway + máy đùn silicone + máy đo chiều dày, sau đó mở rộng sang máy đùn PVC/LSZH/PE, bện, xoắn, in. OEE, dừng máy tự động, kWh theo máy</td><td>Mét PLC khớp mét khai báo ±0,5%</td><td class="num">8–10 tuần</td></tr>
+      <tr><td><b>GĐ5</b> Tối ưu</td><td>Hiệu chỉnh định mức từ dữ liệu thực, SPC chiều dày, cảnh báo sớm phế, dự báo nhu cầu NVL</td><td>Giảm phế và tồn NVL theo mục tiêu BGĐ</td><td class="num">Liên tục</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 23 -->
+<section class="ch" id="mo">
+  <div class="chno">23</div>
+  <h2>Điểm cần anh/chị xác nhận</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>#</th><th>Câu hỏi</th><th>Ảnh hưởng</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Đại lý đặt hàng trực tiếp với nhà máy BMT, hay luôn qua pháp nhân KAVIX/HEIZKA? Giá bán cho pháp nhân thương hiệu có bảng giá riêng không?</td><td>Danh mục đối tác, SO, đồng bộ MISA</td></tr>
+      <tr><td>2</td><td>Đang dùng MISA SME hay MISA AMIS Kế toán?</td><td>Cách kết nối (API hay file)</td></tr>
+      <tr><td>3</td><td>Có công đoạn cán trộn silicone (máy cán 2 trục) không? Quấn băng AL/PET nằm trên máy xoắn hay máy riêng? Mỗi loại máy có bao nhiêu chiếc?</td><td>Routing, danh mục máy, số gateway</td></tr>
+      <tr><td>4</td><td>Model PLC (S7-1200/1500), model máy đo chiều dày và danh sách tag hiện có trên từng máy</td><td>Phạm vi GĐ4</td></tr>
+      <tr><td>5</td><td>Bước BGĐ phê duyệt SO có bật cho mọi SO không, hay chỉ khi có điều kiện đặc biệt (giá dưới bảng giá, giao gấp)?</td><td>Cấu hình luồng duyệt</td></tr>
+      <tr><td>6</td><td>Ca làm việc (2 hay 3 ca) và cách tính lương sản xuất (theo giờ hay theo sản phẩm)</td><td>Phân bổ nhân công trong giá thành</td></tr>
+      <tr><td>7</td><td>Danh sách SKU đang sản xuất thật để QA phát hành spec v1 trước go-live</td><td>Kế hoạch GĐ0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="prose">Sau khi anh/chị duyệt tài liệu và mô hình dữ liệu, bước tiếp theo là tạo các schema trên project TEST và viết bộ kiểm thử đối chiếu 78 SKU với file Excel.</p>
+</section>
+</main>
+</div>
+
+<script>
+(function(){
+  // ---------- Theo dõi mục lục ----------
+  const links=[...document.querySelectorAll('nav.toc a')];
+  const secs=links.map(a=>document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  function onScroll(){let cur=secs[0];for(const s of secs){if(s.getBoundingClientRect().top<120)cur=s}links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+cur.id))}
+  addEventListener('scroll',onScroll,{passive:true});onScroll();
+
+  // ---------- Tiện ích ----------
+  const nf=(v,d=0)=>(v==null||isNaN(v))?'—':Number(v).toLocaleString('vi-VN',{minimumFractionDigits:d,maximumFractionDigits:d});
+  const $=s=>document.querySelector(s);
+  const pill=(t,c)=>`<span class="pill p-${c}">${t}</span>`;
+  const body=$('#appBody');
+  let toastT;
+  function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2600)}
+
+  // ---------- Dữ liệu từ file Excel (BOM suất/km hoặc /kiện, hao hụt) ----------
+  const MAT={
+    'CU-024':{n:'Đồng trần BC Ø0,24',u:'kg',hh:.015,mul:100,moq:0},
+    'TC-020':{n:'Đồng mạ thiếc TC Ø0,20',u:'kg',hh:.015,mul:20,moq:0},
+    'TCCA-020':{n:'Drain TCCA Ø0,20',u:'kg',hh:.02,mul:20,moq:0},
+    'SIL-9710G':{n:'Silicone HCR FR',u:'kg',hh:.04,mul:25,moq:0},
+    'DCBP-50':{n:'Paste DCBP 50%',u:'kg',hh:.04,mul:1,moq:0},
+    'SI-C0':{n:'Màu silicone Nâu',u:'kg',hh:.04,mul:1,moq:0},
+    'HDPE-I':{n:'HDPE cách điện',u:'kg',hh:.03,mul:25,moq:0},
+    'HD-W':{n:'Masterbatch HDPE trắng',u:'kg',hh:.03,mul:1,moq:0},
+    'HD-B':{n:'Masterbatch HDPE đen',u:'kg',hh:.03,mul:1,moq:0},
+    'PVC-FR':{n:'FR-PVC vỏ',u:'kg',hh:.03,mul:25,moq:0},
+    'PF-G':{n:'Màu FR-PVC xanh RAL 6037',u:'kg',hh:.03,mul:1,moq:0},
+    'LSZH-S':{n:'LSZH vỏ',u:'kg',hh:.04,mul:25,moq:0},
+    'LS-O':{n:'Màu LSZH cam RAL 2004',u:'kg',hh:.04,mul:1,moq:0},
+    'PVC-S':{n:'PVC vỏ',u:'kg',hh:.03,mul:25,moq:0},
+    'PV-GR':{n:'Masterbatch PVC vỏ xám',u:'kg',hh:.03,mul:1,moq:0},
+    'PET-20':{n:'Băng PET bó rời',u:'kg',hh:.03,mul:10,moq:0},
+    'PP-FILL':{n:'Sợi độn PP',u:'kg',hh:.03,mul:25,moq:0},
+    'ALP-20':{n:'Băng AL/PET 20 mm',u:'kg',hh:.03,mul:20,moq:0},
+    'ALP-25':{n:'Băng AL/PET 25 mm',u:'kg',hh:.03,mul:20,moq:0},
+    'TALC':{n:'Bột talc',u:'kg',hh:.05,mul:25,moq:0},
+    'INK':{n:'Mực in cáp',u:'kg',hh:0,mul:1,moq:0},
+    'SOLVENT':{n:'Dung môi mực/vệ sinh',u:'kg',hh:0,mul:5,moq:0},
+    'REEL-W':{n:'Bobin gỗ hoàn chỉnh',u:'bộ',hh:.01,mul:1,moq:0},
+    'PE-PACK':{n:'Màng PE đóng gói',u:'kg',hh:.03,mul:10,moq:0},
+    'PP-STRAP':{n:'Đai PP',u:'m',hh:.03,mul:100,moq:0},
+    'LABEL-K':{n:'Nhãn KAVIX',u:'cái',hh:.02,mul:100,moq:0},
+    'END-TAPE':{n:'Băng keo bịt đầu',u:'m',hh:.03,mul:50,moq:0},
+    'PALLET':{n:'Pallet vận chuyển',u:'cái',hh:0,mul:1,moq:0}
+  };
+  // ví dụ: tồn, hàng về, giá, lead time
+  const EX={'CU-024':[420,0,268000,14],'TC-020':[60,0,295000,21],'TCCA-020':[8,0,310000,21],'SIL-9710G':[150,100,145000,30],'DCBP-50':[4,0,420000,30],'SI-C0':[1.5,0,650000,30],'HDPE-I':[75,0,42000,14],'HD-W':[0,0,85000,14],'HD-B':[2,0,80000,14],'PVC-FR':[200,0,38000,14],'PF-G':[3,0,95000,14],'LSZH-S':[50,0,62000,21],'LS-O':[1,0,110000,21],'PVC-S':[100,0,32000,14],'PV-GR':[0,0,90000,14],'PET-20':[5,0,95000,10],'PP-FILL':[25,0,48000,10],'ALP-20':[10,0,180000,21],'ALP-25':[4,0,180000,21],'TALC':[25,0,12000,7],'INK':[1,0,1200000,14],'SOLVENT':[5,0,180000,14],'REEL-W':[10,20,350000,7],'PE-PACK':[10,0,45000,5],'PP-STRAP':[300,0,800,5],'LABEL-K':[200,0,600,7],'END-TAPE':[100,0,1200,5],'PALLET':[5,0,180000,5]};
+  const SKU={
+    'PFR-2C-1p5':{d:'2×1.5 mm² Cu/Silicone/FR-PVC',kgkm:62.34,cores:2,ins:'SIL',sh:'PVC-FR',pack:'Bobin gỗ',mk:500,
+      km:{'CU-024':24.723,'SIL-9710G':12.8894,'DCBP-50':.1933,'SI-C0':.0641,'PVC-FR':23.9933,'PF-G':.4799,'TALC':.0263,'INK':.02,'SOLVENT':.06},
+      kien:{'REEL-W':1,'PE-PACK':.15,'PP-STRAP':2,'LABEL-K':2,'END-TAPE':.2}},
+    'SFR-2P-1':{d:'2P×2×1 mm² SI/AL+drain/LSZH',kgkm:123.46,cores:4,ins:'SIL',sh:'LSZH-S',pack:'Bobin gỗ',mk:500,
+      km:{'CU-024':32.9519,'SIL-9710G':19.6821,'DCBP-50':.2952,'SI-C0':.0979,'LSZH-S':41.196,'LS-O':.8239,'PET-20':1.3693,'PP-FILL':23.7915,'TALC':.0402,'TCCA-020':1.2017,'ALP-25':2.0522,'INK':.02,'SOLVENT':.06},
+      kien:{'REEL-W':1,'PE-PACK':.15,'PP-STRAP':2,'LABEL-K':2,'END-TAPE':.2}},
+    'CTL-1P-A18':{d:'1P×2×AWG18 TC/HDPE/AL+drain/PVC',kgkm:42.52,cores:2,ins:'HD',sh:'PVC-S',pack:'Bobin gỗ',mk:500,
+      km:{'TC-020':14.884,'HDPE-I':5.524,'HD-W':.0552,'HD-B':.0552,'PVC-S':19.6098,'PV-GR':.3922,'TALC':.0113,'TCCA-020':.961,'ALP-20':1.0416,'INK':.02,'SOLVENT':.06},
+      kien:{'REEL-W':1,'PE-PACK':.15,'PP-STRAP':2,'LABEL-K':2,'END-TAPE':.2}},
+    'SIF-1C-1p5':{d:'1×1.5 mm² Cu/Silicone',kgkm:18.56,cores:1,ins:'SIL',sh:null,pack:'Cuộn PE',mk:100,
+      km:{'CU-024':12.1191,'SIL-9710G':6.2874,'DCBP-50':.0943,'SI-C0':.0629,'INK':.02,'SOLVENT':.06},
+      kien:{'PE-PACK':.05,'PP-STRAP':1,'LABEL-K':2,'END-TAPE':.2}}
+  };
+  const plan={need:'2026-11-20',lines:{'PFR-2C-1p5':{m:3500,lots:1},'SFR-2P-1':{m:2000,lots:1},'CTL-1P-A18':{m:0,lots:1},'SIF-1C-1p5':{m:10000,lots:2}}};
+  const TODAY=new Date('2026-10-25');
+
+  function runMRP(){
+    const need={};const add=(k,v,s=0)=>{need[k]=need[k]||{theo:0,after:0,start:0};need[k].theo+=v;need[k].after+=v/(1-MAT[k].hh);need[k].start+=s};
+    let pallets={};
+    for(const [k,l] of Object.entries(plan.lines)){
+      if(!l.m)continue;const s=SKU[k],km=l.m/1000,kien=Math.ceil(l.m/s.mk);
+      for(const [mk,v] of Object.entries(s.km))add(mk,v*km);
+      for(const [mk,v] of Object.entries(s.kien))add(mk,v*kien);
+      add('PALLET',Math.ceil(kien/(s.pack==='Bobin gỗ'?25:40)));
+      // khởi động (gần đúng theo Tham_so): silicone 2 kg/lần/lõi, HDPE 2, vỏ 5 kg/lần
+      if(s.ins==='SIL')add('SIL-9710G',0,2*s.cores*l.lots);
+      if(s.ins==='HD')add('HDPE-I',0,2*s.cores*l.lots);
+      if(s.sh)add(s.sh,0,5*l.lots);
+    }
+    const nd=new Date(plan.need);
+    return Object.entries(need).map(([k,v])=>{
+      const m=MAT[k],e=EX[k]||[0,0,null,0];const tot=v.after+v.start;
+      const short=Math.max(0,tot-e[0]-e[1]);
+      const buy=short===0?0:Math.ceil(Math.max(short,m.moq)/m.mul)*m.mul;
+      const od=new Date(nd);od.setDate(od.getDate()-e[3]);
+      return {k,n:m.n,u:m.u,theo:v.theo,loss:v.after-v.theo,start:v.start,tot,stock:e[0],inc:e[1],short,buy,price:e[2],amt:buy*e[2],lt:e[3],od,late:buy>0&&od<TODAY};
+    }).sort((a,b)=>b.amt-a.amt);
+  }
+
+  // ---------- Màn hình ----------
+  const screens=[
+    {id:'dash',ico:'◧',name:'Tổng quan',grp:'Điều hành',user:['Nguyễn Văn An','Ban giám đốc','NA']},
+    {id:'so',ico:'SO',name:'Đơn bán hàng',grp:'Kinh doanh',user:['Trần Thị Bình','TP Kinh doanh','TB']},
+    {id:'mrp',ico:'KH',name:'Kế hoạch & MRP',grp:'Sản xuất',user:['Đỗ Văn Khánh','TP Sản xuất','ĐK']},
+    {id:'appr',ico:'✓',name:'Hộp duyệt',grp:'Điều hành',user:['Nguyễn Văn An','Ban giám đốc','NA']},
+    {id:'spec',ico:'KT',name:'Spec & BOM mã mới',grp:'Kỹ thuật/QA',user:['Lê Minh Châu','TP Kỹ thuật/QA','LC']},
+    {id:'inv',ico:'KHO',name:'Kho theo lô',grp:'Kho',user:['Phạm Quốc Dũng','Thủ kho','PD']},
+    {id:'wo',ico:'LSX',name:'Lệnh SX & tablet',grp:'Sản xuất',user:['Bùi Văn Long','Tổ trưởng ca B','BL']},
+    {id:'trace',ico:'⇄',name:'Truy xuất',grp:'Kỹ thuật/QA',user:['Lê Minh Châu','TP Kỹ thuật/QA','LC']},
+    {id:'cost',ico:'₫',name:'Giá thành LSX',grp:'Kế toán',user:['Vũ Thanh Hải','Kế toán trưởng','VH']},
+    {id:'iot',ico:'⚙',name:'Giám sát máy',grp:'Sản xuất',user:['Đỗ Văn Khánh','TP Sản xuất','ĐK']},
+    {id:'acc',ico:'👤',name:'Tài khoản & quyền',grp:'Hệ thống',user:['Admin hệ thống','Quản trị','AD']}
+  ];
+  let cur='dash',timer=null;
+  function nav(id){
+    cur=id;clearInterval(timer);timer=null;
+    const s=screens.find(x=>x.id===id);
+    $('#crumb').innerHTML=`${s.grp} / <b>${s.name}</b>`;
+    $('#topUser').textContent=`${s.user[0]} · ${s.user[1]}`;$('#topAv').textContent=s.user[2];
+    document.querySelectorAll('#mkTabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.id===id));
+    document.querySelectorAll('#appSide button').forEach(b=>b.classList.toggle('on',b.dataset.id===id));
+    R[id]();
+  }
+  // tabs + side
+  $('#mkTabs').innerHTML=screens.map((s,i)=>`<button role="tab" data-id="${s.id}" id="tab-${s.id}">M${i+1} · ${s.name}</button>`).join('');
+  let side='<div class="logo">BMT <span>MES</span></div>';
+  [...new Set(screens.map(s=>s.grp))].forEach(g=>{side+=`<div class="sep">${g}</div>`;screens.filter(s=>s.grp===g).forEach(s=>{side+=`<button data-id="${s.id}"><span class="ico">${s.ico}</span>${s.name}</button>`})});
+  $('#appSide').innerHTML=side;
+  document.querySelectorAll('#mkTabs button,#appSide button').forEach(b=>b.addEventListener('click',()=>nav(b.dataset.id)));
+
+  const R={};
+
+  // M1 Dashboard
+  R.dash=()=>{
+    body.innerHTML=`<h5>Tổng quan nhà máy · 25/10/2026</h5><div class="sub">Cập nhật theo thời gian thực · Ca B (14:00–22:00)</div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Mét sản xuất hôm nay</div><div class="v">18.420</div><div class="d">Kế hoạch 22.000 m · 84%</div><div class="bar" style="margin-top:6px"><i style="width:84%"></i></div></div>
+      <div class="kpi"><div class="l">Tỷ lệ phế (kg)</div><div class="v" style="color:var(--warn)">3,8%</div><div class="d">Định mức 3,0% · vượt 0,8 điểm</div></div>
+      <div class="kpi"><div class="l">SO chờ giao</div><div class="v">7</div><div class="d">2 đơn có nguy cơ trễ</div></div>
+      <div class="kpi"><div class="l">Việc chờ anh duyệt</div><div class="v" style="color:var(--copper)">5</div><div class="d">1 PO chờ quá 24 giờ</div></div>
+    </div>
+    <div class="cols c21">
+      <div class="panel"><div class="ph">Tiến độ đơn bán <button class="btn" data-go="so">Xem tất cả</button></div>
+        <table class="mt"><thead><tr><th>SO</th><th>Khách hàng</th><th>Ngày giao</th><th>Tiến độ</th><th>Trạng thái</th></tr></thead><tbody>
+        <tr><td class="mono">SO-2610-0012</td><td>KAVIX (pháp nhân TH)</td><td>05/11</td><td><div class="bar ok"><i style="width:62%"></i></div></td><td>${pill('Đang SX','info')}</td></tr>
+        <tr><td class="mono">SO-2610-0013</td><td>Đại lý Minh Phát</td><td>30/10</td><td><div class="bar warn"><i style="width:35%"></i></div></td><td>${pill('Nguy cơ trễ','bad')}</td></tr>
+        <tr><td class="mono">SO-2610-0014</td><td>HEIZKA (pháp nhân TH)</td><td>12/11</td><td><div class="bar"><i style="width:0%"></i></div></td><td>${pill('Chờ duyệt','warn')}</td></tr>
+        <tr><td class="mono">SO-2610-0009</td><td>Đại lý Điện Nam Á</td><td>27/10</td><td><div class="bar ok"><i style="width:100%"></i></div></td><td>${pill('Sẵn sàng giao','ok')}</td></tr>
+        </tbody></table></div>
+      <div class="panel"><div class="ph">Cảnh báo</div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px">
+          <div>${pill('Dừng máy','bad')} Máy bện BUN-01 dừng 38 phút · chờ NVL</div>
+          <div>${pill('Trễ đặt hàng','bad')} DCBP-50: ngày đặt chậm nhất 21/10 đã qua</div>
+          <div>${pill('Hạn dùng','warn')} SIL-9710G lô 9710G-B2608 còn 24 ngày</div>
+          <div>${pill('Phế vượt','warn')} LSX-2610-031 phế vỏ 4,6% (ĐM 3%)</div>
+          <div>${pill('Spec','info')} 22 SKU Rdc vượt tham chiếu chờ QA</div>
+        </div></div>
+    </div>
+    <div class="cols c3" style="margin-top:12px">
+      ${[['EXT-SI-01','Máy đùn silicone','run','62 m/ph'],['EXT-TP-01','Máy đùn PVC/LSZH/PE','run','45 m/ph'],['BUN-01','Máy bện','stop','Dừng 38′']].map(m=>`<div class="mcard ${m[2]}"><div class="id">${m[0]}</div><div class="nm">${m[1]}</div><div class="big" style="margin-top:6px">${m[3]}</div></div>`).join('')}
+    </div>`;
+    body.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>nav(b.dataset.go));
+  };
+
+  // M2 SO
+  const SOs=[
+    {no:'SO-2610-0014',c:'HEIZKA (pháp nhân TH)',br:'HEIZKA',dd:'12/11/2026',st:'Chờ duyệt',lines:[['PFR-2C-1p5',5000,1500],['SFR-2P-1',2000,0],['CTL-1P-A18',3000,3500]],step:1},
+    {no:'SO-2610-0013',c:'Đại lý Minh Phát – Hà Nội',br:'KAVIX',dd:'30/10/2026',st:'Đang SX',lines:[['SIF-1C-1p5',20000,8000]],step:3},
+    {no:'SO-2610-0012',c:'KAVIX (pháp nhân TH)',br:'KAVIX',dd:'05/11/2026',st:'Đang SX',lines:[['PFR-2C-1p5',3500,0]],step:3},
+    {no:'SO-2610-0009',c:'Đại lý Điện Nam Á – Đà Nẵng',br:'KAVIX',dd:'27/10/2026',st:'Sẵn sàng giao',lines:[['CTL-1P-A18',1000,1000]],step:3}
+  ];
+  let soSel=0;
+  const stC={ 'Nháp':'mute','Chờ duyệt':'warn','Đã duyệt':'ok','Đang SX':'info','Sẵn sàng giao':'ok' };
+  R.so=()=>{
+    const s=SOs[soSel];
+    const chain=['NV KD lập','TP KD duyệt','BGĐ phê duyệt','ATP & giữ hàng'];
+    body.innerHTML=`<div class="row" style="justify-content:space-between"><div><h5>Đơn bán hàng</h5><div class="sub">Bấm một đơn để xem chi tiết và kiểm tra tồn khả dụng</div></div><button class="btn pri">+ Tạo SO</button></div>
+    <div class="cols c12">
+      <div class="panel"><table class="mt"><thead><tr><th>SO</th><th>Khách hàng</th><th>Giao</th><th>TT</th></tr></thead><tbody>
+      ${SOs.map((o,i)=>`<tr class="click ${i===soSel?'sel':''}" data-i="${i}"><td class="mono">${o.no}</td><td>${o.c}</td><td>${o.dd.slice(0,5)}</td><td>${pill(o.st,stC[o.st])}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="panel">
+        <div class="row" style="justify-content:space-between"><div><b class="mono" style="font-size:15px">${s.no}</b> ${pill(s.st,stC[s.st])}<div class="sub" style="margin:2px 0 0">${s.c} · Nhãn in: <b>${s.br}</b> · Giao ${s.dd}</div></div>
+        <div class="row">${s.st==='Chờ duyệt'?`<button class="btn bad" id="soRej">Trả lại</button><button class="btn ok" id="soOk">Duyệt (TP KD)</button>`:''}</div></div>
+        <div class="stepper">${chain.map((c,i)=>`<div class="st ${i<s.step?'done':i===s.step?'cur':''}">${c}</div>`).join('')}</div>
+        <table class="mt"><thead><tr><th>SKU</th><th>Quy cách</th><th class="num">Đặt (m)</th><th class="num">ATP (m)</th><th class="num">Thiếu (m)</th><th>Spec</th><th>Xử lý</th></tr></thead><tbody>
+        ${s.lines.map(l=>{const sh=Math.max(0,l[1]-l[2]);return `<tr><td class="mono">${l[0]}</td><td>${SKU[l[0]].d}</td><td class="num">${nf(l[1])}</td><td class="num">${nf(l[2])}</td><td class="num" style="color:${sh?'var(--bad)':'var(--ok)'}">${nf(sh)}</td><td>${l[0]==='SFR-2P-1'?pill('Chờ QA','warn'):pill('Đã phát hành','ok')}</td><td>${sh?(l[0]==='SFR-2P-1'?'Chờ spec → KT':'Yêu cầu SX '+nf(sh)+' m'):'Giữ '+Math.ceil(l[1]/SKU[l[0]].mk)+' kiện'}</td></tr>`}).join('')}
+        </tbody></table>
+        <div class="callout" style="margin:12px 0 0;font-size:12.5px"><b class="t">Quy tắc áp dụng</b>ATP chỉ tính bobin <i>Đạt QC</i> chưa giữ cho SO khác (BR-SO-03). SFR-2P-1 đang có Rdc tính 19,516 Ω/km so với giới hạn 19,5, nên dòng này bị giữ ở "Chờ spec" (BR-SO-01).</div>
+      </div>
+    </div>`;
+    body.querySelectorAll('tr[data-i]').forEach(r=>r.onclick=()=>{soSel=+r.dataset.i;R.so()});
+    const ok=$('#soOk');if(ok)ok.onclick=()=>{s.step=2;s.st='Đã duyệt';toast('Đã duyệt. Chuyển BGĐ phê duyệt');R.so()};
+    const rj=$('#soRej');if(rj)rj.onclick=()=>{s.st='Nháp';s.step=0;toast('Đã trả lại người lập kèm yêu cầu nhập lý do');R.so()};
+  };
+
+  // M3 MRP
+  R.mrp=()=>{
+    const res=runMRP();const tot=res.reduce((a,r)=>a+r.amt,0);const nBuy=res.filter(r=>r.buy>0).length;const late=res.filter(r=>r.late).length;
+    const tm=Object.values(plan.lines).reduce((a,l)=>a+(+l.m||0),0);
+    body.innerHTML=`<div class="row" style="justify-content:space-between"><div><h5>Kế hoạch KH-2611-01 · Tháng 11/2026 <span class="pill p-mute">Nháp v1</span></h5><div class="sub">Nhập mét ở ô vàng, kết quả MRP tính lại ngay. BOM, hao hụt và bội số lấy từ file bản 3.0.</div></div>
+      <div class="row"><label class="f">Ngày cần vật tư<input type="date" class="inp y" id="needD" value="${plan.need}"></label><button class="btn pri" id="mrpSend">Gửi TP SX duyệt</button></div></div>
+    <div class="kpis"><div class="kpi"><div class="l">Tổng mét kế hoạch</div><div class="v">${nf(tm)}</div></div><div class="kpi"><div class="l">Vật tư cần mua</div><div class="v">${nBuy}</div></div><div class="kpi"><div class="l">Ngân sách (giá ví dụ)</div><div class="v">${nf(tot/1e6,1)} tr</div></div><div class="kpi"><div class="l">Vật tư trễ đặt</div><div class="v" style="color:${late?'var(--bad)':'var(--ok)'}">${late}</div></div></div>
+    <div class="panel" style="margin-bottom:12px"><div class="ph">Dòng kế hoạch</div>
+      <table class="mt"><thead><tr><th>SKU</th><th>Quy cách</th><th class="num">kg/km</th><th>Đóng gói</th><th class="num">m/kiện</th><th class="num" style="width:110px">Sản lượng (m)</th><th class="num" style="width:80px">Số lô</th><th class="num">Số kiện</th><th class="num">kg/kiện</th><th>Kiểm tra</th></tr></thead><tbody>
+      ${Object.entries(plan.lines).map(([k,l])=>{const s=SKU[k];const kien=l.m?Math.ceil(l.m/s.mk):0;const kgk=s.kgkm*s.mk/1000;return `<tr><td class="mono">${k}</td><td class="nm">${s.d}</td><td class="num">${nf(s.kgkm,2)}</td><td>${s.pack}</td><td class="num">${s.mk}</td><td><input class="inp y n" data-k="${k}" data-f="m" value="${l.m}" inputmode="numeric" aria-label="Sản lượng ${k}"></td><td><input class="inp y n" data-k="${k}" data-f="lots" value="${l.lots}" inputmode="numeric" aria-label="Số lô ${k}"></td><td class="num">${nf(kien)}</td><td class="num">${nf(kgk,1)}</td><td>${!l.m?'':k==='SFR-2P-1'?pill('Rdc vượt · chờ QA','warn'):kgk>100?pill('Kiện quá tải','bad'):pill('OK','ok')}</td></tr>`}).join('')}
+      </tbody></table></div>
+    <div class="panel"><div class="ph">Kết quả MRP · đề nghị mua <span class="note-ex">Tồn, hàng về, giá, lead time là ví dụ</span></div>
+      <table class="mt"><thead><tr><th>Mã VT</th><th>Vật tư</th><th>ĐVT</th><th class="num">Lý thuyết</th><th class="num">Hao hụt</th><th class="num">Khởi động</th><th class="num">Tổng cấp SX</th><th class="num">Tồn KD</th><th class="num">Hàng về</th><th class="num">Thiếu ròng</th><th class="num">Bội số</th><th class="num">Đề nghị mua</th><th class="num">Thành tiền</th><th>Đặt chậm nhất</th></tr></thead><tbody>
+      ${res.map(r=>`<tr><td class="mono">${r.k}</td><td class="nm">${r.n}</td><td>${r.u}</td><td class="num">${nf(r.theo,2)}</td><td class="num">${nf(r.loss,2)}</td><td class="num">${nf(r.start,1)}</td><td class="num"><b>${nf(r.tot,2)}</b></td><td class="num">${nf(r.stock,1)}</td><td class="num">${nf(r.inc,1)}</td><td class="num" style="color:${r.short?'var(--bad)':'var(--muted)'}">${nf(r.short,2)}</td><td class="num">${MAT[r.k].mul}</td><td class="num"><b>${nf(r.buy)}</b></td><td class="num">${r.buy?nf(r.amt):'—'}</td><td>${r.buy?(r.late?pill(r.od.toLocaleDateString('vi-VN')+' · Trễ','bad'):r.od.toLocaleDateString('vi-VN')):pill('Không cần mua','mute')}</td></tr>`).join('')}
+      </tbody></table></div>`;
+    body.querySelectorAll('input[data-k]').forEach(i=>i.onchange=()=>{const v=Math.max(0,parseFloat(String(i.value).replace(/\./g,'').replace(',','.'))||0);plan.lines[i.dataset.k][i.dataset.f]=i.dataset.f==='lots'?Math.max(1,Math.round(v)):v;R.mrp()});
+    $('#needD').onchange=e=>{plan.need=e.target.value||plan.need;R.mrp()};
+    $('#mrpSend').onclick=()=>toast('Đã gửi TP Sản xuất duyệt kế hoạch KH-2611-01');
+  };
+
+  // M4 Approvals
+  const AP=[
+    {id:'PO-2610-018',t:'Đơn mua hàng',who:'Hoàng Thu Hà · TP Mua',sum:'NCC đồng (ví dụ) · CU-024 2.000 kg · giao 05/11',chain:['NV Mua lập','TP Mua duyệt','BGĐ phê duyệt'],step:2,age:'26 giờ'},
+    {id:'ĐXM-2610-003',t:'Đề xuất mua tối ưu',who:'Hoàng Thu Hà · TP Mua',sum:'CU-024 gợi ý 1.200 kg → đề xuất 3.000 kg. Lý do: giá đồng giảm 4% trong 2 tuần, gom MOQ',chain:['TP Mua lập','KTT xem dòng tiền','BGĐ phê duyệt'],step:2,age:'5 giờ'},
+    {id:'SPEC-SFR-2P-1 v1',t:'Phát hành spec mã mới',who:'Lê Minh Châu · TP KT/QA',sum:'Pilot 300 m: Rdc đo 19,32 Ω/km ≤ 19,5. kg/km thực 121,9 so với định mức 123,46',chain:['KT lập','QC nhập pilot','TP KT duyệt','BGĐ phát hành'],step:3,age:'2 giờ'},
+    {id:'KH-2611-01',t:'Kế hoạch SX tháng 11',who:'Đỗ Văn Khánh · TP SX',sum:'4 SKU · 15.500 m · 14 vật tư cần mua',chain:['SX_KH lập','TP SX duyệt','BGĐ duyệt'],step:2,age:'1 giờ'},
+    {id:'KK-2610-02',t:'Điều chỉnh kiểm kê',who:'Phạm Quốc Dũng · Thủ kho',sum:'PP-FILL chênh −3,2 kg; PE-PACK +1,1 kg',chain:['Thủ kho lập','KT kho kiểm tra','BGĐ phê duyệt'],step:2,age:'30 phút'}
+  ];
+  let apSel=0;
+  R.appr=()=>{
+    const a=AP[apSel];
+    body.innerHTML=`<h5>Hộp duyệt</h5><div class="sub">Mọi chứng từ chờ anh/chị duyệt ở một nơi. Duyệt theo phân cấp chức danh.</div>
+    <div class="cols c12"><div class="panel">${AP.map((x,i)=>`<div class="click" data-i="${i}" style="padding:9px 8px;border-bottom:1px solid var(--line);cursor:pointer;${i===apSel?'background:var(--copper-soft);border-radius:6px':''}"><div class="row" style="justify-content:space-between"><b class="mono" style="font-size:12px">${x.id}</b>${x.done?pill(x.done,x.done==='Đã duyệt'?'ok':'bad'):pill(x.age,x.age.includes('26')?'bad':'mute')}</div><div style="font-size:12px">${x.t}</div><div style="font-size:11px;color:var(--muted)">${x.who}</div></div>`).join('')}</div>
+    <div class="panel"><div class="row" style="justify-content:space-between"><div><div style="font-size:11px;color:var(--muted)">${a.t}</div><b class="mono" style="font-size:16px">${a.id}</b></div>${a.done?pill(a.done,a.done==='Đã duyệt'?'ok':'bad'):''}</div>
+      <div class="stepper">${a.chain.map((c,i)=>`<div class="st ${a.done==='Đã trả lại'&&i===a.step?'rej':i<a.step||(a.done==='Đã duyệt')?'done':i===a.step?'cur':''}">${c}</div>`).join('')}</div>
+      <p style="font-size:13px">${a.sum}</p>
+      <p style="font-size:12px;color:var(--muted)">Người lập: ${a.who}. Chờ ${a.age}. Có 2 file đính kèm và lịch sử 3 bình luận.</p>
+      <label class="f" style="margin:10px 0">Ý kiến (bắt buộc khi trả lại)<textarea class="inp" id="apCmt" rows="2" placeholder="Ví dụ: giảm còn 2.500 kg, chia 2 đợt giao"></textarea></label>
+      <div id="apErr" style="color:var(--bad);font-size:12px;margin-bottom:6px" hidden>Nhập lý do trả lại để người lập biết cần sửa gì.</div>
+      <div class="row"><button class="btn ok" id="apOk" ${a.done?'disabled':''}>Phê duyệt</button><button class="btn bad" id="apNo" ${a.done?'disabled':''}>Trả lại</button><button class="btn">Ủy quyền…</button></div>
+    </div></div>`;
+    body.querySelectorAll('[data-i]').forEach(r=>r.onclick=()=>{apSel=+r.dataset.i;R.appr()});
+    $('#apOk').onclick=()=>{a.done='Đã duyệt';a.step=a.chain.length;toast(a.id+' đã được phê duyệt');R.appr()};
+    $('#apNo').onclick=()=>{if(!$('#apCmt').value.trim()){$('#apErr').hidden=false;$('#apCmt').focus();return}a.done='Đã trả lại';toast(a.id+' đã trả lại người lập');R.appr()};
+  };
+
+  // M5 Spec wizard with live calc
+  const sp={n:30,d:0.24,fill:0.75,t:0.6,cores:2,kg:1.02,rho:1.45,lim:13.3,ins:'Silicone',name:'PFR-2C-1p5-HZ',grp:'Cáp điện chống cháy',ad:1.5};
+  R.spec=()=>{
+    const A=sp.n*Math.PI*sp.d**2/4,D=Math.sqrt(4*A/Math.PI/sp.fill),L=30*Math.sqrt(sp.ad/1.5),r=(D-sp.d)/2*0.7071067811865476,K=Math.sqrt(1+(2*Math.PI*r/L)**2);
+    const P=D+2*sp.t,cu=A*8.89*K*sp.cores*sp.kg,ins=(Math.PI/4*(P*P-D*D)+(Math.PI/4*D*D-A))*sp.rho*sp.cores*sp.kg,rdc=0.017241*1000*K*sp.kg/A;
+    const okR=rdc<=sp.lim;
+    const stp=['Thông tin','Cấu trúc & tính định mức','BOM','Pilot & đo','Gửi duyệt'];
+    body.innerHTML=`<div class="row" style="justify-content:space-between"><div><h5>Yêu cầu mã mới · ${sp.name} <span class="pill p-mute">Nháp</span></h5><div class="sub">Kỹ thuật/QA lập spec. Hệ thống tính định mức ngay khi sửa ô vàng (công thức CAL-01…06).</div></div><div class="row"><button class="btn">Lưu nháp</button><button class="btn pri" id="spGo" ${okR?'':'disabled'} title="${okR?'':'Rdc vượt giới hạn: cần pilot hoặc phiếu chấp nhận sai lệch'}">Tạo lệnh pilot</button></div></div>
+    <div class="stepper">${stp.map((c,i)=>`<div class="st ${i<1?'done':i===1?'cur':''}">${c}</div>`).join('')}</div>
+    <div class="cols c21">
+      <div class="panel"><div class="ph">Cấu trúc lõi</div>
+        <div class="fgrid">
+          <label class="f">Nhóm<input class="inp" value="${sp.grp}" readonly></label>
+          <label class="f">Mã lõi (danh nghĩa mm²)<input class="inp y n" data-p="ad" value="${sp.ad}"></label>
+          <label class="f">Số lõi<input class="inp y n" data-p="cores" value="${sp.cores}"></label>
+          <label class="f">Vật liệu cách điện<input class="inp" value="${sp.ins} (ρ ${sp.rho})" readonly></label>
+          <label class="f">Số sợi / lõi<input class="inp y n" data-p="n" value="${sp.n}"></label>
+          <label class="f">Ø sợi (mm)<input class="inp y n" data-p="d" value="${sp.d}"></label>
+          <label class="f">Hệ số lấp đầy<input class="inp y n" data-p="fill" value="${sp.fill}"></label>
+          <label class="f">Chiều dày cách điện (mm)<input class="inp y n" data-p="t" value="${sp.t}"></label>
+          <label class="f">K ghép<input class="inp y n" data-p="kg" value="${sp.kg}"></label>
+          <label class="f">Rdc giới hạn (Ω/km)<input class="inp y n" data-p="lim" value="${sp.lim}"></label>
+          <label class="f">Thương hiệu<input class="inp" value="HEIZKA" readonly></label>
+          <label class="f">Vỏ<input class="inp" value="FR-PVC · RAL 6037" readonly></label>
+        </div>
+        <p style="font-size:11.5px;color:var(--muted);margin:10px 0 0">Ràng buộc: số sợi &gt; 50 thì phải xác nhận bện nhiều cấp. PFR mặc định chỉ KAVIX: chọn HEIZKA tạo cảnh báo cần TP KT xác nhận.</p>
+      </div>
+      <div class="panel"><div class="ph">Kết quả tính</div>
+        <table class="mt"><tbody>
+          <tr><td>A tổng sợi</td><td class="num">${nf(A,4)} mm²</td></tr>
+          <tr><td>Ø bó đồng</td><td class="num">${nf(D,3)} mm</td></tr>
+          <tr><td>Bước bện / K bện</td><td class="num">${nf(L,1)} mm / ${nf(K,4)}</td></tr>
+          <tr><td>Ø lõi bọc</td><td class="num">${nf(P,3)} mm</td></tr>
+          <tr><td>Đồng kg/km</td><td class="num"><b>${nf(cu,3)}</b></td></tr>
+          <tr><td>Silicone kg/km</td><td class="num"><b>${nf(ins,3)}</b></td></tr>
+          <tr><td>Rdc tính</td><td class="num"><b style="color:${okR?'var(--ok)':'var(--bad)'}">${nf(rdc,3)} Ω/km</b></td></tr>
+        </tbody></table>
+        <div style="margin-top:10px">${okR?pill('Rdc đạt giới hạn','ok'):pill('Rdc vượt '+nf(rdc-sp.lim,3)+' Ω/km','bad')} ${sp.n>50?pill('Bện nhiều cấp','warn'):''} ${pill('PFR + HEIZKA: cần xác nhận','warn')}</div>
+        <p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">Thử đổi số sợi 30 → 29 để thấy Rdc vượt và nút "Tạo lệnh pilot" bị khóa.</p>
+      </div>
+    </div>`;
+    body.querySelectorAll('input[data-p]').forEach(i=>i.onchange=()=>{const v=parseFloat(String(i.value).replace(',','.'));if(!isNaN(v)&&v>0){sp[i.dataset.p]=v}R.spec()});
+    $('#spGo').onclick=()=>toast('Đã tạo lệnh pilot PL-2610-004 · giới hạn 300 m');
+  };
+
+  // M6 Inventory
+  const WH={KNL:'Kho nguyên liệu',KBTP:'Kho bán thành phẩm',KTP:'Kho thành phẩm',KPL:'Kho phế liệu'};
+  const LOTS={
+    KNL:[['CU24-2610-0118','CU-024 Đồng trần BC Ø0,24','A1-03','420,0 kg','Đạt','—','PO-2610-011'],['9710G-B2608','SIL-9710G Silicone HCR FR','B2-01','150,0 kg','Đạt','18/11/2026','PO-2609-040'],['9710G-B2610','SIL-9710G Silicone HCR FR','B2-02','100,0 kg','Chờ QC','20/04/2027','PO-2610-015'],['DCBP-2609-07','DCBP-50 Paste 50%','C1-01','4,0 kg','Đạt','30/01/2027','PO-2609-041'],['TCCA-2610-02','TCCA-020 Drain','A2-01','8,0 kg','Cách ly','—','PO-2610-012']],
+    KBTP:[['CB-261023-009','Lõi đồng bện 30×0,24','W1-04','6.200 m','Đạt','—','LSX-2610-031'],['LB-261024-014','Lõi bọc silicone nâu 1,5','W2-01','3.600 m','Đạt','—','LSX-2610-031'],['LB-261024-015','Lõi bọc silicone trắng 1,5','W2-02','3.580 m','Đạt','—','LSX-2610-031'],['BL-261025-022','Bó lõi 2×1,5','W3-01','1.450 m','Chờ QC','—','LSX-2610-031']],
+    KTP:[['BB-PFR2C15-261025-007','PFR-2C-1p5 · KAVIX','F1-07','500 m / 1 bobin','Đạt','—','LSX-2610-031'],['BB-PFR2C15-261025-008','PFR-2C-1p5 · KAVIX','F1-07','500 m / 1 bobin','Đạt','—','LSX-2610-031'],['CP-SIF1C15-261020-031','SIF-1C-1p5 · KAVIX','F3-02','100 m / 1 cuộn','Đạt','—','LSX-2610-027']],
+    KPL:[['PL-CU-261025','Phế đồng (đuôi, đứt dây)','S1','12,4 kg','Giá trị 0','—','LSX-2610-031'],['PL-SIL-261025','Phế silicone khởi động + lỗi','S2','9,8 kg','Giá trị 0','—','LSX-2610-031'],['PL-PVC-261025','Phế FR-PVC vỏ + purge','S3','15,1 kg','Giá trị 0','—','LSX-2610-031']]
+  };
+  let whSel='KNL',lotSel=0;
+  const qcC={'Đạt':'ok','Chờ QC':'info','Cách ly':'warn','Không đạt':'bad','Giá trị 0':'mute'};
+  function qr(seed){let h=0;for(const c of seed)h=(h*31+c.charCodeAt(0))>>>0;let s='';for(let y=0;y<21;y++)for(let x=0;x<21;x++){const f=(x<7&&y<7)||(x>13&&y<7)||(x<7&&y>13);let on;if(f){const fx=x>13?x-14:x,fy=y>13?y-14:y;on=fx===0||fx===6||fy===0||fy===6||(fx>1&&fx<5&&fy>1&&fy<5)}else{h=(h*1103515245+12345)>>>0;on=(h>>16)&1}s+=on?'<i></i>':'<b></b>'}return `<div class="qr" aria-label="Mã QR minh họa">${s}</div>`}
+  R.inv=()=>{
+    const L=LOTS[whSel],l=L[Math.min(lotSel,L.length-1)];
+    body.innerHTML=`<div class="row" style="justify-content:space-between"><div><h5>Tồn kho theo lô</h5><div class="sub">4 kho · bấm một lô để xem tem QR và lịch sử</div></div><div class="row"><button class="btn">Kiểm kê</button><button class="btn">Chuyển kho</button><button class="btn pri">+ Nhận hàng theo PO</button></div></div>
+    <div class="row" style="margin-bottom:10px">${Object.entries(WH).map(([k,v])=>`<button class="btn ${k===whSel?'pri':''}" data-w="${k}">${v}</button>`).join('')}</div>
+    <div class="cols c21"><div class="panel"><table class="mt"><thead><tr><th>Mã lô</th><th>Hàng</th><th>Vị trí</th><th class="num">Tồn</th><th>Trạng thái</th><th>HSD</th><th>Nguồn</th></tr></thead><tbody>
+    ${L.map((r,i)=>`<tr class="click ${i===lotSel?'sel':''}" data-i="${i}"><td class="mono">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="num">${r[3]}</td><td>${pill(r[4],qcC[r[4]])}</td><td>${r[5]==='18/11/2026'?pill(r[5]+' · 24 ngày','warn'):r[5]}</td><td class="mono">${r[6]}</td></tr>`).join('')}
+    </tbody></table>
+    ${whSel==='KPL'?'<div class="callout" style="font-size:12.5px;margin:10px 0 0"><b class="t">Kho phế liệu ghi giá trị 0</b>Phế không làm giảm giá thành (mục 12.3). Xuất bán phế cần BGĐ phê duyệt, tiền thu ghi vào thu nhập khác.</div>':''}
+    ${whSel==='KNL'?'<div class="callout warn" style="font-size:12.5px;margin:10px 0 0"><b class="t">FEFO</b>Khi cấp cho LSX, hệ thống gợi ý lô 9710G-B2608 (HSD 18/11) trước lô B2610.</div>':''}
+    </div>
+    <div class="panel"><div class="ph">Tem lô</div>
+      <div class="lbl">${qr(l[0])}<div><div class="t">${l[0]}</div><div>${l[1]}</div><div>SL: <b>${l[3]}</b></div><div>Vị trí: ${l[2]} · ${WH[whSel]}</div><div>Nguồn: ${l[6]}</div><div style="margin-top:4px;font-weight:700">${whSel==='KTP'?'KAVIX · BMT':'BMT'}</div></div></div>
+      <div style="margin-top:12px;font-size:12px"><b>Lịch sử</b>
+      <div style="color:var(--muted);margin-top:4px;display:flex;flex-direction:column;gap:3px"><span>25/10 15:42 · Nhập · ${l[6]}</span><span>25/10 16:10 · QC cập nhật trạng thái: ${l[4]}</span><span>25/10 16:15 · In tem (Phạm Quốc Dũng)</span></div></div>
+      <div class="row" style="margin-top:12px"><button class="btn" data-go="trace">Truy xuất lô này</button><button class="btn">In lại tem</button></div>
+    </div></div>`;
+    body.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{whSel=b.dataset.w;lotSel=0;R.inv()});
+    body.querySelectorAll('tr[data-i]').forEach(r=>r.onclick=()=>{lotSel=+r.dataset.i;R.inv()});
+    body.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>nav(b.dataset.go));
+  };
+
+  // M7 Work order + tablet
+  const ops=[['CĐ0','Phối trộn silicone','—',100],['CĐ1','Bện ruột dẫn','BUN-01',100],['CĐ2','Bọc cách điện','EXT-SI-01',100],['CĐ3','Ghép lõi','TWS-01',100],['CĐ5','Bọc vỏ + in','EXT-TP-01',41],['CĐ6','FQC + đóng gói','QC',29]];
+  const tab={run:true,m:1450,scrap:3.2,scan:['BL-261025-022','PVC-FR · PF-2609-031','PF-G · PFG-2609-004']};
+  R.wo=()=>{
+    body.innerHTML=`<div class="row" style="justify-content:space-between"><div><h5>LSX-2610-031 · PFR-2C-1p5 · 3.500 m <span class="pill p-info">Đang SX</span></h5><div class="sub">Spec v1 (Đã phát hành) · BOM v1 · SO-2610-0012 · 7 bobin × 500 m · Bắt đầu 23/10</div></div><div class="row"><button class="btn">Phiếu cấp NVL</button><button class="btn">Cấp bổ sung…</button></div></div>
+    <div class="panel" style="margin-bottom:12px"><table class="mt"><thead><tr><th>Công đoạn</th><th>Máy</th><th style="width:40%">Tiến độ</th><th class="num">%</th><th>Lô đầu ra</th></tr></thead><tbody>
+    ${ops.map(o=>`<tr><td><b>${o[0]}</b> ${o[1]}</td><td class="mono">${o[2]}</td><td><div class="bar ${o[3]===100?'ok':''}"><i style="width:${o[3]}%"></i></div></td><td class="num">${o[3]}%</td><td>${o[3]===100?pill('Đã nhập kho BTP','ok'):o[3]?pill('Đang chạy','info'):pill('Chưa bắt đầu','mute')}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="tablet" role="region" aria-label="Màn hình tablet tại máy">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px"><div><div style="font-size:12px;color:var(--muted)">Máy EXT-TP-01 · Ca B · Bùi Văn Long</div><div style="font-size:18px;font-weight:700">CĐ5 Bọc vỏ + in · LSX-2610-031</div></div>${tab.run?pill('ĐANG CHẠY','ok'):pill('DỪNG','bad')}</div>
+      <div class="cols c3">
+        <div class="kpi"><div class="l">Mét đã chạy (PLC)</div><div class="v" id="tbM">${nf(tab.m)}</div><div class="d">Mục tiêu 3.500 m</div></div>
+        <div class="kpi"><div class="l">Tốc độ</div><div class="v">45</div><div class="d">m/phút</div></div>
+        <div class="kpi"><div class="l">OD thực / chuẩn</div><div class="v">6,95</div><div class="d">6,94 ± 0,10 mm</div></div>
+      </div>
+      <div class="panel" style="margin:10px 0"><div class="ph">Lô đầu vào đã quét</div>${tab.scan.map(s=>`<div style="padding:4px 0;font-size:13px">${pill('✓','ok')} <span class="mono">${s}</span></div>`).join('')}</div>
+      <div class="cols c3">
+        <button class="bigbtn" style="background:var(--steel)" id="tbScan">Quét QR lô</button>
+        <button class="bigbtn" style="background:var(--warn)" id="tbScrap">Ghi phế +1 kg</button>
+        <button class="bigbtn" style="background:${tab.run?'var(--bad)':'var(--ok)'}" id="tbRun">${tab.run?'Dừng máy':'Chạy lại'}</button>
+      </div>
+      <div style="margin-top:10px;font-size:13px">Phế công đoạn: <b>${nf(tab.scrap,1)} kg</b> · ${tab.scrap>3.5?pill('Vượt định mức 3%','warn'):pill('Trong định mức','ok')}</div>
+      <div id="tbReason" ${tab.run?'hidden':''} style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px">Chọn lý do dừng (BR-SX-04)</div><div class="row">${['Chờ NVL','Đổi màu','Thay khuôn','Hỏng máy','Purge/vệ sinh','Chờ QC'].map(x=>`<button class="btn" data-r="${x}">${x}</button>`).join('')}</div></div>
+    </div>`;
+    $('#tbRun').onclick=()=>{tab.run=!tab.run;R.wo()};
+    $('#tbScrap').onclick=()=>{tab.scrap+=1;toast('Đã ghi 1 kg phế · mã: lỗi OD');R.wo()};
+    $('#tbScan').onclick=()=>{tab.scan.push('TALC · TAL-2609-01');toast('Đã nhận lô TALC · đúng BOM');R.wo()};
+    body.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>toast('Đã ghi lý do dừng: '+b.dataset.r));
+    timer=setInterval(()=>{if(tab.run&&tab.m<3500){tab.m+=1;const e=$('#tbM');if(e)e.textContent=nf(tab.m)}},1333);
+  };
+
+  // M8 Trace
+  R.trace=()=>{
+    const N=(k,d,p)=>`<span class="nd"><span class="k">${k}</span><span>${d}</span>${p||''}</span>`;
+    body.innerHTML=`<h5>Truy xuất nguồn gốc</h5><div class="sub">Quét hoặc nhập mã bobin, lô BTP, lô NVL</div>
+    <div class="row" style="margin-bottom:12px"><input class="inp" style="max-width:320px" value="BB-PFR2C15-261025-007" aria-label="Mã lô"><button class="btn ${'pri'}" id="trB">Truy ngược</button><button class="btn" id="trF">Truy xuôi (thu hồi)</button></div>
+    <div class="cols c21"><div class="panel tree" id="trTree">
+      <details open><summary>${N('BB-PFR2C15-261025-007','Bobin PFR-2C-1p5 · 500 m · KAVIX',pill('FQC đạt','ok'))}</summary>
+        <div class="leaf">FQC-261025-007 · Rdc 12,98 Ω/km (≤ 13,3) · OD 6,95 mm · Cao áp 3,5 kV/5′ đạt</div>
+        <details open><summary>${N('CĐ5 Bọc vỏ','EXT-TP-01 · ca B 25/10 · Bùi Văn Long')}</summary>
+          <details open><summary>${N('BL-261025-022','Bó lõi 2×1,5 · 1.450 m')}</summary>
+            <details open><summary>${N('LB-261024-014','Lõi bọc silicone nâu · EXT-SI-01 ca A 24/10')}</summary>
+              <details><summary>${N('MX-261024-006','Mẻ silicone 50 kg')}</summary>
+                <div class="leaf">${N('9710G-B2608','SIL-9710G · PO-2609-040 · COA ✓')}</div>
+                <div class="leaf">${N('DCBP-2609-07','DCBP-50 · PO-2609-041')}</div>
+                <div class="leaf">${N('SIC0-2609-02','SI-C0 màu nâu')}</div></details>
+              <details open><summary>${N('CB-261023-009','Lõi đồng bện 30×0,24 · BUN-01')}</summary>
+                <div class="leaf">${N('CU24-2610-0118','CU-024 · NCC đồng (ví dụ) · PO-2610-011',pill('COA ✓','ok'))}</div></details>
+            </details>
+            <details><summary>${N('LB-261024-015','Lõi bọc silicone trắng')}</summary><div class="leaf">… cùng mẻ MX-261024-006 và CB-261023-009</div></details>
+          </details>
+          <div class="leaf">${N('PF-2609-031','PVC-FR vỏ · PO-2609-038')}</div>
+          <div class="leaf">${N('PFG-2609-004','PF-G màu RAL 6037')}</div>
+          <div class="leaf">${N('TAL-2609-01','TALC')}</div>
+        </details>
+      </details></div>
+      <div class="panel"><div class="ph">Tóm tắt</div><table class="mt"><tbody>
+        <tr><td>Khách hàng</td><td>KAVIX · SO-2610-0012</td></tr><tr><td>Lô NVL gốc</td><td class="num">7</td></tr><tr><td>Nhà cung cấp</td><td class="num">5</td></tr><tr><td>Máy tham gia</td><td>BUN-01, EXT-SI-01, TWS-01, EXT-TP-01</td></tr><tr><td>Thông số máy</td><td>Xem đồ thị nhiệt độ/OD trong thời gian chạy (GĐ4)</td></tr></tbody></table>
+        <div id="trFw" hidden class="callout warn" style="font-size:12.5px"><b class="t">Truy xuôi lô CU24-2610-0118</b>Đã dùng cho 3 lõi đồng → 6 lõi bọc → 9 bobin TP. 7 bobin thuộc SO-2610-0012 (KAVIX), 2 bobin còn trong kho F1-07.</div></div></div>`;
+    $('#trF').onclick=()=>{$('#trFw').hidden=false};
+    $('#trB').onclick=()=>{$('#trFw').hidden=true;body.querySelectorAll('#trTree details').forEach(d=>d.open=true)};
+  };
+
+  // M9 Cost
+  R.cost=()=>{
+    const s=SKU['PFR-2C-1p5'],km=3.5,act={'CU-024':1.008,'SIL-9710G':1.06,'DCBP-50':1.05,'SI-C0':1.0,'PVC-FR':1.046,'PF-G':1.03,'TALC':1.0,'INK':1.1,'SOLVENT':1.0};
+    let rows=[],sd=0,sa=0;
+    for(const [k,v] of Object.entries(s.km)){const q=v*km/(1-MAT[k].hh),qa=q*act[k],p=EX[k][2],pa=k==='CU-024'?p*1.025:p;const a=q*p,b=qa*pa;sd+=a;sa+=b;rows.push([k,MAT[k].n,q,qa,a,b,(qa-q)*p,(pa-p)*qa])}
+    const conv=[['Nhân công trực tiếp',14.2e6,15.1e6],['Điện năng',6.8e6,7.4e6],['Khấu hao máy',9.5e6,9.5e6],['SX chung khác',4.1e6,4.3e6],['Vật tư đóng gói',3.3e6,3.3e6]];
+    conv.forEach(c=>{sd+=c[1];sa+=c[2]});
+    const mx=Math.max(sd,sa);
+    body.innerHTML=`<div class="row" style="justify-content:space-between"><div><h5>Giá thành LSX-2610-031 · PFR-2C-1p5 · 3.500 m</h5><div class="sub">Định mức (spec v1, giá chuẩn T10) so với thực tế · Bình quân gia quyền di động · <span class="note-ex">giá và chi phí là ví dụ</span></div></div><div class="row"><button class="btn">Xuất Excel</button><button class="btn pri" id="cGo">Gửi KTT duyệt</button></div></div>
+    <div class="kpis"><div class="kpi"><div class="l">Giá thành định mức</div><div class="v">${nf(sd/3500)}</div><div class="d">đ/m</div></div><div class="kpi"><div class="l">Giá thành thực tế</div><div class="v">${nf(sa/3500)}</div><div class="d">đ/m</div></div><div class="kpi"><div class="l">Chênh lệch</div><div class="v" style="color:var(--bad)">+${nf((sa/sd-1)*100,1)}%</div><div class="d">+${nf((sa-sd)/1e6,2)} triệu đ</div></div><div class="kpi"><div class="l">Phế (giá trị 0)</div><div class="v">37,3 kg</div><div class="d">Đồng 12,4 · Si 9,8 · Vỏ 15,1</div></div></div>
+    <div class="cols c21"><div class="panel"><div class="ph">NVL trực tiếp: chênh lượng và chênh giá (BR-GT-02)</div>
+      <table class="mt"><thead><tr><th>Mã</th><th class="num">ĐM (kg)</th><th class="num">Thực (kg)</th><th class="num">Tiền ĐM</th><th class="num">Tiền thực</th><th class="num">Chênh lượng</th><th class="num">Chênh giá</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td class="mono">${r[0]}</td><td class="num">${nf(r[2],2)}</td><td class="num">${nf(r[3],2)}</td><td class="num">${nf(r[4])}</td><td class="num">${nf(r[5])}</td><td class="num" style="color:${r[6]>1?'var(--bad)':'var(--muted)'}">${nf(r[6])}</td><td class="num" style="color:${r[7]>1?'var(--bad)':'var(--muted)'}">${nf(r[7])}</td></tr>`).join('')}
+      ${conv.map(c=>`<tr><td>${c[0]}</td><td></td><td></td><td class="num">${nf(c[1])}</td><td class="num">${nf(c[2])}</td><td class="num" colspan="2" style="color:${c[2]>c[1]?'var(--bad)':'var(--muted)'}">${nf(c[2]-c[1])}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="panel"><div class="ph">Tổng giá thành (triệu đ)</div>
+        <div class="wf"><div class="b"><span>${nf(sd/1e6,1)}</span><i style="height:${sd/mx*130}px;background:var(--steel)"></i><span>Định mức</span></div><div class="b"><span>${nf(sa/1e6,1)}</span><i style="height:${sa/mx*130}px;background:var(--copper)"></i><span>Thực tế</span></div></div>
+        <div class="callout warn" style="font-size:12px"><b class="t">Nguyên nhân chính</b>Silicone vượt 6% (phế khởi động 2 lô thay vì 1). FR-PVC vượt 4,6% (lỗi OD ca B, xem 18 phút dừng do thay khuôn). Đồng tăng giá 2,5% so với giá chuẩn.</div></div></div>`;
+    $('#cGo').onclick=()=>toast('Đã gửi Kế toán trưởng duyệt giá thành LSX-2610-031');
+  };
+
+  // M10 IoT
+  const M=[
+    {id:'EXT-SI-01',n:'Máy đùn silicone',st:'run',sp:62,job:'LSX-2610-034 · CĐ2 · SIF-1C-1p5',kv:[['Xi lanh','48 °C'],['Hầm lưu hóa','352 °C'],['Áp đầu','128 bar'],['Trục vít','34 vòng/ph']],oee:81},
+    {id:'EXT-TP-01',n:'Máy đùn PVC/LSZH/PE',st:'run',sp:45,job:'LSX-2610-031 · CĐ5 · PFR-2C-1p5',kv:[['Vùng 1–4','158/165/170/172 °C'],['Đầu','175 °C'],['Áp đầu','212 bar'],['Dòng','38 A']],oee:74},
+    {id:'BUN-01',n:'Máy bện',st:'stop',sp:0,job:'Dừng 38′ · Chờ NVL',kv:[['Bước bện','30 mm'],['Tốc độ cánh','0 vòng/ph'],['Mã lỗi','—'],['Ca','B']],oee:52},
+    {id:'TWS-01',n:'Máy xoắn',st:'idle',sp:0,job:'Chờ lệnh · đổi khuôn',kv:[['Bước xoắn','—'],['Tốc độ','0'],['Dòng','2 A'],['Ca','B']],oee:66},
+    {id:'PRN-01',n:'Máy in',st:'run',sp:45,job:'Inline EXT-TP-01',kv:[['Nội dung','KAVIX PFR 2×1,5…'],['Mực','72%'],['Lỗi in','0'],['Đồng bộ','EXT-TP-01']],oee:74},
+    {id:'GAU-01',n:'Máy đo chiều dày / OD',st:'run',sp:null,job:'Inline EXT-TP-01',kv:[['OD chuẩn','6,94 mm'],['Dung sai','±0,10'],['Lệch tâm','6%'],['Chiều dày min','0,71 mm']],oee:null}
+  ];
+  const od=Array.from({length:60},()=>6.94+(Math.random()-.5)*.06);
+  function spark(){const w=300,h=70,mn=6.80,mx=7.08,y=v=>h-(v-mn)/(mx-mn)*h;const pts=od.map((v,i)=>`${(i/(od.length-1)*w).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="Biểu đồ OD"><rect x="0" y="${y(7.04)}" width="${w}" height="${y(6.84)-y(7.04)}" fill="var(--ok-soft)"/><line x1="0" x2="${w}" y1="${y(6.94)}" y2="${y(6.94)}" stroke="var(--line)" stroke-dasharray="3 3"/><polyline points="${pts}" fill="none" stroke="var(--copper)" stroke-width="1.6" vector-effect="non-scaling-stroke"/><circle cx="${w}" cy="${y(od[od.length-1])}" r="3" fill="var(--copper)"/></svg>`}
+  R.iot=()=>{
+    const lab={run:'Đang chạy',stop:'Dừng',idle:'Chờ'},cl={run:'ok',stop:'bad',idle:'warn'};
+    body.innerHTML=`<div class="row" style="justify-content:space-between"><div><h5>Giám sát dây chuyền · thời gian thực</h5><div class="sub">Nguồn: PLC Siemens qua gateway (S7/Modbus TCP) · Cập nhật mỗi giây · <span class="note-ex">mô phỏng GĐ4</span></div></div><div class="row">${pill('4 chạy','ok')} ${pill('1 chờ','warn')} ${pill('1 dừng','bad')}</div></div>
+    <div class="mach">${M.map(m=>`<div class="mcard ${m.st}"><div class="row" style="justify-content:space-between"><div><div class="id">${m.id}</div><div class="nm">${m.n}</div></div>${pill(lab[m.st],cl[m.st])}</div>
+      <div style="margin-top:8px">${m.id==='GAU-01'?`<div class="big" id="odV">${nf(od[od.length-1],3)}</div><div style="font-size:11px;color:var(--muted)">mm OD · 60 giây gần nhất</div>${spark()}`:`<div class="big">${m.sp==null?'—':m.sp}<span style="font-size:14px;color:var(--muted)"> m/ph</span></div>`}</div>
+      <div style="font-size:11.5px;margin-top:6px">${m.job}</div>
+      <div class="kv">${m.kv.map(k=>`<span>${k[0]}</span><span>${k[1]}</span>`).join('')}${m.oee!=null?`<span>OEE ca</span><span>${m.oee}%</span>`:''}</div></div>`).join('')}</div>`;
+    timer=setInterval(()=>{od.shift();od.push(6.94+(Math.random()-.5)*.07);const c=body.querySelector('.mcard:last-child svg');if(c){c.outerHTML=spark();const v=$('#odV');if(v)v.textContent=nf(od[od.length-1],3)}},1000);
+  };
+
+  // M11 Accounts
+  const roles={'TP Sản xuất':[[1,1,1,1,1],[1,1,1,1,0],[1,0,0,0,0],[1,1,0,0,0],[0,0,0,0,0]],'Thủ kho':[[1,0,0,0,0],[0,0,0,0,0],[1,1,1,0,1],[1,0,0,0,0],[0,0,0,0,0]],'Kế toán trưởng':[[1,0,0,0,1],[1,0,0,0,1],[1,0,0,1,1],[1,0,0,0,1],[1,1,1,1,1]],'Vận hành máy':[[0,0,0,0,0],[1,1,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]]};
+  const mods=['Kế hoạch & MRP','Lệnh SX / công đoạn','Kho & lô','Spec & BOM','Giá thành'],acts=['Xem','Tạo','Sửa','Duyệt','Xuất'];
+  let roleSel='TP Sản xuất';
+  R.acc=()=>{
+    const users=[['Nguyễn Văn An','BGĐ','Hoạt động','2FA'],['Trần Thị Bình','TP Kinh doanh','Hoạt động','2FA'],['Lê Minh Châu','TP Kỹ thuật/QA','Hoạt động','2FA'],['Hoàng Thu Hà','TP Mua hàng','Hoạt động','2FA'],['Vũ Thanh Hải','Kế toán trưởng','Hoạt động','2FA'],['Đỗ Văn Khánh','TP Sản xuất','Hoạt động','2FA'],['Phạm Quốc Dũng','Thủ kho','Hoạt động','Mật khẩu'],['Bùi Văn Long','Tổ trưởng ca B','Hoạt động','PIN tablet'],['NV vận hành 017','Vận hành máy','Tạm khóa','PIN tablet']];
+    const mx=roles[roleSel];
+    body.innerHTML=`<div class="row" style="justify-content:space-between"><div><h5>Tài khoản và phân quyền</h5><div class="sub">Quyền được thực thi bằng Row Level Security trong Supabase</div></div><button class="btn pri">+ Mời người dùng</button></div>
+    <div class="cols c2"><div class="panel"><div class="ph">Người dùng (ví dụ)</div><table class="mt"><thead><tr><th>Họ tên</th><th>Vai trò</th><th>Đăng nhập</th><th>Trạng thái</th></tr></thead><tbody>
+    ${users.map(u=>`<tr><td>${u[0]}</td><td>${u[1]}</td><td>${u[3]}</td><td>${pill(u[2],u[2]==='Hoạt động'?'ok':'warn')}</td></tr>`).join('')}</tbody></table></div>
+    <div class="panel"><div class="ph">Ma trận quyền · <select class="inp" style="width:auto" id="roleS">${Object.keys(roles).map(r=>`<option ${r===roleSel?'selected':''}>${r}</option>`).join('')}</select></div>
+      <table class="mt mx"><thead><tr><th>Phân hệ</th>${acts.map(a=>`<th>${a}</th>`).join('')}</tr></thead><tbody>
+      ${mods.map((m,i)=>`<tr><td>${m}</td>${acts.map((a,j)=>`<td><input type="checkbox" class="chk" data-i="${i}" data-j="${j}" ${mx[i][j]?'checked':''} aria-label="${m} ${a}"></td>`).join('')}</tr>`).join('')}
+      </tbody></table>
+      <div style="margin-top:10px;font-size:12px"><b>Phạm vi dữ liệu</b>: ${roleSel==='Thủ kho'?'Kho NL, Kho BTP':roleSel==='Vận hành máy'?'Máy được giao trong ca':'Toàn nhà máy'} · Xem giá: ${roleSel==='Kế toán trưởng'?pill('Có','ok'):pill('Không','mute')}</div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted)"><b style="color:var(--ink)">Nhật ký gần nhất</b><br>25/10 16:20 · Admin cấp quyền "Duyệt · Lệnh SX" cho Đỗ Văn Khánh<br>25/10 09:02 · Tạm khóa NV vận hành 017 (sai PIN 5 lần)</div></div></div>`;
+    $('#roleS').onchange=e=>{roleSel=e.target.value;R.acc()};
+    body.querySelectorAll('.chk').forEach(c=>c.onchange=()=>{mx[c.dataset.i][c.dataset.j]=c.checked?1:0;toast('Đã lưu quyền · ghi nhật ký thay đổi')});
+  };
+
+  nav('dash');
+})();
+</script>
