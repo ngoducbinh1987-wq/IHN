@@ -8,6 +8,7 @@ Dùng: python3 -I tests/test_parity.py <file.xlsx> "<chuỗi kết nối psql>"
 """
 import json
 import math
+import time
 import subprocess
 import sys
 
@@ -94,17 +95,18 @@ for r in bom:
     if total:
         expected[code] = expected.get(code, 0) + total
 
+PLAN_NO = f"KH-PARITY-{int(time.time())}"
 values = ",".join(f"('{s}',{m},{l})" for s, m, l in plan)
 run = psql(f"""
   select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000aa', false);
   insert into auth.users(id) values ('00000000-0000-0000-0000-0000000000aa') on conflict do nothing;
   insert into core.profiles(id, full_name, status) values ('00000000-0000-0000-0000-0000000000aa','Kiểm thử MRP','ACTIVE') on conflict do nothing;
   insert into core.user_roles values ('00000000-0000-0000-0000-0000000000aa','SX_KH') on conflict do nothing;
-  insert into plan.production_plans (plan_no, period_label, material_need_date, mode) values ('KH-PARITY','Kiểm thử', '2026-11-20', 'PRELIMINARY');
+  insert into plan.production_plans (plan_no, period_label, material_need_date, mode) values ('{PLAN_NO}','Kiểm thử', '2026-11-20', 'PRELIMINARY');
   insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
   select pp.id, p.id, p.current_spec_id, v.m, v.l, p.default_m_per_pack, p.default_pack, p.default_brand
-  from (values {values}) v(code, m, l) join master.products p on p.code = v.code, plan.production_plans pp where pp.plan_no = 'KH-PARITY';
-  select plan.run_mrp((select id from plan.production_plans where plan_no = 'KH-PARITY'));""").splitlines()[-1]
+  from (values {values}) v(code, m, l) join master.products p on p.code = v.code, plan.production_plans pp where pp.plan_no = '{PLAN_NO}';
+  select plan.run_mrp((select id from plan.production_plans where plan_no = '{PLAN_NO}'));""").splitlines()[-1]
 got = json.loads(psql(f"""select json_object_agg(m.code, l.total_issue) from plan.mrp_lines l
   join master.materials m on m.id = l.material_id where l.run_id = '{run}'"""))
 worst = 0.0

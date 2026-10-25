@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Token màu dạng "R G B" để Tailwind ghép độ trong suốt */
+:root {
+  --bg: 243 245 247; --surface: 255 255 255; --sunk: 233 237 241; --ink: 19 32 42; --muted: 86 101 113; --line: 213 220 226;
+  --copper: 158 79 28; --copper-soft: 245 230 218; --steel: 44 74 95; --steel-soft: 227 236 242; --side: 44 74 95;
+  --ok: 42 122 75; --ok-soft: 225 242 232; --warn: 154 100 18; --warn-soft: 251 240 217;
+  --bad: 176 54 46; --bad-soft: 249 227 225; --info: 45 103 154; --info-soft: 226 237 247;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 14 20 24; --surface: 21 29 35; --sunk: 27 37 44; --ink: 228 234 238; --muted: 147 162 173; --line: 41 53 62;
+    --copper: 226 138 82; --copper-soft: 58 36 22; --steel: 157 187 208; --steel-soft: 30 45 56; --side: 10 16 20;
+    --ok: 91 196 137; --ok-soft: 22 51 35; --warn: 229 176 76; --warn-soft: 58 44 16;
+    --bad: 240 123 113; --bad-soft: 61 26 23; --info: 118 174 224; --info-soft: 23 41 58;
+    color-scheme: dark;
+  }
+}
+
+html, body { height: 100%; }
+body { @apply bg-bg text-ink font-sans text-[14px] antialiased; }
+:focus-visible { outline: 2px solid rgb(var(--copper)); outline-offset: 2px; }
+
+@layer components {
+  .card { @apply bg-surface border border-line rounded-lg; }
+  .tbl { @apply w-full border-collapse text-[13px]; }
+  .tbl th { @apply text-left font-semibold text-[11px] uppercase tracking-wide text-muted px-3 py-2 border-b border-line whitespace-nowrap bg-sunk/60; }
+  .tbl td { @apply px-3 py-2 border-b border-line align-middle; }
+  .tbl tr:last-child td { @apply border-b-0; }
+  .num { @apply text-right tabular-nums whitespace-nowrap; }
+  .inp { @apply w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink placeholder:text-muted; }
+  .inp-y { @apply bg-warn-soft border-warn/60; }
+  .lbl { @apply flex flex-col gap-1 text-[12px] text-muted; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink hover:bg-sunk disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-pri { @apply bg-copper border-copper text-white hover:bg-copper hover:brightness-110; }
+  .btn-ok { @apply bg-ok border-ok text-white hover:bg-ok hover:brightness-110; }
+  .btn-bad { @apply text-bad border-bad/70; }
+  .mono { @apply font-mono text-[12px]; }
+}

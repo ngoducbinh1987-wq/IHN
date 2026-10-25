@@ -12,7 +12,9 @@ Phương án đã duyệt ngày 25/10/2026:
 
 | Thư mục | Nội dung |
 |---|---|
-| `supabase/migrations/` | 16 migration, chạy theo thứ tự tên file |
+| `supabase/migrations/` | 18 migration, chạy theo thứ tự tên file |
+| `web/` | Web app Next.js giai đoạn 1 |
+| `dev/` | Môi trường thử cục bộ giống Supabase |
 | `docs/BA_BMT_MES_v1.html` | Tài liệu BA kèm mockup giao diện |
 | `tools/gen_seed.py` | Sinh migration dữ liệu từ file Excel (chạy lại khi Excel đổi) |
 | `tests/test_parity.py` | Đối chiếu định mức và MRP với file Excel |
@@ -33,6 +35,8 @@ Phương án đã duyệt ngày 25/10/2026:
 | `0700_functions` | Bộ tính định mức, phát hành spec, ghi sổ kho + bình quân di động, MRP, ATP/giữ hàng, truy xuất, duyệt, giá thành |
 | `0800_security` | GRANT, RLS cho mọi bảng, ẩn cột giá, Realtime, lịch pg_cron |
 | `0900_reference_data` | 18 vai trò + ma trận quyền, 13 luồng duyệt, kho, công đoạn, routing, lý do, nhóm SP, máy |
+| `1700_hardening` | Vá bảo mật/hiệu năng sau kiểm tra trên Supabase |
+| `1800_app_views` | Schema `app` cho web app: view màn hình, `me()`, khởi tạo quản trị, quản trị người dùng, nhập pilot |
 | `1000`–`1600_seed_*` | Từ Excel: 51 vật tư, 59 tham số, 10 mã lõi, 78 SKU, spec v1, kết quả định mức, 1.358 dòng BOM (chia nhỏ < 65 KB/file) |
 
 ## Hàm nghiệp vụ chính
@@ -75,6 +79,38 @@ Kết quả lần chạy gần nhất:
 Script chỉ chạy migration chưa có trong `supabase_migrations.schema_migrations`, mỗi migration trong một transaction (lỗi thì dừng, không để dở dang), cuối cùng in số liệu kiểm tra. Chạy lại an toàn. Không đụng tới bảng cũ trong `public`.
 
 **Cách khác:** `scripts/deploy_supabase.sh` (Management API, cần `SUPABASE_ACCESS_TOKEN`) hoặc `SUPABASE_DB_URL=... scripts/deploy_psql.sh` trên máy có psql.
+
+## Web app giai đoạn 1 (`web/`)
+
+Next.js 15 + Supabase Auth. Mọi truy vấn chạy bằng phiên của người đăng nhập, nên RLS trong database quyết định ai thấy/sửa gì.
+
+| Trang | Việc làm |
+|---|---|
+| `/login`, `/khoi-tao` | Đăng nhập; người đầu tiên (khi chưa có ADMIN) nhận vai trò quản trị |
+| `/` Tổng quan | Spec đã phát hành, SKU Rdc vượt, vật tư thiếu giá/lead time, việc chờ duyệt |
+| `/duyet` Hộp duyệt | Chờ tôi duyệt / tôi đã gửi / tất cả; phê duyệt, trả lại (bắt buộc lý do), ghi ý kiến; các bước + lịch sử |
+| `/san-pham` | 78 SKU, lọc theo nhóm/trạng thái/Rdc vượt; chi tiết: cấu trúc, định mức, kiểm tra tự động, BOM, gửi duyệt phát hành, nhập kết quả pilot, chấp nhận sai lệch Rdc |
+| `/vat-tu` | 51 vật tư, tồn khả dụng; Mua hàng nhập MOQ, bội số, lead time, giá, mã NCC (ẩn giá với người không có quyền) |
+| `/ke-hoach` | Tạo kế hoạch kỳ, thêm dòng SKU, chạy MRP, gửi duyệt, sinh PR |
+| `/quan-tri` | Tạo tài khoản, gán vai trò, khóa/mở người dùng |
+
+Số nhập theo kiểu Việt Nam: `3.500` = ba nghìn năm trăm, `268.000` = 268 nghìn, `1,5` hoặc `1.5` = một phẩy năm.
+
+### Kiểm thử
+
+- `dev/local_stack.sh up`: dựng "Supabase thu nhỏ" (Postgres + GoTrue + PostgREST + proxy) với đủ migration.
+- `web/tests/run_e2e.sh`: dựng lại từ đầu, build, chạy 31 kiểm tra trên trình duyệt thật (Playwright). Gồm: khởi tạo quản trị, tạo 8 tài khoản, Mua hàng nhập giá, chặn spec Rdc vượt, duyệt spec 3 cấp, kế hoạch + MRP khớp Excel, duyệt kế hoạch 2 cấp, sinh PR, phân quyền (vận hành không thấy giá/quản trị).
+
+### Triển khai lên Vercel
+
+1. Chạy workflow **BMT MES – Deploy database** (áp migration mới).
+2. Supabase → **Project Settings → Data API → Exposed schemas**: thêm `app, core, master, sales, plan, purchase, inv, mfg, qa, cost, wf, iot, integ`.
+3. Supabase → **Authentication → Sign In / Providers**: tắt "Allow new users to sign up" (tài khoản chỉ do Quản trị tạo).
+4. https://vercel.com/new → Import repo `IHN` → **Root Directory** = `bmt-mes/web` → thêm Environment Variables:
+   - `NEXT_PUBLIC_SUPABASE_URL` = `https://critwnuscvdchdbvwygv.supabase.co`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = publishable key (xem `web/.env.example`)
+   - `SUPABASE_SERVICE_ROLE_KEY` = secret key trong Supabase → Project Settings → API Keys (chỉ đặt ở Vercel, không commit)
+5. Supabase → **Authentication → Users → Add user**: tạo tài khoản của bạn (tick Auto confirm), đăng nhập web app, bấm "Nhận vai trò quản trị".
 
 ## Giới hạn hiện tại
 

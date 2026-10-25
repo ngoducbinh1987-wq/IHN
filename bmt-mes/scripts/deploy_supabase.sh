@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 : "${SUPABASE_ACCESS_TOKEN:?Thiếu SUPABASE_ACCESS_TOKEN}"
 REF=${SUPABASE_PROJECT_REF:-critwnuscvdchdbvwygv}
 API="https://api.supabase.com/v1/projects/$REF"
-SCHEMAS="core,master,sales,plan,purchase,inv,mfg,qa,cost,wf,iot,integ"
+SCHEMAS="app,core,master,sales,plan,purchase,inv,mfg,qa,cost,wf,iot,integ"
 
 run_sql() {  # $1 = file SQL
   local body resp code
