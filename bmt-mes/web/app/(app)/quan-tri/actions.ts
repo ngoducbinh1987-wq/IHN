@@ -37,6 +37,8 @@ export async function createUser(form: FormData) {
     await admin.auth.admin.deleteUser(data.user!.id);
     fail(e2.message);
   }
+  const { error: e3 } = await supabase.schema('app').rpc('admin_set_warehouses', { p_user: data.user!.id, p_codes: form.getAll('warehouses').map(String) });
+  if (e3) redirect(`/quan-tri?sua=${data.user!.id}&err=` + encodeURIComponent('Đã tạo tài khoản nhưng chưa lưu được kho: ' + e3.message));
   revalidatePath('/quan-tri');
   redirect('/quan-tri?ok=' + encodeURIComponent(`Đã tạo tài khoản ${email}`));
 }
@@ -47,6 +49,8 @@ export async function updateUser(form: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.schema('app').rpc('admin_upsert_user', profileArgs(form, id));
   if (error) redirect(`/quan-tri?sua=${id}&err=` + encodeURIComponent(error.message));
+  const { error: e2 } = await supabase.schema('app').rpc('admin_set_warehouses', { p_user: id, p_codes: form.getAll('warehouses').map(String) });
+  if (e2) redirect(`/quan-tri?sua=${id}&err=` + encodeURIComponent(e2.message));
   revalidatePath('/quan-tri');
   redirect('/quan-tri?ok=' + encodeURIComponent('Đã lưu người dùng'));
 }

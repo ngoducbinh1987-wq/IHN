@@ -35,9 +35,8 @@ export default async function ProductDetail({ params, searchParams }:
     supabase.schema('master').from('core_types').select('code').order('code'),
   ]);
   if (!spec) notFound();
-  const minor = spec.change_level === 'MINOR';
   const { data: flow } = await supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code')
-    .eq('doc_type', minor ? 'SPEC_MINOR' : 'SPEC_NEW').eq('enabled', true).order('seq');
+    .eq('doc_type', 'SPEC_NEW').eq('enabled', true).order('seq');
   const problems = (issues as string[] | null) ?? [];
   const editable = ['DRAFT', 'PILOT_PENDING', 'PILOT'].includes(spec.status) && (can(me, 'spec', 'edit') || can(me, 'spec', 'create'));
   const last = reqs?.[0];
@@ -53,14 +52,11 @@ export default async function ProductDetail({ params, searchParams }:
       <Toolbar title={<><span className="mono text-[22px]">{code}</span> <span className="text-muted">· {p.description}</span></>}
         actions={<>
           {editable && can(me, 'spec', 'create') && (
-            <form action={submitSpec}>{hidden}<input type="hidden" name="version" value={spec.version} /><input type="hidden" name="change_level" value={spec.change_level ?? ''} />
+            <form action={submitSpec}>{hidden}<input type="hidden" name="version" value={spec.version} />
               <SubmitButton className="btn btn-pri" ><Send size={15} />Gửi duyệt phát hành</SubmitButton></form>
           )}
           {spec.status === 'RELEASED' && can(me, 'spec', 'create') && (
             <form action={newVersion} className="flex gap-1">{hidden}
-              <select className="inp w-auto" name="level" aria-label="Mức thay đổi" defaultValue="MINOR">
-                <option value="MINOR">Thay đổi nhỏ (TP KT duyệt)</option><option value="MAJOR">Thay đổi lớn (QC → TP KT → BGĐ)</option>
-              </select>
               <SubmitButton className="btn btn-soft"><CopyPlus size={15} />Tạo phiên bản mới</SubmitButton>
             </form>
           )}
@@ -205,7 +201,7 @@ export default async function ProductDetail({ params, searchParams }:
           </section>
           <section className="card p-4 text-[14px]">
             <div className="flex justify-between py-1"><span className="text-muted">Nhóm</span><span>{p.group_name}</span></div>
-            <div className="flex justify-between py-1"><span className="text-muted">Mức thay đổi</span><span>{spec.change_level === 'MINOR' ? 'Nhỏ' : spec.change_level === 'MAJOR' ? 'Lớn' : 'Mã mới'}</span></div>
+            <div className="flex justify-between py-1"><span className="text-muted">Mức thay đổi</span><span>{spec.change_level === 'MINOR' ? 'Nhỏ (quy trình cũ)' : spec.change_level === 'MAJOR' ? 'Thay đổi phiên bản' : 'Mã mới'}</span></div>
             <div className="flex justify-between py-1"><span className="text-muted">Phát hành lúc</span><span>{df(spec.released_at, true)}</span></div>
             {p.spec_status === 'RELEASED' && p.spec_id !== specId && <Pill tone="info">Bản hiện hành vẫn là v{p.version} cho tới khi bản này được duyệt</Pill>}
           </section>

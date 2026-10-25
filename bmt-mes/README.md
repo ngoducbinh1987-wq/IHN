@@ -12,7 +12,7 @@ Phương án đã duyệt ngày 25/10/2026:
 
 | Thư mục | Nội dung |
 |---|---|
-| `supabase/migrations/` | 18 migration, chạy theo thứ tự tên file |
+| `supabase/migrations/` | 22 migration, chạy theo thứ tự tên file |
 | `web/` | Web app Next.js giai đoạn 1 |
 | `dev/` | Môi trường thử cục bộ giống Supabase |
 | `docs/BA_BMT_MES_v1.html` | Tài liệu BA kèm mockup giao diện |
@@ -20,6 +20,7 @@ Phương án đã duyệt ngày 25/10/2026:
 | `tests/test_parity.py` | Đối chiếu định mức và MRP với file Excel |
 | `tests/test_flows.sql` | 47 kiểm thử luồng nghiệp vụ, chạy trong transaction rồi rollback |
 | `tests/test_plan_mrp_flow.sql` | 34 kiểm thử: sửa dòng kế hoạch, đóng gói, điều chỉnh MRP, cài đặt quy trình, cảnh báo quá hạn (rollback) |
+| `tests/test_role_standard.sql` | 52 kiểm thử quy chuẩn vai trò: xung đột vai trò, phạm vi kho, hạn mức PO, chuyển Giám đốc, duyệt thay quá hạn, phiếu lĩnh theo định mức, cân bằng đồng (rollback, chạy được trên Supabase) |
 | `scripts/apply_local.sh` | Dựng database trên PostgreSQL cục bộ |
 | `scripts/deploy_supabase.sh` | Đẩy lên Supabase qua Management API |
 
@@ -38,7 +39,24 @@ Phương án đã duyệt ngày 25/10/2026:
 | `0900_reference_data` | 18 vai trò + ma trận quyền, 13 luồng duyệt, kho, công đoạn, routing, lý do, nhóm SP, máy |
 | `1700_hardening` | Vá bảo mật/hiệu năng sau kiểm tra trên Supabase |
 | `1800_app_views` | Schema `app` cho web app: view màn hình, `me()`, khởi tạo quản trị, quản trị người dùng, nhập pilot |
+| `2200_role_standard` | Áp dụng Quy chuẩn vai trò & nhiệm vụ nhân sự (25/10/2026): xem mục bên dưới |
 | `1000`–`1600_seed_*` | Từ Excel: 51 vật tư, 59 tham số, 10 mã lõi, 78 SKU, spec v1, kết quả định mức, 1.358 dòng BOM (chia nhỏ < 65 KB/file) |
+
+## Quy chuẩn vai trò (migration 2200)
+
+| Nội dung | Cách làm trong hệ thống |
+|---|---|
+| Vai trò xung đột | Không gán chung: Thủ kho + Kế toán kho; Thủ kho + NV mua hàng; KTT + Kế toán kho (tài khoản Quản trị được miễn khi chạy thử) |
+| Phạm vi kho | Quản trị → Người dùng: chọn kho được giao; ghi sổ và phiếu lĩnh kiểm tra phạm vi |
+| Kế hoạch SX tháng | Giám đốc lập → Quản lý SX xác nhận năng lực → Chủ tịch HĐQT phê duyệt |
+| PR | Giám đốc duyệt nhu cầu; NV mua hàng được sinh PR từ MRP |
+| PO theo hạn mức | Dưới 20 tr: Giám đốc; từ 20 tr / NCC mới / nhập khẩu / thiết bị: thêm TP mua hàng; trên 200 tr / nhập khẩu / thiết bị: thêm Chủ tịch HĐQT |
+| Spec | TP Kỹ thuật/QA lập → Quản lý SX xác nhận → Giám đốc phát hành; đã bỏ quy trình "thay đổi nhỏ" |
+| Cấp NVL vượt định mức | TP Kỹ thuật/QA duyệt; phiếu lĩnh tự tạo theo định mức (`inv.create_wo_issue`), xuất vượt bị chặn |
+| Kiểm kê / chốt giá thành | Kế toán SX kiểm tra → Kế toán trưởng duyệt; quá 24 giờ Giám đốc được duyệt thay |
+| Người duyệt là người lập | Bỏ bước nếu Giám đốc đã duyệt ở bước khác, nếu không thì chuyển Giám đốc |
+| Kiểm soát kho | Trang `/kho`: Kế toán SX đánh dấu "Đã kiểm" phiếu đã ghi sổ; cân bằng đồng theo lệnh SX, ngưỡng do TP Kỹ thuật/QA đặt |
+| Vá bảo mật | Phát hành spec và phát lệnh SX chỉ qua quy trình duyệt |
 
 ## Hàm nghiệp vụ chính
 

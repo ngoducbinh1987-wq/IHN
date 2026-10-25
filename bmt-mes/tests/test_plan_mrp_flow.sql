@@ -49,6 +49,7 @@ update wf.approval_flows set submit_role = null, submit_user_ids = '{}' where do
 do $$ begin
   if not exists (select 1 from master.products p join master.product_specs s on s.id = p.current_spec_id where s.status = 'RELEASED') then
     perform set_config('request.jwt.claim.sub', (select id::text from core.profiles where employee_code = 'T_ADMIN'), true);
+    perform set_config('bmt.wf_release', 'on', true);
     perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1p5'));
   end if;
 end $$;
@@ -124,7 +125,7 @@ select pg_temp.fails($$select app.save_flow_step('PLAN', 1::smallint, 'Duyệt',
 select app.save_flow_step('PLAN', 1::smallint, 'Duyệt kế hoạch', 'SX_TP', array[pg_temp.uid('T_SXTP2')], 8, 2, true);
 select app.save_flow_submit('PLAN', 'Lập kế hoạch', 'SX_KH', '{}');
 select pg_temp.as_user('T_MUATP');
-select pg_temp.fails($$select wf.submit('PLAN', (select v from t where k = 'plan'), 'KH-T21')$$, 'cần vai trò SX_KH', 'Bước Lập kế hoạch chỉ người có vai trò được cấu hình');
+select pg_temp.fails($$select wf.submit('PLAN', (select v from t where k = 'plan'), 'KH-T21')$$, 'cần vai trò Kế hoạch sản xuất', 'Bước Lập kế hoạch chỉ người có vai trò được cấu hình');
 select pg_temp.as_user('T_SXKH');
 insert into t select 'req', wf.submit('PLAN', (select v from t where k = 'plan'), 'KH-T21', 'Thử');
 select pg_temp.ok((select count(*) = 1 from wf.notifications where user_id in (pg_temp.uid('T_SXTP'), pg_temp.uid('T_SXTP2')) and link = '/duyet/' || (select v from t where k = 'req')),

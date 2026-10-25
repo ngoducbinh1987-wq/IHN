@@ -23,6 +23,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (can(me, 'purchase', 'view')) items.push({ href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' });
   if (can(me, 'master', 'view')) items.push({ href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' });
   if (can(me, 'plan', 'view')) items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' });
+  if (can(me, 'inventory', 'view') || can(me, 'production', 'view') || can(me, 'cost', 'view'))
+    items.push({ href: '/kho', label: 'Kiểm soát kho', icon: 'factory', group: 'Sản xuất' });
   if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' });
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' });
