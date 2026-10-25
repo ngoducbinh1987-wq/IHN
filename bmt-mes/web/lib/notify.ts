@@ -30,7 +30,7 @@ export async function flushEmailOutbox(): Promise<{ sent: number; failed: number
         html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#212529">
           <p>Chào ${esc(n.full_name)},</p>
           <p style="font-size:16px;font-weight:bold;color:#059B42">${esc(n.title)}</p>
-          ${n.body ? `<p>${esc(n.body)}</p>` : ''}
+          ${n.body ? `<p>${esc(n.body).replace(/\n/g, '<br>')}</p>` : ''}
           ${url ? `<p><a href="${url}" style="background:#059B42;color:#fff;padding:9px 16px;border-radius:4px;text-decoration:none">Mở trên BMT MES</a></p>` : ''}
           <p style="color:#68717a;font-size:12px">Email tự động từ BMT MES. Không trả lời email này.</p></div>`,
       });
