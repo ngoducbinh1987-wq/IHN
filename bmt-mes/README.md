@@ -20,6 +20,7 @@ Phương án đã duyệt ngày 25/10/2026:
 | `tests/test_parity.py` | Đối chiếu định mức và MRP với file Excel |
 | `tests/test_flows.sql` | 47 kiểm thử luồng nghiệp vụ, chạy trong transaction rồi rollback |
 | `tests/test_plan_mrp_flow.sql` | 34 kiểm thử: sửa dòng kế hoạch, đóng gói, điều chỉnh MRP, cài đặt quy trình, cảnh báo quá hạn (rollback) |
+| `tests/test_machines.sql` | 83 kiểm thử module Quản lý máy: quyền, khai báo máy, tốc độ, bảo dưỡng, nhắc lịch, hỏng máy, checklist, năng lực, báo cáo tháng, lịch làm việc dùng chung (rollback) |
 | `scripts/apply_local.sh` | Dựng database trên PostgreSQL cục bộ |
 | `scripts/deploy_supabase.sh` | Đẩy lên Supabase qua Management API |
 
@@ -38,6 +39,7 @@ Phương án đã duyệt ngày 25/10/2026:
 | `0900_reference_data` | 18 vai trò + ma trận quyền, 13 luồng duyệt, kho, công đoạn, routing, lý do, nhóm SP, máy |
 | `1700_hardening` | Vá bảo mật/hiệu năng sau kiểm tra trên Supabase |
 | `1800_app_views` | Schema `app` cho web app: view màn hình, `me()`, khởi tạo quản trị, quản trị người dùng, nhập pilot |
+| `2300_machines` | Module Quản lý máy: dây chuyền + máy con, thông số, linh kiện, dải hoạt động, tốc độ theo sản phẩm (duyệt), người đứng máy, tài liệu; bảo dưỡng (kế hoạch, phiếu BD/SC, checklist đầu ca, nhắc lịch), nhật ký trạng thái, kiểm tra năng lực, báo cáo tháng; quyền `machine`; lịch pg_cron |
 | `1000`–`1600_seed_*` | Từ Excel: 51 vật tư, 59 tham số, 10 mã lõi, 78 SKU, spec v1, kết quả định mức, 1.358 dòng BOM (chia nhỏ < 65 KB/file) |
 
 ## Hàm nghiệp vụ chính
@@ -94,6 +96,13 @@ Next.js 15 + Supabase Auth. Mọi truy vấn chạy bằng phiên của người
 | `/vat-tu` | 51 vật tư, tồn khả dụng; Mua hàng nhập MOQ, bội số, lead time, giá, mã NCC (ẩn giá với người không có quyền) |
 | `/ke-hoach` | Tạo kế hoạch kỳ, thêm dòng SKU, chạy MRP, gửi duyệt, sinh PR |
 | `/quan-tri` | Tạo tài khoản, gán vai trò, khóa/mở người dùng |
+| `/may` | Danh sách dây chuyền, trạng thái, việc cần xử lý (hỏng, quá hạn bảo dưỡng, tốc độ chờ duyệt, checklist, phụ tùng thiếu) |
+| `/may/[id]` | Hồ sơ máy: máy con, thông số, linh kiện, dải hoạt động, tốc độ theo sản phẩm, bảo dưỡng, người đứng máy, tài liệu, lịch sử; cập nhật trạng thái / báo hỏng |
+| `/may/bao-duong` | Kế hoạch bảo dưỡng (chu kỳ ngày / giờ chạy / km, tự đặt), phiếu bảo dưỡng và sửa chữa, lịch 30 ngày |
+| `/may/checklist` | Checklist bảo dưỡng đầu ca của NV vận hành; TP Kỹ thuật/QA kiểm tra |
+| `/may/toc-do`, `/may/kiem-tra` | Tốc độ chuẩn (duyệt, duyệt tạm); kiểm tra năng lực kế hoạch theo tốc độ, tình trạng máy, bảo dưỡng, người đứng máy, số ca, tăng ca |
+| `/may/lich-su`, `/may/bao-cao` | Dòng thời gian trạng thái + nhật ký sự kiện; báo cáo bảo trì tháng (tự gửi email Ban giám đốc ngày 1) |
+| `/may/cai-dat` | Giờ ca, ngày làm việc, tỷ lệ xếp lịch, ngày nhắc bảo dưỡng nhỏ/lớn, số máy tối đa một người, mục checklist |
 
 Số nhập theo kiểu Việt Nam: `3.500` = ba nghìn năm trăm, `268.000` = 268 nghìn, `1,5` hoặc `1.5` = một phẩy năm.
 
