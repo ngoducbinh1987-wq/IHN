@@ -54,6 +54,7 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - `npx tsc --noEmit -p bmt-mes/web` để kiểm tra kiểu.
 
 ## Quy tắc
+- Mỗi khi làm xong một việc (tính năng, migration, sửa lỗi, kiểm thử), cập nhật CLAUDE.md ngay: đã làm gì, trạng thái áp Supabase/đẩy `main`, việc còn chờ, cách kiểm thử. Người dùng yêu cầu ngày 26/10/2026.
 - Không dán token/khóa/mật khẩu vào chat; service role key và SMTP chỉ đặt trên Vercel, không commit.
 - Thay đổi database: viết migration mới (không reset DB). Ngày 26/10/2026 người dùng cho phép Claude tự áp migration lên Supabase ("Bạn tự duyệt supabase cho tôi"); vẫn kiểm thử cục bộ đủ bộ trước khi áp và chạy kiểm thử trên Supabase sau khi áp.
 - Áp migration trước, sau đó mới đẩy code web lên `main`.
