@@ -27,6 +27,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (can(me, 'purchase', 'view')) items.push({ href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' });
   if (can(me, 'master', 'view')) items.push({ href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' });
   if (can(me, 'plan', 'view')) items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' });
+  if (can(me, 'plan', 'view') || can(me, 'production', 'view') || can(me, 'inventory', 'view')) {
+    items.push(
+      { href: '/lich-may', label: 'Lịch máy', icon: 'calendar', group: 'Sản xuất' },
+      { href: '/lenh-ngay', label: 'Lệnh SX ngày', icon: 'order', group: 'Sản xuất' },
+      { href: '/ghi-nhan-ca', label: 'Ghi nhận ca', icon: 'shift', group: 'Sản xuất' },
+      { href: '/kh-thuc-te', label: 'Kế hoạch – Thực tế', icon: 'chart', group: 'Sản xuất' },
+      { href: '/tham-so', label: 'Máy, người & tham số', icon: 'sliders', group: 'Sản xuất' },
+    );
+  }
   if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
   if (can(me, 'machine', 'view')) {
     items.push({ href: '/may', label: 'Danh sách máy', icon: 'machine', group: 'Quản lý máy' });

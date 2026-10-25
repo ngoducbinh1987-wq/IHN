@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
-  BarChart3, Bell, Boxes, CheckSquare, ClipboardCheck, ClipboardList, Cog, Factory, FileBarChart, FileText, Gauge, History, Monitor,
-  Search, Settings, ShoppingCart, Timer, Users, Workflow, Wrench,
+  BarChart3, Bell, Boxes, CalendarRange, CheckSquare, ClipboardCheck, ClipboardList, Cog, Factory, FileBarChart, FileText, Gauge, History,
+  Monitor, Search, Settings, ShoppingCart, SlidersHorizontal, Timer, Users, Workflow, Wrench,
 } from 'lucide-react';
 
 export type NavItem = { href: string; label: string; icon: string; group: string; badge?: number; static?: boolean };
@@ -15,6 +15,7 @@ const ICONS = {
   cart: ShoppingCart, users: Users, factory: Factory, flow: Workflow, screen: Monitor,
   machine: Cog, wrench: Wrench, checklist: ClipboardCheck, speed: Timer, capacity: BarChart3, history: History,
   report: FileBarChart, settings: Settings,
+  calendar: CalendarRange, order: ClipboardCheck, shift: Timer, chart: BarChart3, sliders: SlidersHorizontal,
 } as const;
 
 export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
