@@ -62,7 +62,8 @@ select pg_temp.fails($$select app.admin_upsert_user(pg_temp.uid('KTT'), 'X', 'KT
 
 -- ================================================================ 1. Chuẩn bị: spec phát hành, PO đã duyệt
 select set_config('bmt.wf_release', 'on', true);   -- chạy thử: phát hành spec như khi luồng duyệt hoàn tất
-select master.release_spec(current_spec_id) from master.products where code = 'PFR-2C-1p5';
+select master.release_spec(p.current_spec_id) from master.products p join master.product_specs s on s.id = p.current_spec_id
+ where p.code = 'PFR-2C-1p5' and s.status <> 'RELEASED';   -- trên Supabase spec đã phát hành sẵn
 insert into core.partners (code, name, is_supplier, partner_type) values ('NCC-T', 'NCC thử', true, 'SUPPLIER');
 insert into purchase.purchase_orders (po_no, supplier_id, status) select 'PO-K1', id, 'APPROVED' from core.partners where code = 'NCC-T';
 insert into purchase.po_lines (po_id, line_no, material_id, qty, unit_price)
