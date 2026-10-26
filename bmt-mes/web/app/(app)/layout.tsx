@@ -66,6 +66,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' });
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' });
+  // Công nhân, tổ trưởng (không giữ vai trò văn phòng) chỉ thấy việc tại máy; các trang khác vẫn tự kiểm quyền
+  const FLOOR_MENU = ['/', '/thong-bao', '/lenh-ngay', '/ghi-nhan-ca', '/kho/quet', '/kho/nhan-nvl', '/may/checklist', '/may/bao-duong'];
+  const LEAD_MENU = ['/duyet', '/lich-may', '/kh-thuc-te', '/kho', '/kho/cap-phat'];
+  const menu = floor && !office
+    ? items.filter((i) => FLOOR_MENU.includes(i.href) || (me.roles.includes('TO_TRUONG') && LEAD_MENU.includes(i.href)))
+    : items;
 
   const initials = me.full_name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase();
   const delegated = (me.delegated_roles ?? []).map((d) => d.split(':')[0]);
@@ -77,11 +83,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="rounded bg-white px-2 py-1.5"><img src="/logo-bmt.png" alt="BMTcable" className="h-6 w-auto" /></span>
           <span className="text-[19px] font-medium text-white">MES</span>
         </Link>
-        <Sidebar items={items} />
+        <Sidebar items={menu} />
       </aside>
       <div className="flex min-w-0 flex-col">
         <header className="sticky top-0 z-30 flex print:hidden h-14 items-center gap-3 border-b border-line bg-surface px-4 md:px-5">
-          <MobileMenu items={items} />
+          <MobileMenu items={menu} />
           <Link href="/" className="lg:hidden"><img src="/logo-bmt.png" alt="BMTcable" className="h-6 w-auto" /></Link>
           <div className="ml-auto flex items-center gap-2">
             <Link href="/thong-bao" className="relative rounded-full p-2 text-brand hover:bg-brand-soft" aria-label={`Thông báo, ${unread ?? 0} chưa đọc`}>

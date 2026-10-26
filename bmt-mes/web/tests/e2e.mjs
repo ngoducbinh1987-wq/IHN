@@ -341,7 +341,8 @@ await ctx.close();
 [ctx, page] = await ctxFor();
 await login(page, 'vh@bmt.test');
 const nav = await page.textContent('nav');
-if (nav.includes('Người dùng') || nav.includes('Kế hoạch')) fail(`Menu của vận hành không được có Quản trị/Kế hoạch: ${nav}`);
+if (['Người dùng', 'Kế hoạch & MRP', 'Vật tư', 'Báo cáo hao hụt', 'Lịch máy', 'Danh sách máy'].some((x) => nav.includes(x))) fail(`Menu của vận hành chỉ có việc tại máy: ${nav}`);
+if (!['Ghi nhận ca', 'Lệnh SX ngày', 'Nhận NVL tại máy', 'Checklist đầu ca'].every((x) => nav.includes(x))) fail(`Menu của vận hành thiếu việc tại máy: ${nav}`);
 await page.goto(`${BASE}/quan-tri`);
 if (!(await flash(page)).includes('chưa được cấp quyền')) fail('Vận hành vào được trang Quản trị');
 ok('Vận hành không thấy menu Quản trị/Kế hoạch và bị chặn khi gõ thẳng URL');
@@ -394,6 +395,22 @@ await ctx.close();
   const j = await r2.json();
   if (r2.status !== 200 || j.sla_error) fail(`Job máy chủ lỗi: ${r2.status} ${JSON.stringify(j)}`);
   ok(`Job máy chủ /api/cron/notify chạy (không cần trình duyệt): ${JSON.stringify(j)}`);
+}
+
+// 9. Mở thử các màn hình Kho, Kế hoạch SX, Quản lý máy: không trang nào báo lỗi
+for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test', PASS]]) {
+  [ctx, page] = await ctxFor();
+  await login(page, email, pw);
+  const pages = ['/kho', '/kho/ton', '/kho/phieu', '/kho/quet', '/kho/cap-phat', '/kho/kiem-ke', '/kho/nhan-hang', '/kho/so-cai', '/kho/cai-dat',
+    '/lich-may', '/lenh-ngay', '/ghi-nhan-ca', '/kh-thuc-te', '/tham-so', '/may', '/may/checklist', '/may/bao-duong', '/may/toc-do',
+    '/may/kiem-tra', '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut'];
+  for (const u of pages) {
+    const res = await page.goto(`${BASE}${u}`);
+    const body = await page.innerText('body');
+    if (res.status() !== 200 || /Application error|Internal Server Error|does not exist|permission denied|PGRST/i.test(body)) fail(`${email} mở ${u} lỗi: ${res.status()} ${body.slice(0, 200)}`);
+  }
+  ok(`${email.split('@')[0]} mở được ${pages.length} màn hình Kho, Kế hoạch SX, Quản lý máy`);
+  await ctx.close();
 }
 
 // Ảnh tổng quan của BGĐ (điện thoại + máy tính)
