@@ -43,6 +43,37 @@ export async function createUser(form: FormData) {
   redirect('/quan-tri?ok=' + encodeURIComponent(`Đã tạo tài khoản ${email}`));
 }
 
+// Quản trị hệ thống đặt lại mật khẩu cho một người dùng. Mật khẩu không ghi vào database, URL hay nhật ký.
+export async function resetPassword(form: FormData) {
+  const id = String(form.get('id') ?? '');
+  const back = (msg: string) => redirect(`/quan-tri?sua=${id}&err=` + encodeURIComponent(msg));
+  const me = await requireMe();
+  if (!me.roles.includes('ADMIN')) back('Chỉ Quản trị hệ thống được đặt lại mật khẩu');
+  const password = String(form.get('new_password') ?? '');
+  const confirm = String(form.get('confirm_password') ?? '');
+  if (password.length < 10) back('Mật khẩu mới phải có ít nhất 10 ký tự');
+  if (new TextEncoder().encode(password).length > 72) back('Mật khẩu mới quá dài (tối đa 72 ký tự không dấu)');
+  if (password.trim() !== password) back('Mật khẩu mới không được có khoảng trắng ở đầu hoặc cuối');
+  if (password !== confirm) back('Hai ô mật khẩu mới không khớp');
+  const signout = form.get('signout') === 'on';
+
+  // Database kiểm lại quyền (vai trò ADMIN gán trực tiếp) trước khi đổi
+  const supabase = await createClient();
+  const { data: email, error: e1 } = await supabase.schema('app').rpc('admin_password_reset_check', { p_user: id });
+  if (e1) back(e1.message);
+
+  let admin;
+  try { admin = createAdminClient(); } catch (e) { back((e as Error).message); }
+  const { error: e2 } = await admin!.auth.admin.updateUserById(id, { password });
+  if (e2) back('Không đặt lại được mật khẩu: ' + e2.message);
+
+  const { data: ended, error: e3 } = await supabase.schema('app').rpc('admin_password_reset_done', { p_user: id, p_signout: signout });
+  if (e3) back('Đã đổi mật khẩu nhưng chưa ghi được nhật ký: ' + e3.message);
+  revalidatePath('/quan-tri');
+  const extra = signout ? (Number(ended) > 0 ? `, đã đăng xuất ${ended} phiên đang mở` : ', không có phiên nào đang mở') : '';
+  redirect(`/quan-tri?sua=${id}&ok=` + encodeURIComponent(`Đã đặt lại mật khẩu cho ${email}${extra}. Gửi mật khẩu mới cho người dùng qua kênh riêng.`));
+}
+
 export async function updateUser(form: FormData) {
   const id = String(form.get('id'));
   if (form.getAll('roles').length === 0) redirect(`/quan-tri?sua=${id}&err=` + encodeURIComponent('Chọn ít nhất một vai trò'));

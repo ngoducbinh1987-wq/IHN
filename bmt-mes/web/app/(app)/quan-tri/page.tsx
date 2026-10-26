@@ -3,7 +3,8 @@ import { Flash, Pill, Toolbar } from '@/components/ui';
 import { ROLE_NAMES, df } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { createUser, updateUser } from './actions';
+import { ResetPasswordFields } from '@/components/reset-password-fields';
+import { createUser, resetPassword, updateUser } from './actions';
 
 export const metadata = { title: 'Người dùng & quyền' };
 
@@ -11,6 +12,7 @@ type U = { id: string; full_name: string; employee_code: string | null; departme
   status: string; email: string | null; last_sign_in_at: string | null; roles: string[]; warehouses: string[] };
 type W = { code: string; name: string };
 type C = { role_a: string; role_b: string; reason: string };
+type R = { at: string; by_name: string; signout: boolean; sessions_ended: number };
 
 const DEPTS: [string, string][] = [['BGD', 'Ban giám đốc'], ['KD', 'Kinh doanh'], ['KT', 'Kỹ thuật/QA'], ['KHO', 'Kho'],
   ['MUA', 'Mua hàng'], ['KTOAN', 'Kế toán'], ['SX', 'Sản xuất'], ['IT', 'Quản trị hệ thống']];
@@ -65,6 +67,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const whName = (c: string) => warehouses.find((w) => w.code === c)?.name ?? c;
   const editing = data?.find((u) => u.id === sp.sua);
   const editable = can(me, 'admin', 'edit');
+  // Đặt lại mật khẩu: chỉ vai trò Quản trị hệ thống (database kiểm lại khi lưu)
+  const canReset = me.roles.includes('ADMIN');
+  const resets = editing && canReset
+    ? ((await supabase.schema('app').rpc('admin_password_resets', { p_user: editing.id })).data as R[] | null) ?? []
+    : [];
   return (
     <>
       <Toolbar title="Người dùng & quyền" reload="/quan-tri" add={editable ? { href: '/quan-tri?them=1', label: 'Thêm người dùng' } : undefined} />
@@ -90,20 +97,46 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
         {editable && (
           editing ? (
-            <form action={updateUser} className="card flex flex-col gap-3 p-4">
-              <h2 className="text-[16px] font-medium">Sửa: {editing.full_name}</h2>
-              <input type="hidden" name="id" value={editing.id} />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="lbl">Họ tên<input className="inp" name="full_name" defaultValue={editing.full_name} required /></label>
-                <label className="lbl">Mã nhân viên<input className="inp" name="employee_code" defaultValue={editing.employee_code ?? ''} /></label>
-                <label className="lbl">Phòng ban<select className="inp" name="department" defaultValue={editing.department ?? ''}><option value="">—</option>{DEPTS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}</select></label>
-                <label className="lbl">Trạng thái<select className="inp" name="status" defaultValue={editing.status}><option value="ACTIVE">Hoạt động</option><option value="LOCKED">Tạm khóa</option><option value="INACTIVE">Ngưng</option></select></label>
-              </div>
-              <label className="lbl">Chức danh<input className="inp" name="title" defaultValue={editing.title ?? ''} /></label>
-              <RoleChecks selected={editing.roles} prefix="e" conflicts={conflicts} />
-              <WarehouseChecks selected={editing.warehouses ?? []} warehouses={warehouses} />
-              <div className="flex gap-2"><SubmitButton>Lưu</SubmitButton><a className="btn" href="/quan-tri">Hủy</a></div>
-            </form>
+            <div className="flex flex-col gap-4">
+              <form action={updateUser} className="card flex flex-col gap-3 p-4">
+                <h2 className="text-[16px] font-medium">Sửa: {editing.full_name}</h2>
+                <input type="hidden" name="id" value={editing.id} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="lbl">Họ tên<input className="inp" name="full_name" defaultValue={editing.full_name} required /></label>
+                  <label className="lbl">Mã nhân viên<input className="inp" name="employee_code" defaultValue={editing.employee_code ?? ''} /></label>
+                  <label className="lbl">Phòng ban<select className="inp" name="department" defaultValue={editing.department ?? ''}><option value="">—</option>{DEPTS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}</select></label>
+                  <label className="lbl">Trạng thái<select className="inp" name="status" defaultValue={editing.status}><option value="ACTIVE">Hoạt động</option><option value="LOCKED">Tạm khóa</option><option value="INACTIVE">Ngưng</option></select></label>
+                </div>
+                <label className="lbl">Chức danh<input className="inp" name="title" defaultValue={editing.title ?? ''} /></label>
+                <RoleChecks selected={editing.roles} prefix="e" conflicts={conflicts} />
+                <WarehouseChecks selected={editing.warehouses ?? []} warehouses={warehouses} />
+                <div className="flex gap-2"><SubmitButton>Lưu</SubmitButton><a className="btn" href="/quan-tri">Hủy</a></div>
+              </form>
+              {canReset && (
+                <form action={resetPassword} className="card flex flex-col gap-3 p-4" autoComplete="off">
+                  <h2 className="text-[16px] font-medium">Cài đặt lại mật khẩu</h2>
+                  <p className="text-[12.5px] text-muted">Đặt mật khẩu mới cho <b className="text-ink">{editing.email}</b>. Mật khẩu cũ hết hiệu lực ngay.
+                    Phần mềm không lưu mật khẩu mới ở đâu khác: ghi lại hoặc gửi cho người dùng qua kênh riêng (gặp trực tiếp hoặc nhắn riêng).</p>
+                  <input type="hidden" name="id" value={editing.id} />
+                  <ResetPasswordFields />
+                  <label className="flex items-center gap-2 text-[12.5px]">
+                    <input type="checkbox" name="signout" defaultChecked className="accent-[rgb(var(--brand))]" />
+                    Đăng xuất người này khỏi mọi thiết bị đang mở
+                  </label>
+                  <div className="flex gap-2"><SubmitButton pendingText="Đang đặt lại…">Đặt lại mật khẩu</SubmitButton></div>
+                  {resets.length > 0 && (
+                    <div className="border-t border-line pt-2 text-[12px] text-muted">
+                      <div className="mb-1">Các lần đặt lại gần nhất:</div>
+                      <ul className="flex flex-col gap-0.5">
+                        {resets.map((r) => (
+                          <li key={r.at}>{df(r.at, true)} · {r.by_name}{r.signout ? ` · đăng xuất ${r.sessions_ended} phiên` : ''}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </form>
+              )}
+            </div>
           ) : sp.them ? (
             <form action={createUser} className="card flex flex-col gap-3 p-4">
               <h2 className="text-[16px] font-medium">Tạo tài khoản</h2>
