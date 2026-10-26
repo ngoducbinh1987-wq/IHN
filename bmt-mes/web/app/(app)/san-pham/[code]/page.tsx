@@ -6,7 +6,7 @@ import { StageBar, type Stage } from '@/components/stage-bar';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import type { Approval } from '@/lib/approvals';
-import { SPEC_STATUS, df, nf } from '@/lib/format';
+import { SPEC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { deleteBomLine, newVersion, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
@@ -145,9 +145,9 @@ export default async function ProductDetail({ params, searchParams }:
                 <form action={recordPilot} className="card flex flex-col gap-3 p-4">{hidden}
                   <h2 className="font-medium">Kết quả pilot (QC nhập)</h2>
                   <div className="grid grid-cols-3 gap-3">
-                    <label className="lbl"><span className="req">Rdc đo (Ω/km)</span><input className="inp text-right" name="rdc" defaultValue={res?.pilot_rdc ?? ''} required /></label>
-                    <label className="lbl">kg/km cân thực<input className="inp text-right" name="kgkm" defaultValue={res?.pilot_kgkm ?? ''} /></label>
-                    <label className="lbl">OD đo (mm)<input className="inp text-right" name="od" defaultValue={res?.pilot_od_mm ?? ''} /></label>
+                    <label className="lbl"><span className="req">Rdc đo (Ω/km)</span><input className="inp text-right" name="rdc" defaultValue={numIn(res?.pilot_rdc)} required /></label>
+                    <label className="lbl">kg/km cân thực<input className="inp text-right" name="kgkm" defaultValue={numIn(res?.pilot_kgkm)} /></label>
+                    <label className="lbl">OD đo (mm)<input className="inp text-right" name="od" defaultValue={numIn(res?.pilot_od_mm)} /></label>
                   </div>
                   <div><SubmitButton className="btn btn-pri">Lưu kết quả pilot</SubmitButton></div>
                 </form>

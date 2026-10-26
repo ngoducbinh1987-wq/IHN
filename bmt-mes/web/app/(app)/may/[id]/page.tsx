@@ -9,7 +9,7 @@ import {
   COMP_KIND, DOC_KIND, LEVEL, M_STATUS, OPR_ROLE, PLAN_STATE, RANGE_PARAM, RANGE_UOM, SPEC_GROUPS, SPEED_STATUS, WO_STATUS, WO_TYPE,
   cycleText, hhmm, remainText, usedFraction,
 } from '@/lib/machine';
-import { df, nf } from '@/lib/format';
+import { df, nf, numIn } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -499,7 +499,7 @@ function InfoTab({ m, cfg, back }: { m: Record<string, any>; cfg: boolean; back:
       <label className="lbl">Năm sản xuất<input name="year_made" className="inp" inputMode="numeric" defaultValue={m.year_made ?? ''} /></label>
       <label className="lbl">Vị trí trong xưởng<input name="location" className="inp" defaultValue={m.location ?? ''} placeholder="Trục A–B, đầu trục 12" /></label>
       <label className="lbl">PLC<input name="plc_model" className="inp" defaultValue={m.plc_model ?? ''} /></label>
-      <label className="lbl">Công suất định mức (kW)<input name="rated_kw" className="inp" inputMode="decimal" defaultValue={m.rated_kw ?? ''} /></label>
+      <label className="lbl">Công suất định mức (kW)<input name="rated_kw" className="inp" inputMode="decimal" defaultValue={numIn(m.rated_kw)} /></label>
       <label className="lbl">Thứ tự<input name="seq" className="inp" inputMode="numeric" defaultValue={m.seq ?? 0} /></label>
       <label className="lbl sm:col-span-2">Ghi chú<textarea name="note" className="inp" rows={2} defaultValue={m.note ?? ''} /></label>
       {m.line_id && <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" name="critical" defaultChecked={m.critical} />Máy quan trọng (hỏng là dừng cả dây chuyền)</label>}

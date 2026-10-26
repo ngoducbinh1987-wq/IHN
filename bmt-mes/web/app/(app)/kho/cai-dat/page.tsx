@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Printer } from 'lucide-react';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Tabs, Toolbar } from '@/components/ui';
-import { df, nf } from '@/lib/format';
+import { df, nf, numIn } from '@/lib/format';
 import { LOC_KINDS, hasRole, keeps } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -53,7 +53,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                       <input type="hidden" name="key" value={s.key} />
                       {s.key === 'issue_hours'
                         ? <input className="inp inp-y w-56" name="text_value" defaultValue={s.text_value ?? ''} placeholder="06:30-08:00,16:30-17:30" aria-label={s.label} />
-                        : <input className="inp inp-y w-24 text-right" name="num_value" defaultValue={s.num_value ?? ''} inputMode="decimal" aria-label={s.label} />}
+                        : <input className="inp inp-y w-24 text-right" name="num_value" defaultValue={numIn(s.num_value)} inputMode="decimal" aria-label={s.label} />}
                       <span className="text-[13px] text-muted">{s.unit}</span>
                       <SubmitButton className="btn btn-sm btn-soft" pendingText="…">Lưu</SubmitButton>
                     </form>
@@ -119,7 +119,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                   <input type="hidden" name="id" value={p.id} />
                   <input className="inp mono" name="code" defaultValue={p.code} aria-label="Mã" />
                   <input className="inp" name="name" defaultValue={p.name} aria-label="Tên" />
-                  <input className="inp inp-y text-right" name="tare_kg" defaultValue={String(p.tare_kg).replace('.', ',')} inputMode="decimal" aria-label="Bì kg" />
+                  <input className="inp inp-y text-right" name="tare_kg" defaultValue={numIn(p.tare_kg)} inputMode="decimal" aria-label="Bì kg" />
                   <select className="inp" name="group" defaultValue={p.material_group ?? ''} aria-label="Nhóm vật tư"><option value="">Mọi nhóm</option>{(groups ?? []).map((g) => <option key={g.code} value={g.code}>{g.name}</option>)}</select>
                   <select className="inp" name="active" defaultValue={p.active ? 'on' : 'off'} aria-label="Dùng"><option value="on">Dùng</option><option value="off">Ngưng</option></select>
                   <SubmitButton className="btn btn-sm btn-soft" pendingText="…">Lưu</SubmitButton>

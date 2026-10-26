@@ -6,7 +6,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { ROLE, hasRole, loadConfig } from '@/lib/kh/load';
 import { shiftRun } from '@/lib/kh/scheduler';
-import { df, nf } from '@/lib/format';
+import { df, nf, numIn } from '@/lib/format';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { saveChangeovers, saveConfig, saveRates, saveShifts, setMode } from './actions';
@@ -130,7 +130,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
               <div className="overflow-x-auto"><table className="tbl"><tbody>
                 {PARAMS.map(([k, l, u, r]) => (
                   <tr key={k}><td>{l}</td><td className="num whitespace-nowrap">{E('params', isBgd)
-                    ? <><input name={k} defaultValue={k === 'cutoff_time' ? cfg.cutoff_time : lbl(k)} className={`inp inline-block w-[90px] py-1 text-right ${k === 'cutoff_time' ? 'mono' : ''}`} aria-label={l} /> <span className="text-[12.5px] text-muted">{u}</span><div className="text-[12px] text-muted">{r}</div></>
+                    ? <><input name={k} defaultValue={k === 'cutoff_time' ? cfg.cutoff_time : numIn((cfg as unknown as Record<string, number>)[k])} className={`inp inline-block w-[90px] py-1 text-right ${k === 'cutoff_time' ? 'mono' : ''}`} aria-label={l} /> <span className="text-[12.5px] text-muted">{u}</span><div className="text-[12px] text-muted">{r}</div></>
                     : <><b>{lbl(k)}{u === '%' ? '%' : ''}</b>{u !== '%' ? ' ' + u : ''}</>}</td></tr>
                 ))}
               </tbody></table></div>
@@ -146,7 +146,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
                 <tbody>{cfg.rates.map((r) => (
                   <tr key={r.op_code}><td>{r.label}</td>
                     {(['small', 'large'] as const).map((j) => <td key={j} className="num">{E('rates', isKt)
-                      ? <input name={`${j}_${r.op_code}`} defaultValue={nf(j === 'small' ? r.rate_small : r.rate_large)} className="inp inline-block w-[80px] py-1 text-right" aria-label={`${r.label} ${j === 'small' ? 'cỡ nhỏ' : 'cỡ lớn'}`} />
+                      ? <input name={`${j}_${r.op_code}`} defaultValue={numIn(j === 'small' ? r.rate_small : r.rate_large)} className="inp inline-block w-[80px] py-1 text-right" aria-label={`${r.label} ${j === 'small' ? 'cỡ nhỏ' : 'cỡ lớn'}`} />
                       : nf(j === 'small' ? r.rate_small : r.rate_large)}</td>)}
                     <td className="text-[12.5px] text-muted">{r.unit}/phút</td></tr>
                 ))}</tbody>
