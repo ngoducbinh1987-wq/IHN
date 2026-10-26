@@ -99,6 +99,7 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - Repo có hai file cùng số `20261025002200` (production_planning, role_standard): đừng dùng `supabase db push`; áp theo cách ghi ở mục Kiểm thử.
 - Module máy còn chờ: email báo cáo tháng (đang thử, chưa cần cấu hình SMTP); xuất phụ tùng bảo dưỡng qua Kho (`inv.requisitions` bắt buộc `wo_id` lệnh SX, cần thêm loại phiếu cho phiếu BD/SC); bộ xếp lịch chưa dùng tốc độ riêng theo máy/sản phẩm (`machine_speeds`); liên kết NV1–NV5 với tài khoản (`master.operators.profile_id`) chưa có màn hình.
 - Phiếu lĩnh lệnh ngày (`qty_m` trống) không trừ vào "còn được lĩnh" của `inv.create_requisition` (phiếu lĩnh thủ công theo mét cáp): nếu Quản lý SX vừa dùng lệnh ngày vừa lập phiếu thủ công cho cùng lệnh SX thì cần tự đối chiếu; về sau nên bỏ phiếu thủ công cho lệnh có lịch máy.
+- Kế hoạch tuần + Lệnh SX ngày (LSXN) + nhập kho BTP/TP theo bobin: đã phân tích (Claude Doc "BMT MES – Phân tích nghiệp vụ Kế hoạch tuần, ngày và Lệnh sản xuất", 26/10/2026), chờ anh Bình chốt 6 câu ở mục cuối rồi mới làm. Đề xuất: giữ LSX theo lô + thêm LSXN-yymmdd; ghi nhận từng bobin tại máy qua `mfg.record_output` (chưa màn hình nào gọi; còn dùng `current_date` UTC – phải sửa); bảng mới `plan.weekly_plans`, `plan.daily_release_lines`; lộ trình 3 đợt ~3 tuần (1: LSXN + ghi nhận bobin + nhập kho; 2: đóng LSXN, đối chiếu, màn hình LSX; 3: kế hoạch tuần).
 - Tiếp theo: màn hình tạo PO, lệnh SX, trả hàng NCC; đề xuất mua tối ưu.
 
 ## Kiểm thử
