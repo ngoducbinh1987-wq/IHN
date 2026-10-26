@@ -5,7 +5,7 @@ import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
 import { ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import { DT_REASONS, SCRAP_REASONS, type Sample, sampleTemplate, shiftLines } from '@/lib/kh/shift';
 import { OP_NAME, UNIT, type Op, isWorkday } from '@/lib/kh/scheduler';
-import { df, nf } from '@/lib/format';
+import { df, nf, numIn } from '@/lib/format';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { confirmReport, judgeSample, reopenReport, saveReport, submitReport } from './actions';
@@ -159,7 +159,7 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
             <section className="card">
               <div className="card-h"><h2>Phế phẩm và ghi chú</h2></div>
               <div className="flex flex-wrap items-end gap-3 px-4 py-3">
-                <label className="lbl w-[140px]">Khối lượng (kg)<input name="scrap_kg" defaultValue={rep && Number(rep.scrap_kg) ? nf(rep.scrap_kg, 1) : ''} inputMode="decimal" className="inp text-right" disabled={locked} /></label>
+                <label className="lbl w-[140px]">Khối lượng (kg)<input name="scrap_kg" defaultValue={rep && Number(rep.scrap_kg) ? numIn(rep.scrap_kg) : ''} inputMode="decimal" className="inp text-right" disabled={locked} /></label>
                 <label className="lbl min-w-[200px] flex-1">Nguyên nhân<select name="scrap_reason" defaultValue={rep?.scrap_reason ?? ''} className="inp" disabled={locked}>
                   <option value="">—</option>{Object.entries(SCRAP_REASONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
                 <label className="lbl w-full">Ghi chú<textarea name="note" rows={2} defaultValue={rep?.note ?? ''} className="inp" disabled={locked} /></label>

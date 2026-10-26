@@ -1,6 +1,6 @@
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
-import { nf } from '@/lib/format';
+import { nf, numIn } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { saveTerms } from './actions';
@@ -59,10 +59,10 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
                 <td className="num text-muted">{nf(m.in_quality, 1)}</td>
                 {editable && m.terms_id ? (
                   <>
-                    <td className="num"><input form={`f-${m.id}`} className="inp inp-y w-20 text-right" name="moq" defaultValue={m.moq ?? 0} aria-label={`MOQ ${m.code}`} /></td>
-                    <td className="num"><input form={`f-${m.id}`} className="inp inp-y w-20 text-right" name="pack_multiple" defaultValue={m.pack_multiple ?? 1} aria-label={`Bội số ${m.code}`} /></td>
+                    <td className="num"><input form={`f-${m.id}`} className="inp inp-y w-20 text-right" name="moq" defaultValue={numIn(m.moq ?? 0)} aria-label={`MOQ ${m.code}`} /></td>
+                    <td className="num"><input form={`f-${m.id}`} className="inp inp-y w-20 text-right" name="pack_multiple" defaultValue={numIn(m.pack_multiple ?? 1)} aria-label={`Bội số ${m.code}`} /></td>
                     <td className="num"><input form={`f-${m.id}`} className="inp inp-y w-20 text-right" name="lead_time_days" defaultValue={m.lead_time_days ?? 0} aria-label={`Lead time ${m.code}`} /></td>
-                    <td className="num"><input form={`f-${m.id}`} className="inp inp-y w-28 text-right" name="unit_price" defaultValue={m.unit_price ?? ''} placeholder="Chưa có" aria-label={`Đơn giá ${m.code}`} /></td>
+                    <td className="num"><input form={`f-${m.id}`} className="inp inp-y w-28 text-right" name="unit_price" defaultValue={numIn(m.unit_price)} placeholder="Chưa có" aria-label={`Đơn giá ${m.code}`} /></td>
                     <td><input form={`f-${m.id}`} className="inp inp-y w-28" name="supplier_item_code" defaultValue={m.supplier_item_code ?? ''} aria-label={`Mã NCC ${m.code}`} /></td>
                     <td>
                       <form id={`f-${m.id}`} action={saveTerms}>

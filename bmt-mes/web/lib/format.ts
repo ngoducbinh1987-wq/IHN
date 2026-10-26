@@ -16,16 +16,26 @@ export function df(v: string | null | undefined, withTime = false): string {
 
 // Đọc số người dùng gõ theo thói quen Việt Nam:
 //   "1.234,5" → 1234.5 · "3.500" / "268.000" → 3500 / 268000 (dấu chấm phân cách nghìn)
-//   "1234.5" / "1.5" / "0.75" → số thập phân (không đủ nhóm 3 chữ số sau dấu chấm)
+//   "1234.5" / "1.5" / "0.254" → số thập phân (không phải nhóm nghìn: thiếu nhóm 3 chữ số hoặc bắt đầu bằng 0)
+//   "1,234.5" (kiểu Anh, dấu phẩy đứng trước dấu chấm) → 1234.5 · "1,234,567" → 1234567
 export function parseNum(raw: FormDataEntryValue | null): number | null {
   if (raw === null) return null;
   const s = String(raw).trim().replace(/\s/g, '');
   if (s === '') return null;
+  const comma = s.lastIndexOf(','), dot = s.lastIndexOf('.');
   let norm = s;
-  if (s.includes(',')) norm = s.replace(/\./g, '').replace(',', '.');
-  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) norm = s.replace(/\./g, '');
+  if (comma >= 0 && dot > comma) norm = s.replace(/,/g, '');
+  else if (comma >= 0) norm = /,.*,/.test(s) ? s.replace(/,/g, '') : s.replace(/\./g, '').replace(',', '.');
+  else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(s)) norm = s.replace(/\./g, '');
   const n = Number(norm);
   return Number.isFinite(n) ? n : NaN;
+}
+
+// Giá trị điền sẵn vào ô nhập số: đủ chữ số (không làm tròn), dấu phẩy thập phân, không dấu nghìn → parseNum đọc lại đúng
+export function numIn(v: number | string | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '';
+  const n = typeof v === 'string' ? Number(v) : v;
+  return Number.isFinite(n) ? String(n).replace('.', ',') : String(v);
 }
 
 export const SPEC_STATUS: Record<string, [string, Tone]> = {
