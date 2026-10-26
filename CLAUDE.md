@@ -62,6 +62,11 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - Dùng thật cần: duyệt kế hoạch tháng (chưa duyệt thì chưa phát lệnh ngày), Giám đốc đặt hạn giao từng dòng (thẻ Kế hoạch tháng & công suất) rồi Quản lý SX bấm Xếp lịch; Lực (TP KT/QA) nhập tốc độ chuẩn, phút đổi máy thật (đang giả định); tài khoản tổ trưởng + NV1–NV5 để nhập, xác nhận ca.
 - Thử cục bộ không có Docker Hub: tải binary PostgREST và supabase/auth từ GitHub releases thay cho container trong `dev/local_stack.sh`.
 
+## Tài liệu quy trình duyệt (26/10/2026)
+- Claude Doc "BMT MES – Quy trình phê duyệt" (https://claude.ai/artifact/45R4ahqoYQX1nomFi39EYX): sơ đồ từng quy trình, người phụ trách, hạn, kịch bản chạy thử 21 bước (cột Kết quả để người dùng đánh dấu). Lấy từ cấu hình thật trên Supabase: mọi bước `wf.approval_steps` hạn 24 giờ, nhắc trước 0; duyệt thay (fallback BGD) ở PO bước TP Mua, PROPOSAL, EXTRA_ISSUE, STOCK_ADJ, STOCK_OPEN, COST_CLOSE.
+- Các bước duyệt trong module (đơn phát sinh, phiếu lĩnh lệnh ngày, mẫu, báo cáo ca, tốc độ máy, tay nghề, phiếu BD/SC, hậu kiểm phiếu kho) chưa có hạn trên hệ thống; tài liệu ghi hạn đề xuất (đơn phát sinh 4 giờ/bước, phiếu lĩnh trước 17:00 D−1, mẫu 30 phút, báo cáo ca 10:00 D+1, tay nghề 3 ngày). Nếu người dùng chốt thì đưa vào hệ thống để có nhắc quá hạn.
+- `KH-2610-01` và `SPEC CFR-2C-0p75 v1` đang chờ theo snapshot cấu hình cũ (bước "Duyệt", "Kiểm tra (kết quả pilot)"), đã quá hạn: khuyên trả lại rồi gửi lại.
+
 ## Việc còn chờ
 - Tạo tài khoản: Quản lý SX (Quản lý sản xuất + Tổ trưởng ca + Kế hoạch SX + Thủ kho, kho KNL/KBTP/KPL), Kế toán SX (Kế toán kho + Kế toán giá thành), NV mua hàng, 5 công nhân (email nội bộ; NV3 thêm NV kho, kho KTP vì NV3 giữ kho thành phẩm theo chỉ đạo 25/10/2026; NV1 là tổ phó).
 - Người dùng tự thêm trên Vercel: `CRON_SECRET`, `SMTP_*` (Zoho smtp.zoho.com:465), `APP_URL`; và chạy `vault.create_secret` cho `mes_app_url`, `mes_cron_secret` trên Supabase.
