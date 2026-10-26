@@ -172,7 +172,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <label className="lbl"><span className="req">Kho</span><select className="inp inp-y" name="warehouse_id" required>{(whs ?? []).map((w) => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}</select></label>
             <label className="lbl">Ngày tồn đầu kỳ<input className="inp" type="date" name="doc_date" /></label>
             <label className="lbl md:col-span-2"><span className="req">Mỗi dòng: MÃ; số lượng; đơn giá; vị trí; số đơn vị; HSD (dd/mm/yyyy); thương hiệu</span>
-              <textarea className="inp inp-y font-mono" name="lines" rows={8} required placeholder={'CU-024; 420; 268000; KNL-CU; 3\nSIL-9710G; 200; 95000; KNL-SI; 8; 30/03/2027\nPFR-2C-1p5; 1500; ; KTP-A; 3; ; KAVIX'} /></label>
+              <textarea className="inp inp-y font-mono" name="lines" rows={8} required placeholder={'CU-024; 420; 268000; KNL-CU; 3\nSIL-9710G; 200; 95000; KNL-SI; 8; 30/03/2027\nPFR-2C-1P5; 1500; ; KTP-A; 3; ; KAVIX'} /></label>
             <p className="text-[12.5px] text-muted md:col-span-2">Số lượng chia đều cho số đơn vị (ống/bao/bobin), mỗi đơn vị một tem QR. Nguyên vật liệu bắt buộc có đơn giá. Kế toán trưởng duyệt xong mới ghi sổ (Quy chuẩn mục 8).</p>
             <div><SubmitButton>Lập tồn đầu kỳ, gửi duyệt</SubmitButton></div>
           </form>

@@ -44,7 +44,7 @@ export default async function NewSpec({ searchParams }: { searchParams: Promise<
           <input type="hidden" name="template" value={tpl.spec_id} /><input type="hidden" name="template_code" value={tpl.code} />
           <h2 className="text-[16px] font-medium">Bước 2 · Thông tin mã mới (đang sao chép từ <span className="text-brand">{tpl.code}</span>)</h2>
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_2fr]">
-            <label className="lbl"><span className="req">Mã sản phẩm mới</span><input className="inp mono" name="new_code" required placeholder="PFR-2C-1p0" /></label>
+            <label className="lbl"><span className="req">Mã sản phẩm mới</span><input className="inp mono" name="new_code" required placeholder="PFR-2C-1P0" pattern="[A-Z0-9][A-Z0-9.\-]*" title="Chữ IN HOA, số, dấu gạch ngang (ví dụ PFR-2C-1P5)" /></label>
             <label className="lbl">Nhóm
               <select className="inp" name="group" defaultValue={tpl.group_code}>{(groups ?? []).map((g) => <option key={g.code} value={g.code}>{g.code} · {g.name}</option>)}</select>
             </label>

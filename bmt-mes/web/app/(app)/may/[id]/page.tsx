@@ -102,7 +102,7 @@ export default async function MachineProfile({ params, searchParams }:
 
       <SubTabs base={base} items={TABS} active={tab} />
       {tab === 'thong-so' && <SpecsTab id={id} cfg={cfg} back={here} />}
-      {tab === 'toc-do' && <SpeedTab id={id} lineId={lineId} isLine={isLine} opCode={m.op_code ?? line?.op_code} cfg={cfg} canApprove={can(me, 'machine', 'approve')} back={here} />}
+      {tab === 'toc-do' && <SpeedTab id={id} lineId={lineId} isLine={isLine} opCode={m.op_code ?? line?.op_code} cfg={cfg} canPropose={cfg || can(me, 'machine', 'create')} meId={me.id} canApprove={can(me, 'machine', 'approve')} back={here} />}
       {tab === 'bao-duong' && <MaintTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} />}
       {tab === 'nguoi' && <PeopleTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} canAssign={cfg || me.roles.includes('SX_TP')} canCertify={me.roles.includes('KT_TP') || me.roles.includes('ADMIN')} back={here} />}
       {tab === 'lich-su' && <HistoryTab lineId={lineId} machineId={id} isLine={isLine} />}
@@ -233,8 +233,8 @@ function DeleteBtn({ table, id, back, label = 'Xóa' }: { table: string; id: str
 }
 
 // ---------------------------------------------------------------- Tốc độ + dải hoạt động
-async function SpeedTab({ id, lineId, isLine, opCode, cfg, canApprove, back }:
-  { id: string; lineId: string; isLine: boolean; opCode: string | null; cfg: boolean; canApprove: boolean; back: string }) {
+async function SpeedTab({ id, lineId, isLine, opCode, cfg, canPropose, meId, canApprove, back }:
+  { id: string; lineId: string; isLine: boolean; opCode: string | null; cfg: boolean; canPropose: boolean; meId: string; canApprove: boolean; back: string }) {
   const supabase = await createClient();
   const [{ data: ranges }, { data: speeds }, { data: ops }, { data: groups }, { data: cores }, { data: products }] = await Promise.all([
     supabase.schema('app').from('v_machine_ranges').select('*').eq('machine_id', id).order('sort').order('label'),
@@ -297,7 +297,8 @@ async function SpeedTab({ id, lineId, isLine, opCode, cfg, canApprove, back }:
                       {s.status === 'APPROVED' && <div className="text-[12px] text-muted">{s.approved_by_name}{s.temp_approval ? ' (duyệt tạm)' : ''} · {df(s.approved_at)}</div>}
                       {s.status === 'PENDING' && s.wait_days >= 1 && <div className="text-[12px] text-warn">Chờ quá 1 ngày · đã báo Giám đốc</div>}</td>
                     <td><div className="flex gap-1.5">
-                      {s.status === 'PENDING' && canApprove && <form action={approveSpeed}><input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={back} /><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt</SubmitButton></form>}
+                      {s.status === 'PENDING' && canApprove && s.created_by === meId && <span className="text-[12px] text-muted">Chờ người khác duyệt</span>}
+                      {s.status === 'PENDING' && canApprove && s.created_by !== meId && <form action={approveSpeed}><input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={back} /><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt</SubmitButton></form>}
                       {s.status === 'PENDING' && cfg && <DeleteBtn table="speed" id={s.id} back={back} />}
                     </div></td>
                   </tr>
@@ -305,7 +306,7 @@ async function SpeedTab({ id, lineId, isLine, opCode, cfg, canApprove, back }:
                 {(speeds ?? []).length === 0 && <tr><td colSpan={8}><Empty>Chưa khai tốc độ. Kiểm tra kế hoạch sẽ báo “Chưa có tốc độ chuẩn”.</Empty></td></tr>}
               </tbody>
             </table>
-            {cfg && (
+            {canPropose && (
               <form action={addSpeed} className="grid gap-3 border-t border-line p-4 sm:grid-cols-3 lg:grid-cols-6 lg:items-end">
                 <input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="back" value={back} />
                 <label className="lbl"><span className="req">Công đoạn</span><select name="op_code" className="inp" defaultValue={opCode ?? ''} required>{(ops ?? []).map((o) => <option key={o.code} value={o.code}>{o.code} · {o.name}</option>)}</select></label>

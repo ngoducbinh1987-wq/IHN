@@ -29,12 +29,12 @@ end $$;
 create function pg_temp.v(p_k text) returns uuid language sql as $$ select v from t where k = p_k $$;
 set client_min_messages = notice;
 
-with u(code, role) as (values ('M_KTTP','KT_TP'),('M_SXTP','SX_TP'),('M_VH','VAN_HANH'),('M_BGD','BGD'),('M_KD','KD_NV'),('M_BGD2','BGD')),
+with u(code, role) as (values ('M_KTTP','KT_TP'),('M_SXTP','SX_TP'),('M_VH','VAN_HANH'),('M_BGD','BGD'),('M_KD','KD_NV'),('M_BGD2','BGD'),('M_KTTP2','KT_TP')),
 ins as (insert into auth.users (id, email) select gen_random_uuid(), lower(code) || '@bmt.test' from u returning id, email)
 insert into core.profiles (id, employee_code, full_name, status)
 select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
-select p.id, u.role from core.profiles p join (values ('M_KTTP','KT_TP'),('M_SXTP','SX_TP'),('M_VH','VAN_HANH'),('M_BGD','BGD'),('M_KD','KD_NV'),('M_BGD2','BGD')) u(code, role)
+select p.id, u.role from core.profiles p join (values ('M_KTTP','KT_TP'),('M_SXTP','SX_TP'),('M_VH','VAN_HANH'),('M_BGD','BGD'),('M_KD','KD_NV'),('M_BGD2','BGD'),('M_KTTP2','KT_TP')) u(code, role)
   on u.code = p.employee_code;
 
 -- ============================================================ 1. Khai báo dây chuyền, máy con, thông số
@@ -91,7 +91,14 @@ select pg_temp.fails($$select app.set_operator_skill('$$ || pg_temp.v('line') ||
 reset role;
 select pg_temp.as_user('M_KTTP');
 set local role authenticated;
+select pg_temp.fails($$select app.sign_operator_skill('$$ || pg_temp.v('line') || $$', 'NV1')$$, 'không tự ký', 'Người giao người đứng máy không tự ký tay nghề');
+reset role;
+select pg_temp.as_user('M_KTTP2');
+set local role authenticated;
 select app.sign_operator_skill(pg_temp.v('line'), 'NV1');
+reset role;
+select pg_temp.as_user('M_KTTP');
+set local role authenticated;
 select pg_temp.ok((select signed_at is not null and signed_by_name is not null from app.v_machine_operators where machine_id = pg_temp.v('line') and operator_code = 'NV1'), 'TP Kỹ thuật/QA ký xác nhận tay nghề');
 select app.set_operator_skill(pg_temp.v('line'), 'NV5', 'MAIN', 'Đã học xong');
 select pg_temp.ok((select signed_at is null from app.v_machine_operators where machine_id = pg_temp.v('line') and operator_code = 'NV5'), 'Đổi mức tay nghề thì phải ký lại');
@@ -110,7 +117,14 @@ values (pg_temp.v('line'), 'CD2', 'M1.5', 'Lõi 1,5 mm²', 120, 80, 45, 'BMT') r
 insert into master.machine_speeds (machine_id, op_code, label, std_mpm, setup_min) values (pg_temp.v('line'), 'CD2', 'Mặc định', 70, 45);
 select pg_temp.fails($$insert into master.machine_speeds (machine_id, op_code, std_mpm, status) values ('$$ || pg_temp.v('line') || $$', 'CD2', 90, 'APPROVED')$$,
   'row-level', 'Không tự ghi tốc độ đã duyệt, phải qua bước duyệt');
+select pg_temp.fails($$select app.approve_machine_speed('$$ || pg_temp.v('s1') || $$')$$, 'không tự duyệt', 'Người nhập tốc độ không tự duyệt');
+reset role;
+select pg_temp.as_user('M_KTTP2');
+set local role authenticated;
 select app.approve_machine_speed(pg_temp.v('s1'));
+reset role;
+select pg_temp.as_user('M_KTTP');
+set local role authenticated;
 select pg_temp.ok((select status = 'APPROVED' and not temp_approval from master.machine_speeds where id = pg_temp.v('s1')), 'TP Kỹ thuật/QA duyệt tốc độ chuẩn');
 with u as (update master.machine_speeds set std_mpm = 99 where id = pg_temp.v('s1') returning 1)
 select pg_temp.ok((select count(*) from u) = 0, 'Không sửa được tốc độ đã duyệt (phải tạo bản mới)');
@@ -152,11 +166,11 @@ select pg_temp.ok((select count(*) from wf.notifications n join core.profiles p 
   'Quá hạn báo thêm Ban giám đốc');
 select pg_temp.ok((select count(*) from wf.notifications n join core.profiles p on p.id = n.user_id where p.employee_code = 'M_BGD' and n.title like 'Sắp đến hạn%TEST-SI-09') = 0,
   'Sắp đến hạn không báo Ban giám đốc');
-select pg_temp.ok(not exists (select 1 from wf.notifications where title like '%TEST-SI-09%' and emailed_at is null), 'Nhắc bảo dưỡng chỉ trên thông báo, không gửi email');
+select pg_temp.ok(not exists (select 1 from wf.notifications where title like '%bảo dưỡng%TEST-SI-09%' and emailed_at is null), 'Nhắc bảo dưỡng chỉ trên thông báo, không gửi email');
 create temp table _cnt as select count(*) as n from wf.notifications where title like '%bảo dưỡng%TEST-SI-09%';
 select mfg.maint_daily_job();
 select pg_temp.ok((select count(*) from wf.notifications where title like '%bảo dưỡng%TEST-SI-09%') = (select n from _cnt), 'Chạy lại không nhắc trùng');
-select pg_temp.ok((select count(*) from wf.notifications n join core.profiles p on p.id = n.user_id where p.employee_code like 'M\_%' and n.title = 'Quá hạn bảo dưỡng: TEST-SI-09') = 4, 'Quá hạn: 1 TP Kỹ thuật/QA + 1 Quản lý SX + 2 Ban giám đốc');
+select pg_temp.ok((select count(*) from wf.notifications n join core.profiles p on p.id = n.user_id where p.employee_code like 'M\_%' and n.title = 'Quá hạn bảo dưỡng: TEST-SI-09') = 5, 'Quá hạn: 2 TP Kỹ thuật/QA + 1 Quản lý SX + 2 Ban giám đốc');
 
 -- ============================================================ 4. Trạng thái máy, hỏng, phiếu sửa chữa
 select pg_temp.as_user('M_VH');
@@ -189,7 +203,14 @@ select pg_temp.fails($$select app.confirm_maint_wo('$$ || pg_temp.v('cm') || $$'
 reset role;
 select pg_temp.as_user('M_KTTP');
 set local role authenticated;
+select pg_temp.fails($$select app.confirm_maint_wo('$$ || pg_temp.v('cm') || $$')$$, 'không tự xác nhận', 'Người làm phiếu không tự xác nhận');
+reset role;
+select pg_temp.as_user('M_KTTP2');
+set local role authenticated;
 select app.confirm_maint_wo(pg_temp.v('cm'));
+reset role;
+select pg_temp.as_user('M_KTTP');
+set local role authenticated;
 select pg_temp.ok((select confirmed_at is not null from mfg.maint_work_orders where id = pg_temp.v('cm')), 'TP Kỹ thuật/QA xác nhận phiếu');
 
 -- ============================================================ 5. Phiếu bảo dưỡng từ kế hoạch
@@ -231,7 +252,7 @@ reset role;
 -- ============================================================ 7. Kiểm tra năng lực
 select pg_temp.as_user('M_KTTP');
 set local role authenticated;
-insert into t select 'p15', id from master.products where code = 'SIF-1C-1p5';
+insert into t select 'p15', id from master.products where code = 'SIF-1C-1P5';
 insert into t select 'p6', p.id from master.products p join master.product_specs s on s.id = p.current_spec_id join master.core_types ct on ct.code = s.core_code and ct.set_id = s.param_set_id
   where ct.nominal_mm2 > 4 and upper(s.insulation) like 'SIL%' order by p.code limit 1;
 insert into t select 'pvc', p.id from master.products p join master.product_specs s on s.id = p.current_spec_id where upper(coalesce(s.insulation, '')) not like 'SIL%' order by p.code limit 1;

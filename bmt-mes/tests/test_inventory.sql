@@ -65,7 +65,7 @@ select pg_temp.fails($$select app.admin_upsert_user(pg_temp.uid('KTT'), 'X', 'KT
 -- ================================================================ 1. Chuẩn bị: spec phát hành, PO đã duyệt
 select set_config('bmt.wf_release', 'on', true);   -- chạy thử: phát hành spec như khi luồng duyệt hoàn tất
 select master.release_spec(p.current_spec_id) from master.products p join master.product_specs s on s.id = p.current_spec_id
- where p.code = 'PFR-2C-1p5' and s.status <> 'RELEASED';   -- trên Supabase spec đã phát hành sẵn
+ where p.code = 'PFR-2C-1P5' and s.status <> 'RELEASED';   -- trên Supabase spec đã phát hành sẵn
 insert into core.partners (code, name, is_supplier, partner_type) values ('NCC-T', 'NCC thử', true, 'SUPPLIER');
 insert into purchase.purchase_orders (po_no, supplier_id, status) select 'PO-K1', id, 'APPROVED' from core.partners where code = 'NCC-T';
 insert into purchase.po_lines (po_id, line_no, material_id, qty, unit_price)
@@ -140,7 +140,7 @@ select pg_temp.ok((select available = 280 from inv.v_material_availability where
 select pg_temp.as_user('QLSX');
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
 select 'LSX-K1', p.id, p.current_spec_id, h.id, 1000, 500, 'Bobin gỗ', 'KAVIX'
-from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1p5';
+from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1P5';
 select mfg.release_wo((select id from mfg.work_orders where wo_no = 'LSX-K1'));
 select set_config('bmt.wf_release', 'off', true);
 select pg_temp.as_user('NV1');
@@ -270,7 +270,7 @@ select pg_temp.as_user('KD');
 insert into sales.sales_orders (so_no, customer_id, label_brand, required_date, status)
 select 'SO-K1', id, 'KAVIX', pg_temp.today() + 7, 'APPROVED' from core.partners where code = 'KAVIX';
 insert into sales.so_lines (so_id, line_no, product_id, spec_id, qty_m, pack_type, m_per_pack)
-select so.id, 1, p.id, p.current_spec_id, 505, 'Bobin gỗ', 500 from sales.sales_orders so, master.products p where so.so_no = 'SO-K1' and p.code = 'PFR-2C-1p5';
+select so.id, 1, p.id, p.current_spec_id, 505, 'Bobin gỗ', 500 from sales.sales_orders so, master.products p where so.so_no = 'SO-K1' and p.code = 'PFR-2C-1P5';
 select sales.reserve_so((select id from sales.sales_orders where so_no = 'SO-K1'));
 select pg_temp.ok((select count(*) = 1 and sum(qty_m) = 505 from sales.so_reservations where hu_id is not null), 'Giữ hàng theo từng bobin');
 select pg_temp.ok((select reserved_qty = 505 from inv.stock_balances where lot_id = (select v from t where k = 'bb1')), 'Tồn ghi nhận phần đã giữ');
@@ -366,7 +366,7 @@ select pg_temp.ok((select count(*) = 2 and sum(h.qty) = 50 from inv.handling_uni
 
 -- ================================================================ 20. Hàng khách trả + hủy (TP Kỹ thuật/QA)
 select pg_temp.as_user('NV5');
-insert into t select 'ret', inv.customer_return((select id from master.products where code = 'PFR-2C-1p5'), 'KAVIX', 50, null, null, 'Vỏ trầy');
+insert into t select 'ret', inv.customer_return((select id from master.products where code = 'PFR-2C-1P5'), 'KAVIX', 50, null, null, 'Vỏ trầy');
 select pg_temp.ok((select l.qc_status = 'QUARANTINE' and h.location_id = inv.loc('KTP-RET') from inv.stock_doc_lines dl join inv.lots l on l.id = dl.lot_id
   join inv.handling_units h on h.id = dl.hu_id where dl.doc_id = (select v from t where k = 'ret')), 'Hàng trả về: khu hàng trả, cách ly');
 select pg_temp.fails(format($$select inv.reclass_hu(%L, true, null, null, 'Hủy')$$, (select hu_id from inv.stock_doc_lines where doc_id = (select v from t where k = 'ret'))),

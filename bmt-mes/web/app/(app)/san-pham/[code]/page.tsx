@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { CopyPlus, Send, Trash2 } from 'lucide-react';
 import { SpecFields } from '@/components/spec-form';
 import { StageBar, type Stage } from '@/components/stage-bar';
@@ -18,6 +18,8 @@ export default async function ProductDetail({ params, searchParams }:
   { params: Promise<{ code: string }>; searchParams: Promise<{ ok?: string; err?: string; v?: string; tab?: string }> }) {
   const { code: rawCode } = await params;
   const code = decodeURIComponent(rawCode);
+  // Mã sản phẩm viết IN HOA từ 27/10/2026 (1p5 → 1P5): đường dẫn cũ chữ thường chuyển sang mã mới
+  if (code !== code.toUpperCase()) redirect(`/san-pham/${encodeURIComponent(code.toUpperCase())}`);
   const sp = await searchParams;
   const me = await requirePerm('spec', 'view');
   const supabase = await createClient();

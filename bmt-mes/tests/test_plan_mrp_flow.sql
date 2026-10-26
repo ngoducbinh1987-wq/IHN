@@ -45,12 +45,12 @@ update wf.approval_steps set enabled = (seq in (1, 2)), assignee_ids = '{}', sla
 update wf.approval_flows set submit_role = null, submit_user_ids = '{}' where doc_type = 'PLAN';
 
 -- ================================================================ 2–3. Quy cách đóng gói
--- Database mới chưa phát hành spec nào: phát hành PFR-2C-1p5 (trong transaction, sẽ rollback)
+-- Database mới chưa phát hành spec nào: phát hành PFR-2C-1P5 (trong transaction, sẽ rollback)
 do $$ begin
   if not exists (select 1 from master.products p join master.product_specs s on s.id = p.current_spec_id where s.status = 'RELEASED') then
     perform set_config('request.jwt.claim.sub', (select id::text from core.profiles where employee_code = 'T_ADMIN'), true);
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1p5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1P5'));
   end if;
 end $$;
 select pg_temp.as_user('T_SXKH');

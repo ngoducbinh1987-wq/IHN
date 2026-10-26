@@ -18,13 +18,13 @@ const mk = (i: number, code: string, g: string, size: number, cores: string[], s
   id: 'L' + i, label: 'D' + String(i).padStart(2, '0'), product_code: code, product_name: code, group: g, size, cores, sheath, sil, shield,
   route: (g === 'SIF' ? ['CD1', 'CD2'] : ['CD1', 'CD2', 'CD3', 'CD5']) as Order['route'], qty, due, prio, source: 'x' });
 const orders: Order[] = [
-  mk(1, 'PFR-2C-1p5', 'PFR', 1.5, ['Nâu', 'Trắng'], 'RAL 6037', 30000, '2026-11-10'),
+  mk(1, 'PFR-2C-1P5', 'PFR', 1.5, ['Nâu', 'Trắng'], 'RAL 6037', 30000, '2026-11-10'),
   mk(2, 'CTL-1P-A14', 'CTL', 2.08, ['Trắng', 'Đen'], 'Xám (Gray)', 10000, '2026-11-12', false, true),
-  mk(3, 'CFR-4C-1p5', 'CFR', 1.5, ['Trắng', 'Xám', 'Nâu', 'Đen'], 'Đỏ', 10000, '2026-11-14'),
-  mk(4, 'SIF-1C-1p5', 'SIF', 1.5, ['Đỏ'], null, 40000, '2026-11-14'),
+  mk(3, 'CFR-4C-1P5', 'CFR', 1.5, ['Trắng', 'Xám', 'Nâu', 'Đen'], 'Đỏ', 10000, '2026-11-14'),
+  mk(4, 'SIF-1C-1P5', 'SIF', 1.5, ['Đỏ'], null, 40000, '2026-11-14'),
   mk(5, 'PFR-2C-1', 'PFR', 1, ['Nâu', 'Trắng'], 'Đỏ', 25000, '2026-11-20'),
   mk(6, 'CTL-1P-A14', 'CTL', 2.08, ['Trắng', 'Trắng'], 'Xám', 25000, '2026-11-21', false, true),
-  mk(7, 'PFR-3C-2p5', 'PFR', 2.5, ['Nâu', 'Đen', 'Xám'], 'Đỏ', 10000, '2026-11-26'),
+  mk(7, 'PFR-3C-2P5', 'PFR', 2.5, ['Nâu', 'Đen', 'Xám'], 'Đỏ', 10000, '2026-11-26'),
 ];
 const cal = makeCalendar(cfg, '2026-11-02');
 console.log('cal', cal.S, cal.SPD, cal.RUN, cal.base, cal.days.slice(0, 7).join(','));
@@ -68,7 +68,7 @@ check(r3, orders, 'caB');
 const f3 = finishInfo(r3, cal2, orders);
 console.log('ca B: ', orders.map((o) => `${o.label} ${fin.get(o.id)!.finDate}→${f3.get(o.id)!.finDate}`).join(' | '));
 // Đơn gấp chen vùng khóa (tách)
-const urgent = { ...mk(8, 'CFR-2C-1p5', 'CFR', 1.5, ['Đỏ', 'Đen'], 'Đỏ', 10000, '2026-11-09'), prio: 0 };
+const urgent = { ...mk(8, 'CFR-2C-1P5', 'CFR', 1.5, ['Đỏ', 'Đen'], 'Đỏ', 10000, '2026-11-09'), prio: 0 };
 const r4 = schedule([...orders, urgent], ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: 2 * cal.SPD * cal.S, split: true });
 check(r4, [...orders, urgent], 'gấp');
 const f4 = finishInfo(r4, cal, [...orders, urgent]);

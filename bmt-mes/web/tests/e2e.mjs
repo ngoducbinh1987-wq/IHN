@@ -84,16 +84,16 @@ await page.goto(`${BASE}/vat-tu`);
 await page.screenshot({ path: `${SHOTS}/02-vat-tu.png`, fullPage: false });
 await ctx.close();
 
-// 4. TP Kỹ thuật/QA gửi duyệt spec PFR-2C-1p5; SFR-2P-1 (Rdc vượt) không có nút gửi hợp lệ
+// 4. TP Kỹ thuật/QA gửi duyệt spec PFR-2C-1P5; SFR-2P-1 (Rdc vượt) không có nút gửi hợp lệ
 [ctx, page] = await ctxFor();
 await login(page, 'kt.tp@bmt.test');
 await page.goto(`${BASE}/san-pham/SFR-2P-1`);
 if (!(await page.textContent('body')).includes('Chưa đủ điều kiện phát hành')) fail('SFR-2P-1 phải báo chưa đủ điều kiện');
 await clickNav(page, 'button:has-text("Gửi duyệt phát hành")');
 ok(`SFR-2P-1 bị chặn gửi duyệt → ${(await flash(page)).slice(0, 90)}…`);
-await page.goto(`${BASE}/san-pham/PFR-2C-1p5`);
+await page.goto(`${BASE}/san-pham/PFR-2C-1P5`);
 await clickNav(page, 'button:has-text("Gửi duyệt phát hành")');
-await expectOk(page, 'TP KT/QA gửi duyệt spec PFR-2C-1p5');
+await expectOk(page, 'TP KT/QA gửi duyệt spec PFR-2C-1P5');
 await page.screenshot({ path: `${SHOTS}/03-spec.png`, fullPage: true });
 await ctx.close();
 
@@ -119,14 +119,14 @@ async function approveAs(email, docNo, label) {
   if (label === 'QL SX' && docNo.startsWith('SPEC')) await p.screenshot({ path: `${SHOTS}/04-duyet-chi-tiet.png`, fullPage: true });
   await c.close();
 }
-await approveAs('sx.tp@bmt.test', 'SPEC PFR-2C-1p5', 'reject-empty');
-await approveAs('sx.tp@bmt.test', 'SPEC PFR-2C-1p5', 'QL SX');
-await approveAs('bgd@bmt.test', 'SPEC PFR-2C-1p5', 'GĐ');
+await approveAs('sx.tp@bmt.test', 'SPEC PFR-2C-1P5', 'reject-empty');
+await approveAs('sx.tp@bmt.test', 'SPEC PFR-2C-1P5', 'QL SX');
+await approveAs('bgd@bmt.test', 'SPEC PFR-2C-1P5', 'GĐ');
 [ctx, page] = await ctxFor();
 await login(page, 'kt.nv@bmt.test');
-await page.goto(`${BASE}/san-pham/PFR-2C-1p5`);
+await page.goto(`${BASE}/san-pham/PFR-2C-1P5`);
 if (!(await page.textContent('main aside')).includes('Đã phát hành')) fail('Spec phải ở trạng thái Đã phát hành');
-ok('Spec PFR-2C-1p5 Đã phát hành sau 2 cấp duyệt (Quản lý SX → Giám đốc)');
+ok('Spec PFR-2C-1P5 Đã phát hành sau 2 cấp duyệt (Quản lý SX → Giám đốc)');
 await ctx.close();
 
 // 6. Kế hoạch: tạo, thêm dòng, chạy MRP; Giám đốc gửi duyệt; Quản lý SX xác nhận → Chủ tịch HĐQT phê duyệt; sinh PR
@@ -139,13 +139,13 @@ await Promise.all([page.waitForURL('**/ke-hoach/**'), page.click('button:has-tex
 await expectOk(page, 'Tạo kế hoạch');
 const planUrl = page.url().split('?')[0];
 const planNo = (await page.textContent('main h1')).split(' – ')[0];
-await page.selectOption('select[name=product_id]', { label: (await page.locator('option', { hasText: 'PFR-2C-1p5 ·' }).first().textContent()) });
+await page.selectOption('select[name=product_id]', { label: (await page.locator('option', { hasText: 'PFR-2C-1P5 ·' }).first().textContent()) });
 await page.fill('input[name=qty_m]', '3.500');
 await clickNav(page, 'button:has-text("Thêm dòng")');
-await expectOk(page, 'Thêm dòng PFR-2C-1p5 3.500 m');
+await expectOk(page, 'Thêm dòng PFR-2C-1P5 3.500 m');
 await clickNav(page, 'button:has-text("Chạy MRP")');
 await expectOk(page, 'Chạy MRP');
-const lineRow = (await page.locator('tr:has-text("PFR-2C-1p5")').first().innerText()) ?? '';
+const lineRow = (await page.locator('tr:has-text("PFR-2C-1P5")').first().innerText()) ?? '';
 if (!lineRow.includes('3.500') || !lineRow.includes('7')) fail(`Dòng kế hoạch phải là 3.500 m / 7 kiện: ${lineRow}`);
 ok('Sản lượng "3.500" được hiểu đúng 3.500 m, 7 bobin');
 const cuCells = await page.locator('tr:has-text("CU-024") td').allInnerTexts();
@@ -169,7 +169,7 @@ await page.selectOption('select[name=m_per_pack]', '305');
 await clickNav(page, 'button:has-text("Lưu")');
 await expectOk(page, 'Lưu dòng sửa sang 305 m/kiện');
 if (!(await flash(page)).includes('cần chạy lại')) fail('Sửa sau khi chạy MRP phải báo cần chạy lại MRP');
-const row305 = await page.locator('tr:has-text("PFR-2C-1p5")').first().innerText();
+const row305 = await page.locator('tr:has-text("PFR-2C-1P5")').first().innerText();
 if (!row305.includes('305') || !row305.includes('12') || !row305.includes('11 chẵn + 1 lẻ 145 m')) fail(`3.500 m / 305 phải là 12 kiện (11 chẵn + 1 lẻ 145 m): ${row305}`);
 if (!(await page.textContent('#mrp-stale')).includes('Chạy MRP') || await page.locator('button:has-text("Gửi duyệt kế hoạch")').count()) fail('MRP cũ: phải cảnh báo và ẩn nút gửi duyệt');
 ok('305 m/kiện: 12 kiện (11 chẵn + 1 lẻ 145 m); cảnh báo cần chạy lại MRP, ẩn nút gửi duyệt');
@@ -317,13 +317,13 @@ await approveAs('bgd@bmt.test', prNo, 'GĐ');
 await login(page, 'kt.tp@bmt.test');
 await page.goto(`${BASE}/san-pham`);
 await clickNav(page, 'a:has-text("Thêm spec mới")');
-await page.selectOption('select[name=mau]', 'PFR-2C-1p5');
+await page.selectOption('select[name=mau]', 'PFR-2C-1P5');
 await clickNav(page, 'button:has-text("Sao chép thông số")');
-await page.fill('input[name=new_code]', 'PFR-2C-1p0');
+await page.fill('input[name=new_code]', 'PFR-2C-1P0');
 await page.fill('input[name=description]', 'Cáp chống cháy 2 lõi 1,0 mm² (thử)');
 await page.fill('input[name=wire_count]', '32');
 await clickNav(page, 'button:has-text("Tạo spec nháp")');
-await expectOk(page, 'Tạo spec mới PFR-2C-1p0 từ mẫu PFR-2C-1p5');
+await expectOk(page, 'Tạo spec mới PFR-2C-1P0 từ mẫu PFR-2C-1P5');
 { const u = new URL(page.url()); u.searchParams.delete('ok'); u.searchParams.set('tab', 'bom'); await page.goto(u.href); }
 await page.fill('input[name=material_code]', 'TAPE-NEW');
 await page.fill('input[name=qty]', '0,5');

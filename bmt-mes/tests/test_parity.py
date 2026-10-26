@@ -29,7 +29,8 @@ def psql(sql):
 fails = 0
 
 # ------------------------------------------------------------------ 1. định mức
-dm = {r[0]: r for r in wb["Dinh_muc"].iter_rows(min_row=9, max_row=86, max_col=43, values_only=True)}
+# Excel ghi mã sản phẩm chữ thường (1p5); database viết IN HOA từ migration 20261026002900
+dm = {r[0].upper(): r for r in wb["Dinh_muc"].iter_rows(min_row=9, max_row=86, max_col=43, values_only=True)}
 db = json.loads(psql("""select json_object_agg(p.code, json_build_array(r.metal_kgkm, r.ins_kgkm, r.rdc_calc))
   from master.spec_results r join master.product_specs s on s.id = r.spec_id join master.products p on p.id = s.product_id
   where s.version = 1"""))
@@ -54,14 +55,14 @@ for r in ns.iter_rows(min_row=117, max_row=167, max_col=5, values_only=True):
 bom = [r for r in wb["BOM_chi_tiet"].iter_rows(min_row=9, max_row=2806, max_col=11, values_only=True) if r[0]]
 
 # Kịch bản: (SKU, mét, số lô) — phủ đủ 6 nhóm, bobin + cuộn, nhiều lô
-plan = [("PFR-2C-1p5", 3500, 1), ("SFR-2P-1", 2000, 2), ("CTL-1P-A18", 1200, 1), ("SIF-1C-1p5", 10000, 2),
-        ("CFR-4C-1", 1500, 1), ("PVC-1C-2p5", 5000, 3), ("PFR-4C-6", 800, 1), ("SFR-4P-2p5", 600, 1)]
+plan = [("PFR-2C-1P5", 3500, 1), ("SFR-2P-1", 2000, 2), ("CTL-1P-A18", 1200, 1), ("SIF-1C-1P5", 10000, 2),
+        ("CFR-4C-1", 1500, 1), ("PVC-1C-2P5", 5000, 3), ("PFR-4C-6", 800, 1), ("SFR-4P-2P5", 600, 1)]
 plan_m = {s: (m, l) for s, m, l in plan}
 
 dcp, addp, sic, tpc, siw = P["dcPhr"], P["addPhr"], P["siColor"], P["tpColor"], P["siWhite"]
 expected = {}
 for r in bom:
-    sku, code, d_rate, basis = r[0], r[1], float(r[3] or 0), str(r[10] or "")
+    sku, code, d_rate, basis = r[0].upper(), r[1], float(r[3] or 0), str(r[10] or "")
     if sku not in plan_m:
         continue
     m, lots = plan_m[sku]

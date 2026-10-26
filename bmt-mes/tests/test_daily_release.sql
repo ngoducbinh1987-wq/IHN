@@ -40,12 +40,12 @@ select p.id, u.role from core.profiles p join (values ('W_SXKH','SX_KH'),('W_SXT
 -- Không để tài khoản thật nhận thông báo/được tính trong lúc thử
 update core.profiles set status = 'LOCKED' where (employee_code is null or employee_code !~ '^W_') and status = 'ACTIVE';
 
--- Spec mẫu đã phát hành (database mới: phát hành PFR-2C-1p5 trong giao dịch)
+-- Spec mẫu đã phát hành (database mới: phát hành PFR-2C-1P5 trong giao dịch)
 do $$ begin
-  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1p5') <> 'RELEASED' then
+  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5') <> 'RELEASED' then
     perform set_config('request.jwt.claim.sub', (select id::text from core.profiles where employee_code = 'W_ADMIN'), true);
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1p5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1P5'));
     perform set_config('bmt.wf_release', '', true);
   end if;
 end $$;
@@ -54,14 +54,14 @@ end $$;
 insert into plan.production_plans (plan_no, period_label, status) values ('KH-DR1', 'Thử lệnh ngày', 'APPROVED');
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-DR1';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
-select (select v from t where k = 'plan'), p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'PFR-2C-1p5';
+select (select v from t where k = 'plan'), p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'PFR-2C-1P5';
 insert into t select 'line', id from plan.plan_lines where plan_id = (select v from t where k = 'plan');
 insert into plan.schedule_versions (plan_id, version, is_current, base_date, params, reason)
 values ((select v from t where k = 'plan'), 1, true, pg_temp.today(),
         '{"S":420,"SPD":1,"workdays":[1,2,3,4,5,6,7],"shifts":[{"code":"A","start_time":"08:00","end_time":"17:00","break_min":60}]}', 'Thử');
 insert into t select 'ver', id from plan.schedule_versions where plan_id = (select v from t where k = 'plan');
 insert into plan.schedule_orders (version_id, plan_line_id, label, product_code, qty_m, meta)
-values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'D01', 'PFR-2C-1p5', 1000, '{"cores":["Đỏ","Đen"]}');
+values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'D01', 'PFR-2C-1P5', 1000, '{"cores":["Đỏ","Đen"]}');
 insert into plan.schedule_slots (version_id, plan_line_id, op_code, color, machine_code, start_min, run_start_min, end_min, setup_min, meters, rate, speed)
 values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'CD1', null, 'BUN-01', 0, 10, 210, 10, 2000, 10, 10),
        ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'CD2', 'Đỏ', 'EXT-SI-01', 210, 220, 420, 10, 1000, 5, 5),
