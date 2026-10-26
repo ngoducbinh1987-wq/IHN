@@ -3,7 +3,7 @@ import { M_STATUS, WO_TYPE, hhmm } from '@/lib/machine';
 import { df } from '@/lib/format';
 
 const KIND_TEXT: Record<string, [string, 'ok' | 'warn' | 'bad' | 'info' | 'mute']> = {
-  STATUS: ['Trạng thái', 'mute'], WO_OPEN: ['Mở phiếu', 'info'], WO_DONE: ['Xong phiếu', 'ok'], CHECK: ['Checklist', 'mute'], CHANGE: ['Sửa thông số', 'info'], ALARM: ['Báo động PLC', 'bad'],
+  STATUS: ['Trạng thái', 'mute'], WO_OPEN: ['Mở phiếu', 'info'], WO_DONE: ['Xong phiếu', 'ok'], CHECK: ['Checklist', 'mute'], CHANGE: ['Sửa thông số', 'info'], PEOPLE: ['Người đứng máy', 'info'], ALARM: ['Báo động PLC', 'bad'],
 };
 type Ev = { at: string; kind: string; sub: string; detail: string; source: string; who: string | null; machine_id: string };
 export function HistoryTable({ rows, codes }: { rows: Ev[]; codes?: Record<string, string> }) {

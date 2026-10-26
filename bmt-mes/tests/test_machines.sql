@@ -1,4 +1,4 @@
--- Kiểm thử migration 2300 (module Quản lý máy): quyền, khai báo máy, tốc độ, bảo dưỡng, nhắc lịch, trạng thái, checklist,
+-- Kiểm thử module Quản lý máy (migration 2300 + 20261026002400): quyền, khai báo máy, tốc độ, bảo dưỡng, nhắc lịch, trạng thái, checklist,
 -- kiểm tra năng lực, báo cáo tháng. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK, không để lại dữ liệu.
 set client_min_messages = warning;
 begin;
@@ -54,8 +54,8 @@ insert into master.machine_specs (machine_id, grp, label, value, uom, source) va
 insert into master.machine_components (machine_id, kind, name, spec, qty) values (pg_temp.v('oven'), 'SENSOR', 'Cặp nhiệt loại K', '0–800 °C', 12);
 insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom) values
   (pg_temp.v('line'), 'SIZE_MM2', 'Tiết diện ruột', 0.75, 4, 'mm²'), (pg_temp.v('line'), 'SPEED_MPM', 'Tốc độ dây', 10, 120, 'm/ph');
-insert into master.machine_operators (machine_id, person, role, certified_at) values (pg_temp.v('line'), 'NV1 – Thử', 'PRIMARY', current_date);
-select pg_temp.ok((select count(*) from app.v_machine_history where machine_id = pg_temp.v('oven') and kind = 'CHANGE') >= 1, 'Sửa thông số ghi vào lịch sử vận hành');
+select app.set_operator_skill(pg_temp.v('line'), 'NV1', 'MAIN', 'Thử');
+select pg_temp.ok((select count(*) from app.machine_history(null, pg_temp.v('oven')) where kind = 'CHANGE') >= 1, 'Sửa thông số ghi vào lịch sử vận hành');
 reset role;
 
 -- Quyền: SX_TP không khai báo thông số; vận hành không tạo máy; KD không xem
@@ -71,7 +71,35 @@ reset role;
 select pg_temp.as_user('M_KD');
 set local role authenticated;
 select pg_temp.ok((select count(*) from app.v_machine_specs) = 0, 'Kinh doanh không xem thông số máy');
-select pg_temp.ok((select count(*) from app.v_machine_history) = 0, 'Kinh doanh không xem lịch sử vận hành');
+select pg_temp.ok((select count(*) from app.machine_history()) = 0, 'Kinh doanh không xem lịch sử vận hành');
+reset role;
+
+-- Người đứng máy: dùng chung NV1–NV5 với Lịch máy
+select pg_temp.as_user('M_VH');
+set local role authenticated;
+select pg_temp.fails($$select app.set_operator_skill('$$ || pg_temp.v('line') || $$', 'NV5', 'LEARNING')$$, 'Chỉ Quản lý SX', 'Vận hành không giao người đứng máy');
+select pg_temp.ok((select count(*) from app.machine_rate_defaults()) = 5, 'Vận hành xem được tốc độ mặc định theo công đoạn');
+reset role;
+select pg_temp.as_user('M_SXTP');
+set local role authenticated;
+select app.set_operator_skill(pg_temp.v('line'), 'NV5', 'LEARNING', 'Kèm học');
+select pg_temp.ok((select level from app.v_machine_operators where machine_id = pg_temp.v('line') and operator_code = 'NV5') = 'LEARNING', 'Quản lý SX giao người đang học');
+select pg_temp.fails($$select app.sign_operator_skill('$$ || pg_temp.v('line') || $$', 'NV5')$$, 'TP Kỹ thuật', 'Quản lý SX không ký xác nhận tay nghề');
+select pg_temp.fails($$select app.set_operator_skill('$$ || pg_temp.v('line') || $$', 'NV5', 'LEARNING')$$, 'Không có thay đổi', 'Giao trùng thì báo');
+select pg_temp.fails($$select app.set_operator_skill('$$ || pg_temp.v('oven') || $$', 'NV5', 'MAIN')$$, 'máy con', 'Không giao người cho máy con');
+select pg_temp.fails($$select app.set_operator_skill('$$ || pg_temp.v('line') || $$', 'NV9', 'MAIN')$$, 'Không có người', 'Không giao người không có trong danh sách');
+reset role;
+select pg_temp.as_user('M_KTTP');
+set local role authenticated;
+select app.sign_operator_skill(pg_temp.v('line'), 'NV1');
+select pg_temp.ok((select signed_at is not null and signed_by_name is not null from app.v_machine_operators where machine_id = pg_temp.v('line') and operator_code = 'NV1'), 'TP Kỹ thuật/QA ký xác nhận tay nghề');
+select app.set_operator_skill(pg_temp.v('line'), 'NV5', 'MAIN', 'Đã học xong');
+select pg_temp.ok((select signed_at is null from app.v_machine_operators where machine_id = pg_temp.v('line') and operator_code = 'NV5'), 'Đổi mức tay nghề thì phải ký lại');
+select app.remove_operator_skill(pg_temp.v('line'), 'NV5', 'Thử bỏ');
+select pg_temp.ok(not exists (select 1 from app.v_machine_operators where machine_id = pg_temp.v('line') and operator_code = 'NV5'), 'Bỏ giao người đứng máy');
+select pg_temp.ok((select operators from app.v_machines where id = pg_temp.v('oven')) = 'NV1', 'Máy con hiện người đứng chính của dây chuyền');
+select pg_temp.ok((select count(*) from app.machine_history(pg_temp.v('line')) where kind = 'PEOPLE') = 4, 'Đổi người đứng máy ghi lịch sử vận hành');
+select pg_temp.ok((select count(*) from master.planning_param_log where at >= now() and section = 'Người đứng máy') = 4, 'Ghi nhật ký tham số như Lịch máy');
 reset role;
 
 -- ============================================================ 2. Tốc độ chuẩn, duyệt
@@ -205,13 +233,17 @@ select pg_temp.as_user('M_KTTP');
 set local role authenticated;
 insert into t select 'p15', id from master.products where code = 'SIF-1C-1p5';
 insert into t select 'p6', p.id from master.products p join master.product_specs s on s.id = p.current_spec_id join master.core_types ct on ct.code = s.core_code and ct.set_id = s.param_set_id
-  where ct.nominal_mm2 > 4 order by p.code limit 1;
+  where ct.nominal_mm2 > 4 and upper(s.insulation) like 'SIL%' order by p.code limit 1;
+insert into t select 'pvc', p.id from master.products p join master.product_specs s on s.id = p.current_spec_id where upper(coalesce(s.insulation, '')) not like 'SIL%' order by p.code limit 1;
+insert into t select 'sfr', p.id from master.products p join master.product_specs s on s.id = p.current_spec_id where p.group_code = 'SFR' order by p.code limit 1;
+select app.remove_operator_skill(pg_temp.v('line'), 'NV1', 'Thử thiếu người');
 create temp table _cap as select app.check_capacity(null, current_date, current_date + 27, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('p15'), 'qty_m', 200000))) as j;
-select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'CD2'), 'Tính giờ cần cho công đoạn bọc cách điện');
+select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'EXTRUDER_SI'), 'Tính giờ cần cho line silicone (bọc cách điện silicone)');
 select pg_temp.ok((select jsonb_array_length(j -> 'ops') >= 1 from _cap), 'Có năng lực từng công đoạn');
 select pg_temp.ok((select (j -> 'issues')::text like '%chưa có người đứng máy chính%' from _cap), 'Cảnh báo dây chuyền chưa có người đứng máy');
-select pg_temp.ok((select (j -> 'issues')::text like '%Chưa có tốc độ chuẩn%' from _cap), 'Cảnh báo công đoạn chưa có tốc độ chuẩn (máy bện chưa khai)');
+select pg_temp.ok((select (j -> 'issues')::text like '%tốc độ mặc định%' from _cap), 'Máy bện chưa có tốc độ riêng: dùng tốc độ mặc định của công đoạn');
+select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'BUNCHER'), 'Máy bện vẫn tính được giờ cần theo tốc độ mặc định');
 select pg_temp.ok((select (j -> 'issues')::text like '%Thay nước máng%' from _cap) is false, 'Phiếu đang mở thì không báo quá hạn nữa');
 drop table _cap;
 insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom)
@@ -219,6 +251,16 @@ select id, 'SIZE_MM2', 'Tiết diện ruột', 0.75, 4, 'mm²' from master.machi
 create temp table _cap as select app.check_capacity(null, current_date, current_date + 27, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('p6'), 'qty_m', 1000))) as j;
 select pg_temp.ok((select (j -> 'issues')::text like '%ngoài dải%' from _cap), 'Sản phẩm ngoài dải tiết diện của máy bị chặn');
+drop table _cap;
+create temp table _cap as select app.check_capacity(null, current_date, current_date + 27, 1, 0,
+  jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('pvc'), 'qty_m', 5000))) as j;
+select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'EXTRUDER_TP')
+  and (select (o ->> 'req_min')::numeric = 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'EXTRUDER_SI'), 'Bọc cách điện PVC/HDPE tính trên line vỏ như Lịch máy');
+drop table _cap;
+create temp table _cap as select app.check_capacity(null, current_date, current_date + 4, 1, 0,
+  jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('sfr'), 'qty_m', 400000))) as j;
+select pg_temp.ok((select (j -> 'issues')::text like '%Thiếu người%' from _cap), 'Cảnh báo thiếu người khi phải chạy nhiều dây chuyền cùng lúc');
+select pg_temp.ok((select count(*) from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'TWISTER') = 1, 'Xoắn + quấn AL/PET tính chung máy xoắn');
 drop table _cap;
 -- Gọi hai lần trong cùng giao dịch
 select pg_temp.ok((select app.check_capacity(null, current_date, current_date + 6, 2, 1, '[]') ->> 'shifts') = '2', 'Chọn 2 ca, tăng ca 1 giờ');
@@ -260,5 +302,8 @@ select pg_temp.ok(mfg.workdays(date '2026-11-02', date '2026-11-08') = 5, 'Ngày
 select pg_temp.ok((select count(*) from master.planning_param_log where at >= now() and item = 'Ngày làm việc trong tuần') = 1, 'Ghi nhật ký tham số');
 select pg_temp.fails($$select app.save_work_calendar('07:30', '11:30', '12:30', '16:30', '{1,2,3,4,5}', 80, 2, 'x')$$, 'Không có thay đổi', 'Không đổi gì thì báo');
 reset role;
+
+select pg_temp.ok(not has_function_privilege('anon', 'mfg.machine_usage(uuid, timestamptz)', 'execute')
+  and not has_function_privilege('anon', 'app.machine_history(uuid, uuid, timestamptz, timestamptz, integer)', 'execute'), 'Người chưa đăng nhập không gọi được hàm của module máy');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;

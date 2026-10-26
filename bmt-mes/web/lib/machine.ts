@@ -29,7 +29,7 @@ export const RANGE_PARAM: Record<string, string> = {
   SIZE_MM2: 'Tiết diện ruột', OD_MM: 'Đường kính ngoài', SPEED_MPM: 'Tốc độ dây', CORES: 'Số lõi', TEMP_C: 'Nhiệt độ', OTHER: 'Thông số khác',
 };
 export const RANGE_UOM: Record<string, string> = { SIZE_MM2: 'mm²', OD_MM: 'mm', SPEED_MPM: 'm/ph', CORES: 'lõi', TEMP_C: '°C', OTHER: '' };
-export const OPR_ROLE: Record<string, string> = { PRIMARY: 'Đứng máy chính', BACKUP: 'Đứng thay', TRAINEE: 'Đang học' };
+export const OPR_ROLE: Record<string, string> = { MAIN: 'Đứng chính', LEARNING: 'Đang học' };
 export const DOC_KIND: Record<string, string> = {
   SOP: 'Hướng dẫn vận hành', CHECKLIST: 'Checklist', CATALOG: 'Catalog', DRAWING: 'Bản vẽ', MANUAL: 'Sổ tay bảo dưỡng', OTHER: 'Khác',
 };

@@ -109,7 +109,7 @@ export async function deleteRow(form: FormData) {
   const table = txt(form, 'table');
   const allowed: Record<string, [string, string]> = {
     component: ['master', 'machine_components'], range: ['master', 'machine_ranges'], speed: ['master', 'machine_speeds'],
-    operator: ['master', 'machine_operators'], doc: ['master', 'machine_docs'], part: ['mfg', 'maint_wo_parts'],
+    doc: ['master', 'machine_docs'], part: ['mfg', 'maint_wo_parts'],
     check_item: ['mfg', 'maint_check_items'], plan: ['mfg', 'maint_plans'],
   };
   const t = allowed[table];
@@ -157,24 +157,29 @@ export async function approveSpeed(form: FormData) {
   done(form, 'Đã duyệt tốc độ chuẩn');
 }
 
-export async function addOperator(form: FormData) {
+// Người đứng máy: dùng chung NV1–NV5 với Lịch máy (master.operator_skills)
+export async function setOperatorSkill(form: FormData) {
   const supabase = await createClient();
-  if (!txt(form, 'person')) back(form, 'err', 'Nhập tên người đứng máy');
-  const certified = form.get('certified') === 'on';
-  const { data: u } = await supabase.auth.getUser();
-  const { error } = await supabase.schema('master').from('machine_operators').insert({
-    machine_id: txt(form, 'machine_id'), person: txt(form, 'person'), role: txt(form, 'role') || 'PRIMARY', note: opt(form, 'note'),
-    certified_at: certified ? new Date().toISOString().slice(0, 10) : null, certified_by: certified ? u.user?.id : null,
+  if (!txt(form, 'operator')) back(form, 'err', 'Chọn người đứng máy');
+  const { error } = await supabase.schema('app').rpc('set_operator_skill', {
+    p_machine: txt(form, 'machine_id'), p_operator: txt(form, 'operator'), p_level: txt(form, 'level') || 'MAIN', p_reason: opt(form, 'reason'),
   });
-  if (error) back(form, 'err', error.code === '23505' ? 'Người này đã có trong danh sách máy' : friendly(error.message));
-  done(form, 'Đã thêm người đứng máy');
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, 'Đã giao người đứng máy. Lịch máy dùng ngay khi xếp lại lịch.');
 }
 
-export async function certifyOperator(form: FormData) {
+export async function removeOperatorSkill(form: FormData) {
   const supabase = await createClient();
-  const { data: u } = await supabase.auth.getUser();
-  const { error } = await supabase.schema('master').from('machine_operators')
-    .update({ certified_at: new Date().toISOString().slice(0, 10), certified_by: u.user?.id }).eq('id', txt(form, 'id'));
+  const { error } = await supabase.schema('app').rpc('remove_operator_skill', {
+    p_machine: txt(form, 'machine_id'), p_operator: txt(form, 'operator'), p_reason: opt(form, 'reason'),
+  });
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, 'Đã bỏ giao người đứng máy');
+}
+
+export async function signOperatorSkill(form: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('sign_operator_skill', { p_machine: txt(form, 'machine_id'), p_operator: txt(form, 'operator') });
   if (error) back(form, 'err', friendly(error.message));
   done(form, 'Đã xác nhận tay nghề');
 }

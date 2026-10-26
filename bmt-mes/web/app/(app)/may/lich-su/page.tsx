@@ -32,7 +32,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   const [{ data: logs }, { data: events }, { data: fam }] = lineId ? await Promise.all([
     supabase.schema('app').from('v_machine_status_log').select('status, started_at, ended_at, reason_name, note').eq('machine_id', lineId)
       .lt('started_at', toTs).or(`ended_at.is.null,ended_at.gt.${fromTs}`).order('started_at'),
-    supabase.schema('app').from('v_machine_history').select('*').eq('line_id', lineId).gte('at', fromTs).lte('at', toTs).order('at', { ascending: false }).limit(200),
+    supabase.schema('app').rpc('machine_history', { p_line: lineId, p_from: fromTs, p_to: toTs, p_limit: 200 }),
     supabase.schema('app').from('v_machines').select('id, code').or(`id.eq.${lineId},line_id.eq.${lineId}`),
   ]) : [{ data: [] }, { data: [] }, { data: [] }];
   const codes = Object.fromEntries((fam ?? []).map((m) => [m.id, m.code]));

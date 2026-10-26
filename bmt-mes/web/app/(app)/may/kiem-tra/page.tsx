@@ -55,7 +55,7 @@ export default async function CapacityPage({ searchParams }: {
 
   return (
     <>
-      <Toolbar title="Kiểm tra năng lực máy" />
+      <Toolbar title="Kiểm tra năng lực máy" actions={<Link className="btn btn-soft" href="/lich-may">Lịch máy theo hạn giao</Link>} />
       <div className="mt-4" />
       <Flash ok={sp.ok} err={sp.err ?? err} />
       <form className="card mb-4 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_150px_150px_110px_110px_auto] lg:items-end">
@@ -98,7 +98,7 @@ export default async function CapacityPage({ searchParams }: {
         <>
           <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
             <Kpi label="Ngày làm việc" value={res.workdays} hint={`${res.shifts} ca × ${nf(res.shift_minutes)} phút${res.ot_hours ? ` + tăng ca ${nf(res.ot_hours, 1)} giờ` : ''} · xếp ${Math.round(res.fill * 100)}%`} />
-            <Kpi label="Công đoạn tải cao nhất" value={top ? `${Math.round(top.load * 100)}%` : '—'} hint={top?.name} tone={top && top.load > 1 ? 'bad' : top && top.load >= 0.85 ? 'warn' : 'ok'} />
+            <Kpi label="Nhóm máy tải cao nhất" value={top ? `${Math.round(top.load * 100)}%` : '—'} hint={top?.name} tone={top && top.load > 1 ? 'bad' : top && top.load >= 0.85 ? 'warn' : 'ok'} />
             <Kpi label="Giờ máy trừ do bảo dưỡng, hỏng" value={nf(lost / 60)} hint="Cả xưởng trong kỳ" tone="info" />
             <Kpi label="Cảnh báo đỏ" value={bad} hint={bad ? 'Giám đốc chưa duyệt được kế hoạch' : 'Duyệt được'} tone={bad ? 'bad' : 'ok'} />
           </div>
@@ -112,7 +112,7 @@ export default async function CapacityPage({ searchParams }: {
             <div className="card-h">Năng lực từng công đoạn<span className="text-[13px] font-normal text-muted">vạch đứng = 85%</span></div>
             {res.ops.length ? (
               <table className="tbl">
-                <thead><tr><th>Công đoạn</th><th>Máy</th><th className="num">Giờ cần</th><th className="num">Giờ có</th><th className="min-w-[200px]">Tải</th></tr></thead>
+                <thead><tr><th>Nhóm máy</th><th>Máy</th><th className="num">Giờ cần</th><th className="num">Giờ có</th><th className="min-w-[200px]">Tải</th></tr></thead>
                 <tbody>
                   {res.ops.map((o) => {
                     const tone = o.load > 1 ? 'bg-bad' : o.load >= 0.85 ? 'bg-warn' : 'bg-brand';
@@ -164,7 +164,7 @@ export default async function CapacityPage({ searchParams }: {
                 </tbody>
               </table>
             ) : <Empty>Kế hoạch chưa có dòng sản phẩm.</Empty>}
-            <p className="px-4 py-3 text-[12.5px] text-muted">Kiểm tra theo tổng giờ máy trong kỳ. Kiểm tra hạn giao từng lệnh sẽ có khi làm module Lịch máy, lệnh sản xuất ngày.</p>
+            <p className="px-4 py-3 text-[12.5px] text-muted">Kiểm tra nhanh theo tổng giờ máy trong kỳ, cùng tốc độ, người đứng máy và cách chia máy với Lịch máy. Xếp lịch theo hạn giao từng dòng, gối đầu công đoạn: xem <Link className="link" href="/lich-may">Lịch máy</Link>.</p>
           </section>
         </>
       )}

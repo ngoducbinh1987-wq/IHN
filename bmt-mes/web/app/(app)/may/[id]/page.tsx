@@ -13,7 +13,7 @@ import { df, nf } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import {
-  addComponent, addDoc, addOperator, addRange, addSpeed, approveSpeed, certifyOperator, deleteRow, saveSpecs, updateMachine,
+  addComponent, addDoc, addRange, addSpeed, approveSpeed, deleteRow, removeOperatorSkill, saveSpecs, setOperatorSkill, signOperatorSkill, updateMachine,
 } from '../actions';
 
 const TABS: [string, string][] = [
@@ -104,7 +104,7 @@ export default async function MachineProfile({ params, searchParams }:
       {tab === 'thong-so' && <SpecsTab id={id} cfg={cfg} back={here} />}
       {tab === 'toc-do' && <SpeedTab id={id} lineId={lineId} isLine={isLine} opCode={m.op_code ?? line?.op_code} cfg={cfg} canApprove={can(me, 'machine', 'approve')} back={here} />}
       {tab === 'bao-duong' && <MaintTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} />}
-      {tab === 'nguoi' && <PeopleTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} canCertify={can(me, 'machine', 'approve')} back={here} />}
+      {tab === 'nguoi' && <PeopleTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} canAssign={cfg || me.roles.includes('SX_TP')} canCertify={me.roles.includes('KT_TP') || me.roles.includes('ADMIN')} back={here} />}
       {tab === 'lich-su' && <HistoryTab lineId={lineId} machineId={id} isLine={isLine} />}
       {tab === 'thong-tin' && <InfoTab m={m} cfg={cfg} back={here} />}
     </>
@@ -382,43 +382,54 @@ async function MaintTab({ id, lineId, isLine, cfg }: { id: string; lineId: strin
 }
 
 // ---------------------------------------------------------------- Người đứng máy + tài liệu
-async function PeopleTab({ id, lineId, isLine, cfg, canCertify, back }: { id: string; lineId: string; isLine: boolean; cfg: boolean; canCertify: boolean; back: string }) {
+async function PeopleTab({ id, lineId, isLine, cfg, canAssign, canCertify, back }: { id: string; lineId: string; isLine: boolean; cfg: boolean; canAssign: boolean; canCertify: boolean; back: string }) {
   const supabase = await createClient();
-  const [{ data: ops }, { data: docs }] = await Promise.all([
-    supabase.schema('app').from('v_machine_operators').select('*').eq('machine_id', lineId).order('role').order('person'),
+  const [{ data: ops }, { data: people }, { data: docs }] = await Promise.all([
+    supabase.schema('app').from('v_machine_operators').select('*').eq('machine_id', lineId).order('level').order('sort'),
+    supabase.schema('app').from('v_kh_operators').select('code, job, profile_name, skills, learning').order('sort'),
     supabase.schema('app').from('v_machine_docs').select('*').eq('machine_id', id).order('kind').order('title'),
   ]);
+  const free = (people ?? []).filter((p) => !(ops ?? []).some((o) => o.operator_code === p.code));
+  const hidden = (op: string) => <><input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="operator" value={op} /><input type="hidden" name="back" value={back} /></>;
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       <section className="card overflow-x-auto">
-        <div className="card-h">Người được vận hành{!isLine && <span className="text-[13px] font-normal text-muted">theo dây chuyền</span>}</div>
+        <div className="card-h">Người đứng máy{!isLine && <span className="text-[13px] font-normal text-muted">theo dây chuyền</span>}</div>
         <table className="tbl">
-          <thead><tr><th>Người</th><th>Vai trò</th><th>Xác nhận tay nghề</th><th /></tr></thead>
+          <thead><tr><th>Người</th><th>Tay nghề</th><th>Xác nhận tay nghề</th><th /></tr></thead>
           <tbody>
             {(ops ?? []).map((o) => (
-              <tr key={o.id}>
-                <td className="font-medium">{o.person}{o.note && <div className="text-[12.5px] font-normal text-muted">{o.note}</div>}</td>
-                <td>{OPR_ROLE[o.role]}</td>
-                <td>{o.certified_at ? <Pill tone="ok">Đã ký {df(o.certified_at)}</Pill> : <Pill tone="warn">Chưa xác nhận</Pill>}{o.certified_by_name && <div className="text-[12px] text-muted">{o.certified_by_name}</div>}</td>
-                <td><div className="flex gap-1.5">
-                  {!o.certified_at && canCertify && <form action={certifyOperator}><input type="hidden" name="id" value={o.id} /><input type="hidden" name="back" value={back} /><SubmitButton className="btn btn-sm btn-soft" pendingText="…">Xác nhận</SubmitButton></form>}
-                  {cfg && isLine && <DeleteBtn table="operator" id={o.id} back={back} />}
+              <tr key={o.operator_code}>
+                <td className="font-medium">{o.operator_code}{o.profile_name && <span className="font-normal"> · {o.profile_name}</span>}
+                  <div className="text-[12.5px] font-normal text-muted">{o.job}{o.is_deputy ? ' · Tổ phó' : ''}</div></td>
+                <td>{o.level === 'MAIN' ? <Pill tone="ok">{OPR_ROLE.MAIN}</Pill> : <Pill tone="info">{OPR_ROLE.LEARNING}</Pill>}</td>
+                <td>{o.signed_at ? <Pill tone="ok">Đã ký {df(o.signed_at)}</Pill> : <Pill tone="warn">Chưa xác nhận</Pill>}{o.signed_by_name && <div className="text-[12px] text-muted">{o.signed_by_name}</div>}</td>
+                <td><div className="flex flex-wrap gap-1.5">
+                  {!o.signed_at && canCertify && <form action={signOperatorSkill}>{hidden(o.operator_code)}<SubmitButton className="btn btn-sm btn-soft" pendingText="…">Ký xác nhận</SubmitButton></form>}
+                  {canAssign && isLine && o.level === 'LEARNING' && <form action={setOperatorSkill}>{hidden(o.operator_code)}<input type="hidden" name="level" value="MAIN" /><input type="hidden" name="reason" value="Đã học xong, chuyển đứng chính" /><SubmitButton className="btn btn-sm" pendingText="…">Chuyển đứng chính</SubmitButton></form>}
+                  {canAssign && isLine && <form action={removeOperatorSkill}>{hidden(o.operator_code)}<SubmitButton className="btn btn-sm btn-bad-o" pendingText="…">Bỏ giao</SubmitButton></form>}
                 </div></td>
               </tr>
             ))}
             {(ops ?? []).length === 0 && <tr><td colSpan={4}><Empty>Chưa giao người đứng máy.</Empty></td></tr>}
           </tbody>
         </table>
-        {cfg && isLine && (
-          <form action={addOperator} className="grid gap-3 border-t border-line p-4 sm:grid-cols-2 lg:items-end">
-            <input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="back" value={back} />
-            <label className="lbl"><span className="req">Người</span><input name="person" className="inp" required placeholder="NV1 – Nguyễn Văn A" /></label>
-            <label className="lbl">Vai trò<select name="role" className="inp">{Object.entries(OPR_ROLE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-            <label className="lbl">Ghi chú<input name="note" className="inp" placeholder="Tổ phó, thay Quản lý SX khi vắng" /></label>
-            <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" name="certified" />Đã được TP Kỹ thuật/QA xác nhận tay nghề</label>
-            <div><SubmitButton>Thêm người</SubmitButton></div>
-          </form>
+        {canAssign && isLine && (
+          free.length ? (
+            <form action={setOperatorSkill} className="grid gap-3 border-t border-line p-4 sm:grid-cols-[minmax(0,1fr)_160px] lg:items-end">
+              <input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="back" value={back} />
+              <label className="lbl"><span className="req">Người</span>
+                <select name="operator" className="inp" required defaultValue="">
+                  <option value="" disabled>Chọn người</option>
+                  {free.map((p) => <option key={p.code} value={p.code}>{p.code}{p.profile_name ? ` · ${p.profile_name}` : ''} — {p.job}</option>)}
+                </select></label>
+              <label className="lbl">Tay nghề<select name="level" className="inp">{Object.entries(OPR_ROLE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+              <label className="lbl sm:col-span-2">Lý do<input name="reason" className="inp" placeholder="Ví dụ: giao thêm người đứng line vỏ 2" /></label>
+              <div><SubmitButton>Giao người</SubmitButton></div>
+            </form>
+          ) : <p className="border-t border-line px-4 py-3 text-[13px] text-muted">Đã giao hết NV1–NV5 cho dây chuyền này.</p>
         )}
+        <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Danh sách NV1–NV5 dùng chung với Lịch máy (Tham số xếp lịch). Quản lý SX giao người, TP Kỹ thuật/QA ký xác nhận tay nghề. Đổi mức tay nghề thì phải ký lại.</p>
       </section>
       <section className="card overflow-x-auto">
         <div className="card-h">Tài liệu máy</div>
@@ -454,8 +465,7 @@ async function PeopleTab({ id, lineId, isLine, cfg, canCertify, back }: { id: st
 // ---------------------------------------------------------------- Lịch sử gần đây
 async function HistoryTab({ lineId, machineId, isLine }: { lineId: string; machineId: string; isLine: boolean }) {
   const supabase = await createClient();
-  const q = supabase.schema('app').from('v_machine_history').select('*').order('at', { ascending: false }).limit(40);
-  const { data } = await (isLine ? q.eq('line_id', lineId) : q.eq('machine_id', machineId));
+  const { data } = await supabase.schema('app').rpc('machine_history', isLine ? { p_line: lineId, p_limit: 40 } : { p_machine: machineId, p_limit: 40 });
   return (
     <section className="card overflow-x-auto">
       <div className="card-h">Sự kiện gần đây<Link className="btn btn-sm btn-soft" href={`/may/lich-su?may=${lineId}`}>Xem dòng thời gian</Link></div>

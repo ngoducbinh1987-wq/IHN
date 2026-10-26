@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Empty, Flash, StatusPill, Tabs, Toolbar } from '@/components/ui';
+import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { SrcPill } from '@/components/machine-ui';
 import { SubmitButton } from '@/components/submit-button';
 import { SPEED_STATUS } from '@/lib/machine';
@@ -24,7 +24,10 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
   let q = supabase.schema('app').from('v_machine_speeds').select('*').order('op_code').order('machine_code').order('core_code', { nullsFirst: true });
   if (tab.st) q = q.in('status', tab.st);
   const { data, error } = await q;
-  const { count: pending } = await supabase.schema('app').from('v_machine_speeds').select('id', { count: 'exact', head: true }).eq('status', 'PENDING');
+  const [{ count: pending }, { data: defaults }] = await Promise.all([
+    supabase.schema('app').from('v_machine_speeds').select('id', { count: 'exact', head: true }).eq('status', 'PENDING'),
+    supabase.schema('app').rpc('machine_rate_defaults'),
+  ]);
   const rows = data ?? [];
   const ops = [...new Map(rows.map((r) => [r.op_code, r.op_name])).entries()];
   const canApprove = can(me, 'machine', 'approve');
@@ -37,7 +40,23 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
       <p className="mb-4 max-w-4xl text-[13.5px] text-muted">
         Kế hoạch sản xuất dùng cột “Chuẩn lập KH”, không vượt danh định nhà sản xuất và dải tốc độ của máy. Thứ tự chọn: mã sản phẩm → nhóm + mã lõi → mã lõi → nhóm → mặc định của máy.
         TP Kỹ thuật/QA khai báo và duyệt trong Hồ sơ máy; chờ quá 1 ngày làm việc thì Giám đốc duyệt tạm.
+        Máy chưa có tốc độ riêng thì dùng tốc độ mặc định theo công đoạn bên dưới (cùng số Lịch máy dùng để xếp lịch).
       </p>
+      <section className="card mb-4 max-w-4xl overflow-x-auto">
+        <div className="card-h">Tốc độ mặc định theo công đoạn<span className="text-[13px] font-normal text-muted">m/ph · dùng chung với Lịch máy</span></div>
+        {(defaults ?? []).length ? (
+          <table className="tbl">
+            <thead><tr><th>Công đoạn</th><th className="num">Ruột &lt; 2,5 mm²</th><th className="num">Ruột ≥ 2,5 mm²</th><th>Đơn vị</th><th>Tình trạng</th></tr></thead>
+            <tbody>
+              {(defaults ?? []).map((r: { op_code: string; label: string; unit: string; rate_small: number; rate_large: number; confirmed: boolean }) => (
+                <tr key={r.op_code}><td><span className="mono">{r.op_code}</span> · {r.label}</td><td className="num">{nf(r.rate_small)}</td><td className="num">{nf(r.rate_large)}</td>
+                  <td>{r.unit}</td><td>{r.confirmed ? <Pill tone="ok">Đã xác nhận</Pill> : <Pill tone="warn">Giả định</Pill>}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <Empty>Chưa có tốc độ mặc định.</Empty>}
+        <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">TP Kỹ thuật/QA sửa ở <Link className="link" href="/tham-so">Tham số xếp lịch</Link>. Số “Giả định” cần thay bằng số chạy thật.</p>
+      </section>
       {ops.length === 0 && <div className="card"><Empty>Chưa có tốc độ nào. Mở <Link className="link" href="/may">Danh sách máy</Link> → hồ sơ dây chuyền → tab Tốc độ & dải hoạt động.</Empty></div>}
       {ops.map(([op, name]) => (
         <section key={op} className="card mb-4 overflow-x-auto">
