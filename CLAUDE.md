@@ -44,11 +44,11 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - `app.kh_approve_slip` (KT_KHO, không phải người phát lệnh): tạo `inv.requisitions` NORM đã duyệt theo lệnh SX (`slip_id` nối phiếu lĩnh lệnh ngày, `qty_m` để trống, mét cáp ghi ở ghi chú), hủy phiếu của bản phát trước nếu chưa cấp; báo THU_KHO cấp bằng quét QR ở `/kho/cap-phat`. `app.v_kh_releases.requisitions` liệt kê phiếu Kho.
 - Kiểm thử `tests/test_daily_release.sql` 18/18 (cục bộ + Supabase).
 
-## Đặt lại mật khẩu người dùng (migration `20261026002700_admin_password_reset`, áp Supabase 26/10/2026)
+## Đặt lại mật khẩu người dùng (migration `20261026002700_admin_password_reset`, áp Supabase + gộp `main` 26/10/2026)
 - Yêu cầu Chủ tịch 26/10/2026: Quản trị hệ thống tự đặt mật khẩu mới cho từng thành viên. Web: Quản trị → Người dùng & quyền → bấm **Sửa** → khung "Cài đặt lại mật khẩu" dưới form sửa (chỉ hiện cho người có vai trò ADMIN).
 - Cách chạy: server action `resetPassword` (`web/app/(app)/quan-tri/actions.ts`) → `app.admin_password_reset_check(user)` (chỉ ADMIN gán trực tiếp trong `core.user_roles`, không nhận ủy quyền) → Auth Admin API `updateUserById` (service role, cần `SUPABASE_SERVICE_ROLE_KEY` trên Vercel) → `app.admin_password_reset_done(user, signout)` ghi `core.audit_log` (`table_name='auth.users'`, `action='PASSWORD_RESET'`, không ghi mật khẩu) và tùy chọn xóa `auth.sessions` của người đó (tự đặt lại cho mình thì giữ phiên đang dùng). `app.admin_password_resets(user)`: 5 lần gần nhất, người có `admin:view` xem.
 - Mật khẩu mới: 10 ký tự trở lên, tối đa 72 byte, không có khoảng trắng đầu/cuối, nhập 2 lần; có nút hiện/ẩn và tạo ngẫu nhiên 12 ký tự (bỏ 0/O/1/l/I) (`web/components/reset-password-fields.tsx`). Mật khẩu không đi vào URL, thông báo hay database của app.
-- Trạng thái: người dùng tự chạy SQL trên Supabase SQL Editor 26/10/2026 (lệnh áp production của Claude bị chặn tự động); Claude kiểm 3 hàm có đủ, anon không gọi được, ghi `schema_migrations` `20261026002700 admin_password_reset`. Code ở PR #2 (nhánh `feat/admin-reset-password`, đã dựng lại trên `main` sau Lệnh ngày nối Kho) chờ người dùng bấm Merge.
+- Trạng thái: người dùng tự chạy SQL trên Supabase SQL Editor 26/10/2026 (lệnh áp production của Claude bị chặn tự động); Claude kiểm 3 hàm có đủ, anon không gọi được, ghi `schema_migrations` `20261026002700 admin_password_reset`. PR #2 người dùng gộp vào `main` 26/10/2026 15:00 (commit 7595abe), Vercel production "Deployment has completed"; Claude mở trang thật bằng tài khoản Bình: khung hiện đúng (chưa bấm đặt lại cho ai). Chưa thử đổi mật khẩu thật trên production: lần đầu dùng mà báo "Chưa cấu hình SUPABASE_SERVICE_ROLE_KEY" thì người dùng thêm khóa này trên Vercel.
 - Kiểm thử: `bmt-mes/tests/test_admin_password_reset.sql` 15/15 đạt trên Supabase sau khi áp (rollback). `tsc`, `next build` đạt.
 
 ## Module Kế hoạch sản xuất (26/10/2026)
@@ -70,7 +70,6 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - Repo có hai file cùng số `20261025002200` (production_planning, role_standard): đừng dùng `supabase db push`; áp theo cách ghi ở mục Kiểm thử.
 - Module máy còn chờ: email báo cáo tháng (đang thử, chưa cần cấu hình SMTP); xuất phụ tùng bảo dưỡng qua Kho (`inv.requisitions` bắt buộc `wo_id` lệnh SX, cần thêm loại phiếu cho phiếu BD/SC); bộ xếp lịch chưa dùng tốc độ riêng theo máy/sản phẩm (`machine_speeds`); liên kết NV1–NV5 với tài khoản (`master.operators.profile_id`) chưa có màn hình.
 - Phiếu lĩnh lệnh ngày (`qty_m` trống) không trừ vào "còn được lĩnh" của `inv.create_requisition` (phiếu lĩnh thủ công theo mét cáp): nếu Quản lý SX vừa dùng lệnh ngày vừa lập phiếu thủ công cho cùng lệnh SX thì cần tự đối chiếu; về sau nên bỏ phiếu thủ công cho lệnh có lịch máy.
-- Gộp PR #2 (đặt lại mật khẩu) vào `main` để Vercel đưa lên web (migration đã áp).
 - Tiếp theo: màn hình tạo PO, lệnh SX, trả hàng NCC; đề xuất mua tối ưu.
 
 ## Kiểm thử
