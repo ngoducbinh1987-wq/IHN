@@ -109,7 +109,7 @@ export default async function CapacityPage({ searchParams }: {
           )}
 
           <section className="card mb-4 overflow-x-auto">
-            <div className="card-h">Năng lực từng công đoạn<span className="text-[13px] font-normal text-muted">vạch đứng = 85%</span></div>
+            <div className="card-h">Năng lực từng nhóm máy<span className="text-[13px] font-normal text-muted">vạch đứng = 85%</span></div>
             {res.ops.length ? (
               <table className="tbl">
                 <thead><tr><th>Nhóm máy</th><th>Máy</th><th className="num">Giờ cần</th><th className="num">Giờ có</th><th className="min-w-[200px]">Tải</th></tr></thead>
