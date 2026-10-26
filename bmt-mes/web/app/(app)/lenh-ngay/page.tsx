@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Alert, LockNote, Swatch, dd, pc, wd, wdl } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
-import { bobbins, dayChecks, dayData, slipLines, type SlipLine } from '@/lib/kh/day';
+import { bobbins, dayData, infoChecks, type Check, type SlipLine } from '@/lib/kh/day';
 import { ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import { UNIT, addDays, isWorkday, opName, prevWorkday as prevWd } from '@/lib/kh/scheduler';
 import { df, nf } from '@/lib/format';
@@ -15,7 +15,9 @@ export const metadata = { title: 'Lệnh sản xuất ngày' };
 type Release = {
   id: string; work_date: string; revision: number; version_id: string; note: string | null; released_at: string; released_by_name: string | null;
   slip_id: string | null; slip_no: string | null; slip_lines: SlipLine[] | null; slip_status: string | null; approved_at: string | null; approved_by_name: string | null;
+  requisitions: { id: string; req_no: string; status: string; wo_no: string; product_code: string }[] | null;
 };
+type Preview = { checks: Check[]; slip: SlipLine[] };
 
 
 export default async function LenhNgay({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -43,7 +45,12 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
   const { rows, work, idle } = dayData(kh, date);
   const orderOf = new Map(kh.orders.map((o) => [o.id, o]));
   const past = date < today;
-  const checks = past ? [] : dayChecks(kh, date);
+  // Kiểm tra bắt buộc + phiếu lĩnh dự kiến: database tính (đúng thứ sẽ kiểm khi bấm phát)
+  const { data: pv } = !past && kh.planId && kh.version
+    ? await db.schema('app').rpc('kh_day_preview', { p_plan: kh.planId, p_date: date })
+    : { data: null };
+  const preview = (pv ?? { checks: [], slip: [] }) as Preview;
+  const checks = past ? [] : [...preview.checks, ...infoChecks(kh, date)];
   const warns = checks.filter((c) => !c.ok).length;
   const canRelease = hasRole(me.roles, ROLE.release) && kh.fromPlan;
   const canSlip = hasRole(me.roles, ROLE.slip);
@@ -53,7 +60,7 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
     : last ? [last.revision > 1 ? `Đã phát bản ${last.revision}` : 'Đã phát', 'ok']
     : date === today ? ['Chưa phát · đang trong ngày', 'warn']
     : ['Chưa phát · hạn ' + deadline, date === nextWd(todayW, 1) || date === todayW ? 'warn' : 'info'];
-  const slip = last?.slip_lines ? last.slip_lines : !past && work.length ? slipLines(kh, date) : [];
+  const slip = last?.slip_lines ? last.slip_lines : !past ? preview.slip : [];
   const people = [...new Set(work.map((x) => x.r.sl.operator).filter(Boolean))];
   const q = (d: string) => `/lenh-ngay?${kh.planId ? `plan=${kh.planId}&` : ''}d=${d}`;
 
@@ -120,11 +127,20 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
                 {last?.slip_status === 'APPROVED' ? <Pill tone="ok">Kế toán kho đã duyệt · {last.approved_by_name ?? ''} · {df(last.approved_at, true)}</Pill>
                   : last?.slip_id ? <Pill tone="warn">Chờ Kế toán kho duyệt</Pill> : <Pill>Tạo khi phát lệnh</Pill>}</div>
               <div className="overflow-x-auto"><table className="tbl">
-                <thead><tr><th>Vật tư</th><th className="num">Số lượng</th><th>Ghi chú</th></tr></thead>
-                <tbody>{slip.map((l) => <tr key={l.item}><td>{l.item}</td><td className="num">{nf(l.qty, l.unit === 'kg' ? 1 : 0)} {l.unit}</td><td className="text-[12.5px] text-muted">{l.note}</td></tr>)}</tbody>
+                <thead><tr><th>Vật tư</th><th className="num">Số lượng</th><th className="num">Tồn NVL đạt QC</th><th>Ghi chú</th></tr></thead>
+                <tbody>{slip.map((l) => (
+                  <tr key={l.material_code ?? l.item}><td>{l.item}</td><td className="num">{nf(l.qty, l.unit === 'kg' ? 1 : 0)} {l.unit}</td>
+                    <td className={`num ${l.available !== undefined && l.available < l.qty ? 'font-medium text-bad' : ''}`}>{l.available === undefined ? '—' : nf(l.available, 1)}</td>
+                    <td className="text-[12.5px] text-muted">{l.note}</td></tr>
+                ))}</tbody>
               </table></div>
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3 text-[12.5px] text-muted">
-                <span className="flex-1">Thủ kho xuất đầu ca theo phiếu, NV1/NV5 nhận hàng; cuối ca nhập lại vật tư thừa và phế đồng để cân bằng đồng. Vượt định mức phải TP Kỹ thuật/QA duyệt.</span>
+                <span className="flex-1">Số lượng tính theo định mức BOM của từng mã và số mét trong lịch máy. Kế toán kho duyệt → hệ thống tạo phiếu lĩnh Kho theo lệnh SX; thủ kho quét QR cấp, công nhân nhận tại máy. Vượt định mức phải lập phiếu lĩnh bổ sung (TP Kỹ thuật/QA duyệt).
+                  {last?.requisitions && last.requisitions.length > 0 && (
+                    <span className="mt-1 flex flex-wrap gap-2 text-ink">Phiếu lĩnh Kho:{last.requisitions.map((r) => (
+                      <Link key={r.id} className="link" href={`/kho/cap-phat/${r.id}`}>{r.req_no} · {r.product_code} · {r.wo_no}{r.status === 'CANCELLED' ? ' (đã hủy)' : ''}</Link>
+                    ))}</span>
+                  )}</span>
                 {last?.slip_id && last.slip_status !== 'APPROVED' && (canSlip ? (
                   <form action={approveSlip}><input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="d" value={date} /><input type="hidden" name="slip_id" value={last.slip_id} />
                     <SubmitButton className="btn btn-sm btn-pri">Duyệt phiếu lĩnh</SubmitButton></form>
