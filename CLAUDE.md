@@ -67,6 +67,16 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - Các bước duyệt trong module (đơn phát sinh, phiếu lĩnh lệnh ngày, mẫu, báo cáo ca, tốc độ máy, tay nghề, phiếu BD/SC, hậu kiểm phiếu kho) chưa có hạn trên hệ thống; tài liệu ghi hạn đề xuất (đơn phát sinh 4 giờ/bước, phiếu lĩnh trước 17:00 D−1, mẫu 30 phút, báo cáo ca 10:00 D+1, tay nghề 3 ngày). Nếu người dùng chốt thì đưa vào hệ thống để có nhắc quá hạn.
 - `KH-2610-01` và `SPEC CFR-2C-0p75 v1` đang chờ theo snapshot cấu hình cũ (bước "Duyệt", "Kiểm tra (kết quả pilot)"), đã quá hạn: khuyên trả lại rồi gửi lại.
 
+## Kiểm thử độc lập 26/10/2026 (tối)
+- Báo cáo: Claude Doc "BMT MES – Báo cáo kiểm thử độc lập" (https://claude.ai/artifact/Bp6BLGAXacLSHebRo6ikaX), bảng 13 lỗi có cột trạng thái sửa.
+- Bộ kiểm thử cũ đều đạt trên DB dựng mới (33 migration, UTC), E2E 62/62, tsc sạch (dùng `npx tsc` trong `web/`, TS 5.7.3; tsc toàn cục bản mới báo lỗi `globals.css` giả).
+- Lỗi P0 CHƯA SỬA (chờ người dùng quyết):
+  1. `wf.doc_hash(p_table, p_id)` ghép `%s` tên bảng → SQL injection, authenticated gọi được, schema `wf` mở qua API (web dùng `schema('wf')`): đọc được auth.users, vault… Đã chứng minh cục bộ (lộ email qua thông báo lỗi). Sửa: chỉ nhận bảng có trong `wf.approval_flows.doc_table`, `%I`/regclass, revoke execute khỏi authenticated.
+  2. `wf.submit` không kiểm chứng từ (tồn tại, DRAFT, quyền module), `doc_no`/`summary` lấy từ client: VAN_HANH gửi lại PR đã duyệt → PENDING_APPROVAL; doc_id bịa tạo yêu cầu "ma" + thông báo BGD (chứng minh cục bộ, script `/tmp/claude-0/qa/probe_submit.sql` không lưu repo).
+  3. `web/lib/format.ts` `parseNum`: "0.254"→254, "12.137"→12137, "1,234.5"→1.2345; các ô điền sẵn số thô dấu chấm (spec Rdc/OD, vật tư, kho cài đặt, kW máy).
+- Lỗi khác: `wf.notify_role`, `app.kh_log`, `core.next_no` authenticated gọi được không kiểm quyền; `kh_create_change` tin `p_result` client; ghi thẳng bảng không kiểm số dòng (savePrHeader với SX_KH/SX_TP báo "Đã lưu" nhưng RLS chặn); giới hạn 1000 dòng API; bỏ qua `error` (`/lenh-ngay` preview lỗi → 0 cảnh báo); làm tròn ô điền sẵn; số âm (bì, đơn giá tồn đầu kỳ, bobin); `copper_balance`/`loss_*`/`cost.stock_moves_valued` không kiểm quyền.
+- Supabase thật 18:48 26/10: job SLA/email chạy 0 lỗi nhưng Vault chưa có secret → chưa gửi email nào; job máy + `bmt_inv_daily_alerts` chưa chạy lần đầu (chạy thử rollback không lỗi); 0/59 vật tư có giá chuẩn; tồn kho 0; 0 phiên bản lịch; 0/5 người đứng máy liên kết tài khoản.
+
 ## Việc còn chờ
 - Tạo tài khoản: Quản lý SX (Quản lý sản xuất + Tổ trưởng ca + Kế hoạch SX + Thủ kho, kho KNL/KBTP/KPL), Kế toán SX (Kế toán kho + Kế toán giá thành), NV mua hàng, 5 công nhân (email nội bộ; NV3 thêm NV kho, kho KTP vì NV3 giữ kho thành phẩm theo chỉ đạo 25/10/2026; NV1 là tổ phó).
 - Người dùng tự thêm trên Vercel: `CRON_SECRET`, `SMTP_*` (Zoho smtp.zoho.com:465), `APP_URL`; và chạy `vault.create_secret` cho `mes_app_url`, `mes_cron_secret` trên Supabase.
