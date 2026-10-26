@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertCircle, ChevronDown, ChevronRight, History, Info, MessageSquare, X } from 'lucide-react';
+import { AdminTools } from '@/components/admin-tools';
 import { StageBar } from '@/components/stage-bar';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, InfoRow, Pill, StatusPill } from '@/components/ui';
@@ -44,6 +45,12 @@ export default async function ApprovalDetail({ params, searchParams }:
       <div className="grid xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 border-r border-line bg-surface">
           <div className="px-4 pt-4 md:px-5"><Flash ok={sp.ok} err={sp.err} /></div>
+          {me.roles.includes('ADMIN') && (
+            <div className="px-4 md:px-5">
+              <AdminTools docType={a.doc_type} docId={a.doc_id} docNo={a.doc_no} requestId={a.id} pending={a.status === 'PENDING'}
+                back={`/duyet/${a.id}`} after="/duyet" />
+            </div>
+          )}
           <div className="px-0"><StageBar stages={a.steps ?? []} /></div>
 
           {/* Giai đoạn hiện tại */}

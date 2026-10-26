@@ -10,6 +10,7 @@ import {
   schedule, finishInfo, shiftDate, shiftCode, workdaysBetween,
 } from '@/lib/kh/scheduler';
 import { DOC_STATUS, df, nf } from '@/lib/format';
+import { adminDeleteDoc } from '../quan-tri/doc-actions';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { applyChange, changeStep, createChange, rebuildSchedule, returnChange, setLine, setStart } from './actions';
@@ -648,6 +649,19 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
               {canApply && (
                 <form action={applyChange} className="mt-2"><input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="id" value={c.id} />
                   <SubmitButton className="btn btn-sm btn-pri" pendingText="Đang xếp lại…">Áp dụng: thêm vào kế hoạch và xếp lại lịch</SubmitButton></form>
+              )}
+              {roles.includes('ADMIN') && (
+                <details className="mt-2 text-[13px]">
+                  <summary className="cursor-pointer text-bad">Quản trị hệ thống: xóa đơn này</summary>
+                  <form action={adminDeleteDoc} className="mt-2 flex flex-wrap items-center gap-2">
+                    <input type="hidden" name="doc_type" value="DPS" /><input type="hidden" name="doc_id" value={c.id} />
+                    <input type="hidden" name="back" value={`/lich-may?plan=${kh.planId ?? ''}&tab=phatsinh`} />
+                    <input type="hidden" name="after" value={`/lich-may?plan=${kh.planId ?? ''}&tab=phatsinh`} />
+                    <input name="reason" required className="inp w-[260px] py-1.5" placeholder="Lý do xóa" aria-label={`Lý do xóa ${c.req_no}`} />
+                    <label className="flex items-center gap-1"><input type="checkbox" name="confirm" />Tôi hiểu đơn sẽ bị xóa</label>
+                    <SubmitButton className="btn btn-sm btn-bad-o">Xóa</SubmitButton>
+                  </form>
+                </details>
               )}
             </div>
           );

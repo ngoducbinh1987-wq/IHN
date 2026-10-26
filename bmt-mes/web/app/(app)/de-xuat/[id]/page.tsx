@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Send, Trash2 } from 'lucide-react';
+import { AdminTools } from '@/components/admin-tools';
 import { StageBar, type Stage } from '@/components/stage-bar';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
@@ -51,6 +52,10 @@ export default async function PrDetail({ params, searchParams }:
         </>} />
       <div className="-mx-4 mb-4 md:-mx-5"><StageBar stages={stages} /></div>
       <Flash ok={sp.ok} err={sp.err} />
+      {me.roles.includes('ADMIN') && (
+        <AdminTools docType="PR" docId={id} docNo={pr.pr_no} requestId={req?.id} pending={req?.status === 'PENDING'} canReopen={!draft}
+          back={`/de-xuat/${id}`} after="/de-xuat" />
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <section className="card overflow-x-auto">

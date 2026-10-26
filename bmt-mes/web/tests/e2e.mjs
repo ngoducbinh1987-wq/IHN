@@ -312,6 +312,55 @@ await approveAs('bgd@bmt.test', prNo, 'GĐ');
   await c.close();
 }
 
+// 6b. Quản trị hệ thống: mở lại đề xuất đã duyệt, hủy quy trình đang chạy, xóa đề xuất (bắt buộc lý do, có nhật ký)
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'admin@bmt.test', 'Admin@12345');
+  await p.goto(`${BASE}/de-xuat?tab=da-duyet`);
+  await clickNav(p, `a:has-text("${prNo}")`);
+  const prUrl = p.url();
+  const admin = async (button, reason, confirm = false) => {
+    await p.click('#admin-tools > summary');
+    await p.fill('textarea[name=reason]', reason);
+    if (confirm) await p.check('input[name=confirm]');
+    await clickNav(p, `button:has-text("${button}")`);
+  };
+  await admin('Mở lại để sửa', 'Sửa số lượng theo tồn thực tế');
+  await expectOk(p, `Quản trị mở lại đề xuất đã duyệt ${prNo}`);
+  if (!(await p.textContent('main')).includes('Nháp')) fail('Đề xuất mở lại phải về Nháp');
+  await clickNav(p, 'button:has-text("Gửi duyệt")');
+  await expectOk(p, 'Gửi duyệt lại sau khi mở lại');
+  await clickNav(p, 'a:has-text("Xem quy trình duyệt")');
+  const reqUrl = p.url();
+  await admin('Hủy quy trình', 'Gửi nhầm, cần sửa tiếp');
+  await expectOk(p, 'Quản trị hủy quy trình duyệt đang chạy');
+  await p.goto(`${reqUrl.split('?')[0]}?tab=trao-doi`);
+  if (!(await p.textContent('main')).includes('[Quản trị hủy quy trình] Gửi nhầm')) fail('Lịch sử quy trình phải ghi việc Quản trị hủy kèm lý do');
+  ok('Lịch sử quy trình ghi việc Quản trị hủy kèm lý do');
+  await p.goto(prUrl);
+  await p.click('#admin-tools > summary');
+  await p.fill('textarea[name=reason]', 'Thử xóa không xác nhận');
+  await clickNav(p, 'button:has-text("Xóa chứng từ")');
+  if (!(await flash(p)).includes('Tôi hiểu chứng từ sẽ bị xóa')) fail('Xóa phải bắt buộc đánh dấu xác nhận');
+  ok('Xóa chứng từ bắt buộc đánh dấu xác nhận');
+  await admin('Xóa chứng từ', 'Trùng đề xuất khác', true);
+  if (!p.url().includes('/de-xuat?')) fail(`Xóa xong phải về danh sách đề xuất: ${p.url()}`);
+  await expectOk(p, `Quản trị xóa đề xuất ${prNo}`);
+  await p.goto(`${BASE}/quan-tri`);
+  const log = await p.locator('section:has-text("Nhật ký can thiệp của Quản trị")').innerText();
+  if (!['Mở lại để sửa', 'Hủy quy trình', 'Xóa chứng từ'].every((x) => log.includes(x)) || !log.includes(prNo)) fail(`Nhật ký can thiệp thiếu: ${log}`);
+  ok('Nhật ký can thiệp của Quản trị ghi đủ 3 thao tác kèm lý do');
+  await c.close();
+  const [c2, p2] = await ctxFor();
+  await login(p2, 'mua.nv@bmt.test');
+  await p2.goto(reqUrl);
+  if (await p2.locator('#admin-tools').count()) fail('Người không phải Quản trị không được thấy khung Quản trị');
+  await p2.goto(`${BASE}/thong-bao`);
+  if (!(await p2.textContent('main')).includes(`Quản trị đã xóa ${prNo}`)) fail('Người lập phải nhận thông báo khi Quản trị xóa đề xuất');
+  ok('Người lập nhận thông báo; người không phải Quản trị không thấy khung Quản trị');
+  await c2.close();
+}
+
 // 6c. Thêm spec mới từ mã mẫu, sửa BOM, gửi duyệt → hiện người duyệt bước Quản lý SX
 [ctx, page] = await ctxFor();
 await login(page, 'kt.tp@bmt.test');

@@ -13,6 +13,8 @@ type U = { id: string; full_name: string; employee_code: string | null; departme
 type W = { code: string; name: string };
 type C = { role_a: string; role_b: string; reason: string };
 type R = { at: string; by_name: string; signout: boolean; sessions_ended: number };
+type O = { at: string; actor: string; action: string; doc_type: string | null; doc_no: string | null; reason: string | null };
+const OVERRIDE: Record<string, string> = { ADMIN_CANCEL: 'Hủy quy trình', ADMIN_REOPEN: 'Mở lại để sửa', ADMIN_DELETE: 'Xóa chứng từ' };
 
 const DEPTS: [string, string][] = [['BGD', 'Ban giám đốc'], ['KD', 'Kinh doanh'], ['KT', 'Kỹ thuật/QA'], ['KHO', 'Kho'],
   ['MUA', 'Mua hàng'], ['KTOAN', 'Kế toán'], ['SX', 'Sản xuất'], ['IT', 'Quản trị hệ thống']];
@@ -72,6 +74,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const resets = editing && canReset
     ? ((await supabase.schema('app').rpc('admin_password_resets', { p_user: editing.id })).data as R[] | null) ?? []
     : [];
+  // Nhật ký can thiệp của Quản trị hệ thống (hủy quy trình, mở lại, xóa chứng từ)
+  const overrides = canReset ? ((await supabase.schema('app').rpc('admin_overrides', { p_limit: 20 })).data as O[] | null) ?? [] : [];
   return (
     <>
       <Toolbar title="Người dùng & quyền" reload="/quan-tri" add={editable ? { href: '/quan-tri?them=1', label: 'Thêm người dùng' } : undefined} />
@@ -157,6 +161,20 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           ) : null
         )}
       </div>
+      {canReset && (
+        <section className="card mt-4 overflow-x-auto">
+          <div className="card-h"><h2>Nhật ký can thiệp của Quản trị</h2><span className="text-[13px] text-muted">20 lần gần nhất · bản sao nội dung cũ lưu trong nhật ký hệ thống</span></div>
+          {overrides.length ? (
+            <table className="tbl">
+              <thead><tr><th>Lúc</th><th>Người làm</th><th>Thao tác</th><th>Chứng từ</th><th>Lý do</th></tr></thead>
+              <tbody>{overrides.map((o, i) => (
+                <tr key={i}><td className="whitespace-nowrap">{df(o.at, true)}</td><td>{o.actor}</td><td>{OVERRIDE[o.action] ?? o.action}</td>
+                  <td className="mono">{o.doc_no ?? '—'}</td><td>{o.reason}</td></tr>
+              ))}</tbody>
+            </table>
+          ) : <p className="px-4 pb-4 text-[13.5px] text-muted">Chưa có lần can thiệp nào.</p>}
+        </section>
+      )}
     </>
   );
 }

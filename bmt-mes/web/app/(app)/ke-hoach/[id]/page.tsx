@@ -3,6 +3,7 @@ import { Pencil, Printer } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { PackFields, type PackOption } from '@/components/pack-fields';
 import { SubmitButton } from '@/components/submit-button';
+import { AdminTools } from '@/components/admin-tools';
 import { StageBar, type Stage } from '@/components/stage-bar';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import type { Approval } from '@/lib/approvals';
@@ -84,6 +85,10 @@ export default async function PlanDetail({ params, searchParams }:
         </>} />
       <div className="-mx-4 mb-4 md:-mx-5"><StageBar stages={stages} /></div>
       <Flash ok={sp.ok} err={sp.err} />
+      {me.roles.includes('ADMIN') && (
+        <AdminTools docType="PLAN" docId={id} docNo={plan.plan_no} requestId={req?.id} pending={req?.status === 'PENDING'} canReopen={plan.status !== 'DRAFT'}
+          back={`/ke-hoach/${id}`} after="/ke-hoach" />
+      )}
       {stale && (
         <div role="alert" id="mrp-stale" className="mb-4 rounded border-l-4 border-warn bg-warn-soft px-4 py-2.5 text-[14px]">
           Dòng kế hoạch đã thay đổi sau lần chạy MRP gần nhất. <b>Bấm “Chạy MRP”</b> để tính lại nhu cầu vật tư trước khi gửi duyệt hoặc sinh đề xuất mua.
