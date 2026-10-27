@@ -37,18 +37,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       { href: '/phieu-hoan-thanh', label: 'Phiếu hoàn thành bobin', icon: 'checklist', group: 'Sản xuất' },
       { href: '/phieu-xuat-nvl', label: 'Phiếu xuất NVL, NVL thừa', icon: 'issue', group: 'Sản xuất' },
       { href: '/kh-thuc-te', label: 'Kế hoạch – Thực tế', icon: 'chart', group: 'Sản xuất' },
-      { href: '/tham-so', label: 'Máy, người & tham số', icon: 'sliders', group: 'Sản xuất' },
+      { href: '/tham-so', label: 'Tham số xếp lịch', icon: 'sliders', group: 'Sản xuất' },
     );
   }
   const inv = can(me, 'inventory', 'view');
   const floor = me.roles.some((r) => r === 'VAN_HANH' || r === 'TO_TRUONG');
   const office = me.roles.some((r) => r !== 'VAN_HANH' && r !== 'TO_TRUONG');   // công nhân, tổ trưởng chỉ thấy việc tại máy
-  if (inv || can(me, 'production', 'view') || floor) {
-    items.push({ href: '/kho', label: 'Tổng quan kho', icon: 'warehouse', group: 'Kho' });
-    items.push({ href: '/kho/quet', label: 'Quét mã QR', icon: 'scan', group: 'Kho' });
-    items.push({ href: '/kho/cap-phat', label: 'Cấp NVL cho SX', icon: 'issue', group: 'Kho' });
-  }
-  if (floor) items.push({ href: '/kho/nhan-nvl', label: 'Nhận NVL tại máy', icon: 'receive', group: 'Kho' });
+  // Quy trình final: xuất NVL bằng phiếu giấy (Kế toán SX nhập ở Phiếu xuất NVL), công nhân không dùng điện thoại
+  // → bỏ Quét mã QR, Cấp NVL, Nhận NVL tại máy khỏi menu (trang vẫn còn, mở từ đường dẫn mã tem)
+  if (inv || can(me, 'production', 'view') || floor) items.push({ href: '/kho', label: 'Tổng quan kho', icon: 'warehouse', group: 'Kho' });
   if (inv && office) {
     items.push({ href: '/kho/ton', label: 'Tồn kho', icon: 'mat', group: 'Kho' });
     items.push({ href: '/kho/phieu', label: 'Phiếu kho', icon: 'spec', group: 'Kho' });
@@ -75,8 +72,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' });
   if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' });
   // Công nhân, tổ trưởng (không giữ vai trò văn phòng) chỉ thấy việc tại máy; các trang khác vẫn tự kiểm quyền
-  const FLOOR_MENU = ['/', '/thong-bao', '/lenh-ngay', '/ghi-nhan-ca', '/kho/quet', '/kho/nhan-nvl', '/may/checklist', '/may/bao-duong'];
-  const LEAD_MENU = ['/duyet', '/lich-may', '/kh-thuc-te', '/kho', '/kho/cap-phat'];
+  const FLOOR_MENU = ['/', '/thong-bao', '/lenh-ngay', '/ghi-nhan-ca', '/may/checklist', '/may/bao-duong'];
+  const LEAD_MENU = ['/duyet', '/lich-may', '/kh-thuc-te', '/kho'];
   const menu = floor && !office
     ? items.filter((i) => FLOOR_MENU.includes(i.href) || (me.roles.includes('TO_TRUONG') && LEAD_MENU.includes(i.href)))
     : items;

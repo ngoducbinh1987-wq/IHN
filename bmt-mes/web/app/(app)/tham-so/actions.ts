@@ -41,10 +41,30 @@ export async function saveShifts(form: FormData) {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(st) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(en)) go('err', `Ca ${c}: giờ nhập dạng HH:MM`, e);
     return { code: c, start_time: st, end_time: en, break_min: num(form, `break_${c}`, `Ca ${c} · phút nghỉ`, e), active: c === 'A' || form.get(`active_${c}`) === '1' };
   });
+  const reason = String(form.get('reason') ?? '');
+  const wd = form.getAll('workday').map(Number).filter((d) => d >= 1 && d <= 7).sort();
+  const wdChanged = wd.join(',') !== String(form.get('wd_old') ?? '');
+  if (!wd.length) go('err', 'Chọn ít nhất một ngày làm việc', e);
   const db = await createClient();
-  const { data, error } = await db.schema('app').rpc('kh_save_shifts', { p: rows, p_reason: String(form.get('reason') ?? '') });
-  if (error) go('err', error.message, e);
-  done(Number(data));
+  let n = 0;
+  const { data, error } = await db.schema('app').rpc('kh_save_shifts', { p: rows, p_reason: reason });
+  if (error && !(wdChanged && error.message.includes('Không có thay đổi'))) go('err', error.message, e);
+  n += Number(data ?? 0);
+  if (wdChanged) {
+    // Ngày làm việc lưu ở mfg.machine_setting('shift') qua app.save_work_calendar: giờ ca A chia đôi quanh giờ nghỉ
+    // (đúng giá trị vừa lưu nên hàm chỉ đổi ngày làm việc); tỷ lệ xếp lịch, số máy/người giữ nguyên
+    const { data: c } = await db.schema('app').from('v_kh_config').select('fill_pct, machines_per_operator').single();
+    const a = rows[0], min = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    const half = (min(a.end_time) - min(a.start_time) - a.break_min) / 2;
+    const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.floor(m % 60)).padStart(2, '0')}:${m % 1 ? '30' : '00'}`;
+    const { data: k, error: er2 } = await db.schema('app').rpc('save_work_calendar', {
+      p_s1_from: a.start_time, p_s1_to: hm(min(a.start_time) + half), p_s2_from: hm(min(a.start_time) + half + a.break_min), p_s2_to: a.end_time,
+      p_workdays: wd, p_fill: Number(c?.fill_pct), p_max_op: Number(c?.machines_per_operator), p_reason: reason,
+    });
+    if (er2) go('err', (n ? `Đã lưu ca nhưng chưa lưu ngày làm việc: ` : '') + er2.message, e);
+    n += Number(k ?? 0);
+  }
+  done(n);
 }
 
 export async function saveRates(form: FormData) {

@@ -480,6 +480,29 @@ await ctx.close();
   ok(`Job máy chủ /api/cron/notify chạy (không cần trình duyệt): ${JSON.stringify(j)}`);
 }
 
+// 8b. Menu gọn: không còn Quét mã QR, Cấp NVL cho SX, Nhận NVL tại máy; Giám đốc sửa ngày làm việc ở Tham số xếp lịch
+{
+  [ctx, page] = await ctxFor();
+  await login(page, 'bgd@bmt.test');
+  const nav = await page.locator('aside').innerText();
+  if (/Quét mã QR|Cấp NVL cho SX|Nhận NVL tại máy|Máy, người & tham số/.test(nav) || !nav.includes('Tham số xếp lịch')) fail('Menu còn mục thừa hoặc thiếu Tham số xếp lịch');
+  const wd = async () => (await page.locator('section', { hasText: 'Ca làm việc' }).first().innerText()).match(/Ngày làm việc:\s*(.+)/)?.[1] ?? '';
+  for (const [on, reason] of [[true, 'E2E: thử làm cả chủ nhật'], [false, 'E2E: trả lại nghỉ chủ nhật']]) {
+    await page.goto(`${BASE}/tham-so?sua=shifts`);
+    const cb = page.locator('input[name=workday][value="7"]');
+    if (on) await cb.check(); else await cb.uncheck();
+    await page.locator('section', { hasText: 'Ca làm việc' }).first().locator('textarea[name=reason]').fill(reason);
+    await page.locator('section', { hasText: 'Ca làm việc' }).first().getByRole('button', { name: 'Lưu thay đổi' }).click();
+    await page.waitForURL(/ok=/);
+    if ((await wd()).includes('CN') !== on) fail(`Ngày làm việc chưa lưu: ${await wd()}`);
+  }
+  if ((await page.locator('body').innerText()).includes('Người và tay nghề')) fail('Tham số xếp lịch còn bảng Người và tay nghề trùng');
+  await page.goto(`${BASE}/may/cai-dat`);
+  if (await page.locator('button', { hasText: 'Lưu lịch làm việc' }).count() || !(await page.locator('a[href="/tham-so"]').count())) fail('Cài đặt máy còn form lịch làm việc trùng');
+  ok('Menu gọn; Giám đốc sửa ngày làm việc ở Tham số xếp lịch (thêm/bỏ CN), Cài đặt máy chỉ hiện và dẫn sang');
+  await ctx.close();
+}
+
 // 9. Mở thử các màn hình Kho, Kế hoạch SX, Quản lý máy: không trang nào báo lỗi
 for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test', PASS]]) {
   [ctx, page] = await ctxFor();

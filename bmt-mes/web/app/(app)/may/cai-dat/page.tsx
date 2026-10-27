@@ -1,9 +1,10 @@
+import Link from 'next/link';
 import { Empty, Flash, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
 import { requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { can } from '@/lib/session';
-import { addCheckItem, deleteRow, saveSettings, saveWorkCalendar } from '../actions';
+import { addCheckItem, deleteRow, saveSettings } from '../actions';
 
 export const metadata = { title: 'Cài đặt máy' };
 
@@ -12,7 +13,6 @@ const DOW: [number, string][] = [[1, 'T2'], [2, 'T3'], [3, 'T4'], [4, 'T5'], [5,
 export default async function MachineSettings({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const sp = await searchParams;
   const me = await requirePerm('machine', 'view');
-  const isBgd = me.roles.includes('BGD');
   const canCfg = can(me, 'machine', 'config');
   const supabase = await createClient();
   const [{ data: settings }, { data: items }, { data: lines }] = await Promise.all([
@@ -30,36 +30,11 @@ export default async function MachineSettings({ searchParams }: { searchParams: 
       <Toolbar title="Cài đặt máy" />
       <div className="mt-4" />
       <Flash ok={sp.ok} err={sp.err} />
-      <form action={saveWorkCalendar} className="card mb-4 grid max-w-4xl gap-4 p-5 md:grid-cols-2">
-        <input type="hidden" name="back" value={back} />
-        <fieldset className="rounded border border-line p-3 md:col-span-2" disabled={!isBgd}>
-          <legend className="px-1 text-[13px] text-muted">Lịch làm việc · Giám đốc sửa · dùng chung với Kế hoạch sản xuất (ca A)</legend>
-          <div className="grid gap-3 sm:grid-cols-4">
-            <label className="lbl">Buổi sáng từ<input type="time" name="s1_from" className="inp" defaultValue={s[0]?.[0] ?? '08:00'} /></label>
-            <label className="lbl">đến<input type="time" name="s1_to" className="inp" defaultValue={s[0]?.[1] ?? '12:00'} /></label>
-            <label className="lbl">Buổi chiều từ<input type="time" name="s2_from" className="inp" defaultValue={s[1]?.[0] ?? '13:00'} /></label>
-            <label className="lbl">đến<input type="time" name="s2_to" className="inp" defaultValue={s[1]?.[1] ?? '17:00'} /></label>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-[14px]">
-            <span className="text-muted">Ngày làm việc:</span>
-            {DOW.map(([d, t]) => <label key={d} className="inline-flex items-center gap-1.5"><input type="checkbox" name="workday" value={d} defaultChecked={(shift.workdays as number[]).includes(d)} />{t}</label>)}
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="lbl">Tỷ lệ xếp lịch (%)
-              <input name="fill" className="inp" inputMode="numeric" defaultValue={Math.round(Number(shift.fill) * 100)} />
-              <span className="text-[12px]">60–95%. Giữ phần còn lại dự phòng sự cố, đổi máy ngoài dự kiến</span>
-            </label>
-            <label className="lbl">Số máy tối đa một người đứng cùng lúc
-              <input name="max_op" className="inp" inputMode="numeric" defaultValue={get('max_machines_per_operator') ?? 2} />
-              <span className="text-[12px]">1–3 máy</span>
-            </label>
-          </div>
-          {isBgd && <label className="lbl mt-3"><span className="req">Lý do thay đổi</span><input name="reason" className="inp" required placeholder="Ví dụ: đổi giờ làm mùa hè" /></label>}
-          <p className="mt-2 text-[12.5px] text-muted">Một ca {shift.minutes} phút làm việc, nghỉ giữa ca {shift.break_min ?? 60} phút. Tăng ca, thêm ca chọn khi kiểm tra năng lực. Thay đổi được ghi nhật ký tham số.</p>
-        </fieldset>
-        {isBgd ? <div className="md:col-span-2"><SubmitButton>Lưu lịch làm việc</SubmitButton></div>
-          : <p className="text-[12.5px] text-muted md:col-span-2">Chỉ Giám đốc sửa được lịch làm việc.</p>}
-      </form>
+      <section className="card mb-4 max-w-4xl px-5 py-4 text-[14px]">
+        <div className="mb-1 font-medium">Lịch làm việc (dùng chung với Kế hoạch sản xuất)</div>
+        <p>Ca A {s[0]?.[0] ?? '08:00'}–{s[0]?.[1] ?? '12:00'}, {s[1]?.[0] ?? '13:00'}–{s[1]?.[1] ?? '17:00'} · ngày làm việc {DOW.filter(([d]) => (shift.workdays as number[]).includes(d)).map(([, t]) => t).join(', ')} · tỷ lệ xếp lịch {Math.round(Number(shift.fill) * 100)}% · {get('max_machines_per_operator') ?? 2} máy/người.</p>
+        <p className="mt-1 text-[12.5px] text-muted">Giám đốc sửa ca, ngày làm việc, tỷ lệ xếp lịch, số máy/người ở <Link href="/tham-so" className="link">Sản xuất → Tham số xếp lịch</Link>.</p>
+      </section>
 
       <form action={saveSettings} className="card mb-4 grid max-w-4xl gap-4 p-5 md:grid-cols-2">
         <input type="hidden" name="back" value={back} />

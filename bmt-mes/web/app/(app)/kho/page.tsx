@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
-  ArrowLeftRight, BarChart3, BookOpen, ClipboardCheck, ClipboardList, Disc3, FlaskConical, PackageCheck, PackagePlus, Recycle,
-  ScanLine, Scissors, Settings, Truck, Undo2, Warehouse,
+  ArrowLeftRight, BarChart3, BookOpen, ClipboardCheck, ClipboardList, Disc3, FlaskConical, PackagePlus, Recycle,
+  Scissors, Settings, Truck, Warehouse,
 } from 'lucide-react';
 import { Empty, Flash, Kpi, StatusPill, Toolbar } from '@/components/ui';
 import { df } from '@/lib/format';
@@ -25,13 +25,10 @@ export default async function KhoHome({ searchParams }: { searchParams: Promise<
   const o = (ov ?? {}) as Ov;
   const kt = hasRole(me, 'KT_KHO');
   const qc = can(me, 'quality', 'edit');
-  const tiles: { href: string; label: string; icon: typeof ScanLine; show: boolean; hint?: string }[] = [
-    { href: '/kho/quet', label: 'Quét mã', icon: ScanLine, show: true, hint: 'Tra nhanh ống, bao, bobin' },
+  const tiles: { href: string; label: string; icon: typeof Warehouse; show: boolean; hint?: string }[] = [
     { href: '/kho/nhan-hang', label: 'Nhận hàng', icon: PackagePlus, show: keeps(me, 'KNL'), hint: 'Nhập mua, in tem QR' },
     { href: '/kho/qc', label: 'Kiểm tra chất lượng', icon: FlaskConical, show: can(me, 'quality', 'view'), hint: 'Giải phóng lô chờ QC' },
-    { href: '/kho/cap-phat', label: 'Cấp NVL', icon: ClipboardList, show: true, hint: 'Phiếu lĩnh theo lệnh SX' },
-    { href: '/kho/nhan-nvl', label: 'Nhận NVL tại máy', icon: PackageCheck, show: hasRole(me, 'VAN_HANH', 'TO_TRUONG'), hint: 'Công nhân xác nhận' },
-    { href: '/kho/tra', label: 'Trả NVL thừa', icon: Undo2, show: keeps(me, 'KNL'), hint: 'Cân lại, về đúng lô' },
+    { href: '/phieu-xuat-nvl', label: 'Phiếu xuất NVL, NVL thừa', icon: ClipboardList, show: can(me, 'inventory', 'view') || can(me, 'production', 'view'), hint: 'Theo lô, phiếu giấy' },
     { href: '/kho/chuyen', label: 'Chuyển vị trí', icon: ArrowLeftRight, show: keeps(me, 'KNL') || keeps(me, 'KTP') },
     { href: '/kho/ton', label: 'Tồn kho', icon: Warehouse, show: can(me, 'inventory', 'view') },
     { href: '/kho/phieu', label: 'Phiếu kho', icon: BookOpen, show: can(me, 'inventory', 'view'), hint: kt ? 'Duyệt trong ngày' : undefined },
@@ -53,8 +50,7 @@ export default async function KhoHome({ searchParams }: { searchParams: Promise<
         <Kpi label={kt ? 'Phiếu chờ tôi duyệt' : 'Phiếu chờ Kế toán SX'} value={o.review_pending ?? 0}
           hint={o.review_overdue ? `${o.review_overdue} phiếu quá hạn` : 'Hạn: trong ngày'} tone={o.review_overdue ? 'bad' : o.review_pending ? 'warn' : undefined} href="/kho/phieu?tab=duyet" />
         {(kt || o.price_pending > 0) && <Kpi label="Phiếu nhập chờ giá" value={o.price_pending ?? 0} tone={o.price_pending ? 'warn' : undefined} href="/kho/phieu?tab=gia" />}
-        <Kpi label="Phiếu lĩnh chờ cấp" value={o.req_open ?? 0} hint={o.req_waiting ? `${o.req_waiting} chờ TP KT/QA duyệt` : undefined} href="/kho/cap-phat" />
-        {hasRole(me, 'VAN_HANH', 'TO_TRUONG') && <Kpi label="NVL chờ tôi xác nhận" value={o.my_receipts ?? 0} tone={o.my_receipts ? 'warn' : undefined} href="/kho/nhan-nvl" />}
+        <Kpi label="Phiếu lĩnh chờ cấp" value={o.req_open ?? 0} hint={o.req_waiting ? `${o.req_waiting} chờ TP KT/QA duyệt` : undefined} href="/phieu-xuat-nvl" />
         <Kpi label="Lô sắp hết hạn" value={o.expiring ?? 0} tone={o.expiring ? 'warn' : undefined} href="/kho/ton?loc=hsd" />
         <Kpi label="Dưới mức đặt hàng" value={o.below_reorder ?? 0} tone={o.below_reorder ? 'bad' : undefined} href="/kho/ton?loc=thieu" />
         <Kpi label="Lô cách ly còn hàng" value={o.quarantine ?? 0} tone={o.quarantine ? 'bad' : undefined} href="/kho/qc?tab=cach-ly" />

@@ -5,13 +5,15 @@ import { Alert, LockNote } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { ROLE, hasRole, loadConfig } from '@/lib/kh/load';
-import { shiftRun } from '@/lib/kh/scheduler';
+import { DEFAULT_WD, shiftRun } from '@/lib/kh/scheduler';
 import { df, nf, numIn } from '@/lib/format';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { saveChangeovers, saveConfig, saveRates, saveShifts, setMode } from './actions';
 
-export const metadata = { title: 'Máy, người & tham số' };
+export const metadata = { title: 'Tham số xếp lịch' };
+
+const DOW: [number, string][] = [[1, 'T2'], [2, 'T3'], [3, 'T4'], [4, 'T5'], [5, 'T6'], [6, 'T7'], [7, 'CN']];
 
 const PARAMS: [key: string, label: string, unit: string, range: string][] = [
   ['fill_pct', 'Tỷ lệ xếp lịch mỗi ca', '%', '60 – 95'], ['frozen_days', 'Vùng khóa lịch', 'ngày', '1 – 7'],
@@ -27,7 +29,8 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
   const sp = await searchParams;
   const me = await requireMe();
   const db = await createClient();
-  const { cfg, machines, operators } = await loadConfig(db);
+  const { cfg, machines } = await loadConfig(db);
+  const wd = cfg.workdays ?? DEFAULT_WD;
   const { data: log } = await db.schema('app').from('v_kh_param_log').select('*').order('at', { ascending: false }).limit(100);
   const isBgd = hasRole(me.roles, ROLE.params), isKt = hasRole(me.roles, ROLE.rates);
   const edit = sp.sua ?? null;
@@ -55,30 +58,13 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
 
   return (
     <>
-      <Toolbar title="Máy, người & tham số" reload="/tham-so" />
+      <Toolbar title="Tham số xếp lịch" reload="/tham-so" />
       <div className="mt-3"><Flash ok={sp.ok} err={sp.err} /></div>
       <Alert tone={mine ? 'ok' : 'info'} title={mine ? `Tài khoản của bạn được sửa: ${mine}` : 'Tài khoản của bạn chỉ xem'}>
-        Tốc độ chuẩn, phút đổi máy: TP Kỹ thuật/QA. Ca, tham số xếp lịch, cách nhập dữ liệu máy: Giám đốc. Quản lý SX đề xuất, không sửa trực tiếp. Mọi thay đổi phải ghi lý do và được lưu nhật ký.
+        Tốc độ chuẩn, phút đổi máy: TP Kỹ thuật/QA. Ca, ngày làm việc, tham số xếp lịch, cách nhập dữ liệu máy: Giám đốc (chỉ sửa ở trang này). Quản lý SX đề xuất, không sửa trực tiếp. Mọi thay đổi phải ghi lý do và được lưu nhật ký. Người đứng máy và tay nghề khai báo ở <Link href="/may" className="link">Quản lý máy → hồ sơ máy → Người đứng máy</Link>.
       </Alert>
 
       <div className="flex flex-col gap-4">
-        <section className="card">
-          <div className="card-h"><h2>Người và tay nghề</h2><LockNote>Quản lý SX lập, Giám đốc duyệt, TP Kỹ thuật/QA ký tay nghề</LockNote></div>
-          <div className="overflow-x-auto"><table className="tbl">
-            <thead><tr><th>Người</th><th>Việc chính</th><th>Đứng máy (được xếp lịch)</th><th>Kiêm nhiệm</th><th>Đang học</th></tr></thead>
-            <tbody>{operators.map((w) => (
-              <tr key={w.code}>
-                <td><b>{w.code}</b>{w.is_deputy && <div><Pill tone="info">Tổ phó</Pill></div>}{w.keeps_fg && <div><Pill tone="cu">Giữ kho thành phẩm</Pill></div>}</td>
-                <td>{w.job}</td>
-                <td className="text-[12.5px]">{w.skills.length ? <span className="flex flex-wrap gap-1">{w.skills.map((c) => <Pill key={c} tone="ok">{c}</Pill>)}</span> : <span className="text-muted">Không đứng máy · tính 1 ca kiểm tra, đóng gói</span>}</td>
-                <td className="text-[12.5px]">{w.extra ?? '—'}</td>
-                <td className="text-[12.5px] text-muted">{w.learning.length ? w.learning.join(', ') : '—'}</td>
-              </tr>
-            ))}</tbody>
-          </table></div>
-          <p className="px-4 py-3 text-[12.5px] text-muted">Theo phân công Chủ tịch HĐQT chốt 25/10/2026. NV1 là tổ phó: thay Quản lý SX khi vắng (xác nhận ca, xuất kho theo phiếu lĩnh) theo ủy quyền trong hệ thống. NV3 giữ kho thành phẩm. Người học thêm vị trí chỉ được xếp lịch khi TP Kỹ thuật/QA ký xác nhận tay nghề.</p>
-        </section>
-
         <section className="card">
           <div className="card-h"><h2>Máy và cách nhập dữ liệu</h2>{isBgd ? <span className="text-[13px] font-normal text-muted">Song song / tự động chỉ chọn được khi máy đã khai báo tag PLC</span> : <LockNote>Giám đốc đổi, TP Kỹ thuật/QA đề xuất</LockNote>}</div>
           <div className="overflow-x-auto"><table className="tbl">
@@ -122,12 +108,19 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
                     <td>{s.active ? <Pill tone="ok">Dùng</Pill> : <Pill>Tắt{s.code === 'B' ? ' · bật khi tuyển ca 2' : ''}</Pill>}</td></tr>
                 ))}</tbody>
               </table></div>
+              <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3 text-[13.5px]">
+                <span className="text-muted">Ngày làm việc:</span>
+                {E('shifts', isBgd) ? <>
+                  <input type="hidden" name="wd_old" value={wd.join(',')} />
+                  {DOW.map(([d, t]) => <label key={d} className="inline-flex items-center gap-1.5"><input type="checkbox" name="workday" value={d} defaultChecked={wd.includes(d)} />{t}</label>)}
+                </> : <b>{DOW.filter(([d]) => wd.includes(d)).map(([, t]) => t).join(', ')}</b>}
+              </div>
               {E('shifts', isBgd) ? foot('shifts', 'Ví dụ: Đã tuyển đủ người ca 2 từ 09/11.') : <p className="px-4 py-3 text-[12.5px] text-muted">Giai đoạn chạy thử 1 ca. Bật ca B khi đã có tổ trưởng và 4–5 công nhân ca 2.</p>}
             </form>
           </section>
 
           <section className="card">
-            {head('params', 'Tham số xếp lịch', isBgd, 'Giám đốc')}
+            {head('params', 'Tham số chung', isBgd, 'Giám đốc')}
             <form action={saveConfig}>
               <div className="overflow-x-auto"><table className="tbl"><tbody>
                 {PARAMS.map(([k, l, u, r]) => (

@@ -348,18 +348,6 @@ export async function saveSettings(form: FormData) {
 }
 
 // Lịch làm việc (Giám đốc): dùng chung với Kế hoạch sản xuất
-export async function saveWorkCalendar(form: FormData) {
-  const supabase = await createClient();
-  const fill = num(form, 'fill'), maxop = num(form, 'max_op');
-  const { data, error } = await supabase.schema('app').rpc('save_work_calendar', {
-    p_s1_from: txt(form, 's1_from'), p_s1_to: txt(form, 's1_to'), p_s2_from: txt(form, 's2_from'), p_s2_to: txt(form, 's2_to'),
-    p_workdays: form.getAll('workday').map(Number).filter((d) => d >= 1 && d <= 7),
-    p_fill: fill === null ? null : Math.round(fill), p_max_op: maxop === null ? null : Math.round(maxop), p_reason: txt(form, 'reason'),
-  });
-  if (error) back(form, 'err', friendly(error.message));
-  done(form, `Đã lưu ${data} thay đổi lịch làm việc. Kế hoạch sản xuất dùng giờ ca mới.`);
-}
-
 export async function addCheckItem(form: FormData) {
   const supabase = await createClient();
   if (!txt(form, 'label')) back(form, 'err', 'Nhập nội dung mục kiểm tra');
