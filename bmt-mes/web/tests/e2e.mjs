@@ -356,8 +356,8 @@ await approveAs('mua.tp@bmt.test', prNo, 'TP Mua');
   ok(`Giám đốc nhận thông báo "Chờ duyệt: ${prNo}" (${bell})`);
   await p.goto(`${BASE}/duyet`);
   const row = await p.locator(`tr:has-text("${prNo}")`).innerText();
-  if (!row.includes('[2/2]')) fail(`Danh sách duyệt phải hiện [2/2]: ${row}`);
-  ok('Hộp duyệt hiện giai đoạn [2/2] kiểu Fastcon');
+  if (!row.includes('[3/3]')) fail(`Danh sách duyệt phải hiện [3/3] (lập → TP Mua → Giám đốc): ${row}`);
+  ok('Hộp duyệt hiện giai đoạn [3/3] kiểu Fastcon (lập → TP Mua → Giám đốc)');
   await p.screenshot({ path: `${SHOTS}/10-hop-duyet.png`, fullPage: true });
   await c.close();
 }
@@ -486,7 +486,7 @@ if (!(await flash(page)).includes('Nhắc trước hạn')) fail('Phải chặn 
 ok('Chặn cấu hình sai: nhắc trước hạn ≥ thời hạn');
 await page.goto(`${BASE}/quan-tri/quy-trinh?f=PO`);
 const poText = await page.textContent('main');
-if (poText.includes('20.000.000') || poText.includes('200.000.001') || !poText.includes('TP Mua duyệt đơn mua hàng')) fail(`Quy trình PO phải bỏ hạn mức 20/200 triệu: ${poText.slice(0, 300)}`);
+if (poText.includes('giá trị ≥ 20.000.000') || !poText.includes('TP Mua duyệt đơn mua hàng')) fail(`Quy trình PO phải bỏ hạn mức 20/200 triệu: ${poText.slice(0, 300)}`);
 if (await page.locator('a:has-text("Thay đổi nhỏ spec")').count()) fail('Không còn quy trình Spec thay đổi nhỏ');
 ok('Cài đặt quy trình: PO bỏ hạn mức 20 triệu / 200 triệu (TP Mua → Giám đốc); đã bỏ Spec thay đổi nhỏ');
 await page.goto(`${BASE}/bao-cao/hao-hut?tab=dong`);
