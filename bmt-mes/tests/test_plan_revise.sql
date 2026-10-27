@@ -65,7 +65,9 @@ insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('V_CT','BGD'),('V_GD','BGD'),('V_SXKH','SX_KH'),('V_MUATP','MUA_TP'),('V_VH','VAN_HANH')) u(code, role)
   on u.code = p.employee_code;
 update core.profiles set status = 'LOCKED' where (employee_code is null or employee_code !~ '^V_') and status = 'ACTIVE';
-update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_GD')] where doc_type in ('PR', 'PLAN_ADJ') and seq = 1;
+-- PR: TP Mua duyệt → Giám đốc duyệt (migration 4600)
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_MUATP')] where doc_type = 'PR' and seq = 1;
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_GD')] where (doc_type = 'PR' and seq = 2) or (doc_type = 'PLAN_ADJ' and seq = 1);
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_CT')] where doc_type = 'PLAN_ADJ' and seq = 2;
 update wf.approval_flows set submit_role = null, submit_user_ids = '{}' where doc_type in ('PR', 'PLAN_ADJ');
 
@@ -113,6 +115,8 @@ update plan.production_plans set status = 'APPROVED' where id = pg_temp.v('plan'
 insert into t select 'run0', app.plan_run_mrp(pg_temp.v('plan'));
 insert into t select 'pr1', plan.create_pr_from_mrp(pg_temp.v('run0'));
 insert into t select 'pr1_req', wf.submit('PR', pg_temp.v('pr1'), (select pr_no from purchase.purchase_requests where id = pg_temp.v('pr1')), 'thử');
+select pg_temp.as_user('V_MUATP');
+select wf.act(pg_temp.v('pr1_req'), 'APPROVE', null);
 select pg_temp.as_user('V_GD');
 select wf.act(pg_temp.v('pr1_req'), 'APPROVE', null);
 create temp table pr1_before as select material_id, qty from purchase.pr_lines where pr_id = pg_temp.v('pr1');
@@ -141,6 +145,9 @@ select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp
 select pg_temp.as_user('V_SXKH');
 insert into t select 'pr2', plan.create_pr_from_mrp((select mrp_run_id from plan.plan_adjustments where id = pg_temp.v('up')));
 insert into t select 'pr2_req', wf.submit('PR', pg_temp.v('pr2'), (select pr_no from purchase.purchase_requests where id = pg_temp.v('pr2')), 'bổ sung');
+select pg_temp.as_user('V_MUATP');
+select wf.act(pg_temp.v('pr2_req'), 'APPROVE', null);
+select pg_temp.as_user('V_SXKH');
 insert into j select 'cu2', to_jsonb(pg_temp.prq(pg_temp.v('pr2'), 'CU-024'));
 insert into j select 'pv2', to_jsonb(pg_temp.prq(pg_temp.v('pr2'), 'PVC-FR'));
 select pg_temp.ok((select (v #>> '{}')::numeric > 0 from j where k = 'cu2') and (select (v #>> '{}')::numeric > 0 from j where k = 'pv2'),
