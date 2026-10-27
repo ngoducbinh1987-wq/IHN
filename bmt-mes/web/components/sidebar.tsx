@@ -1,11 +1,11 @@
 'use client';
 
-import Link from 'next/link';
+import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
   BarChart3, Bell, BookOpen, Boxes, CalendarRange, CheckSquare, ClipboardCheck, ClipboardList, Cog, Factory, FileBarChart, FileText, Gauge,
-  History, Monitor, PackageCheck, PackageMinus, ScanLine, Search, Settings, ShoppingCart, SlidersHorizontal, Timer, Truck, Users, Warehouse,
+  History, Loader2, Monitor, PackageCheck, PackageMinus, ScanLine, Search, Settings, ShoppingCart, SlidersHorizontal, Timer, Truck, Users, Warehouse,
   Workflow, Wrench,
 } from 'lucide-react';
 
@@ -44,6 +44,7 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
                 <>
                   <Icon size={18} className="shrink-0" />
                   <span className="flex-1">{i.label}</span>
+                  {!i.static && <LinkPending />}
                   {!!i.badge && <span className="rounded-full bg-bad px-2 text-[12px] font-medium text-white">{i.badge}</span>}
                 </>
               );
@@ -59,6 +60,12 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
       </nav>
     </div>
   );
+}
+
+// Vòng xoay trên mục vừa bấm trong lúc máy chủ chuẩn bị trang (thay cho loading.tsx: loading.tsx làm treo chuyển trang sau server action)
+function LinkPending() {
+  const { pending } = useLinkStatus();
+  return pending ? <Loader2 size={15} className="shrink-0 animate-spin" aria-label="Đang tải" /> : null;
 }
 
 // Điện thoại / máy tính bảng dọc: menu trượt từ trái

@@ -34,7 +34,10 @@ async function clickNav(page, selector) {
 const flash = async (page) => (await page.locator('[role=status]').first().textContent().catch(() => '')) ?? '';
 async function expectOk(page, what) {
   const t = await flash(page);
-  if (!t || /lỗi|không|error/i.test(t) && !/Không có/.test(t)) fail(`${what}: "${t}"`);
+  if (!t || /lỗi|không|error/i.test(t) && !/Không có/.test(t)) {
+    await page.screenshot({ path: `${SHOTS}/fail.png`, fullPage: true }).catch(() => {});
+    fail(`${what}: "${t}" tại ${page.url()} – ${(await page.locator('main').innerText().catch(() => '')).slice(0, 200)}`);
+  }
   ok(`${what} → ${t.trim()}`);
 }
 

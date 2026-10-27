@@ -16,7 +16,10 @@ export async function middleware(request: NextRequest) {
       },
     },
   });
-  const { data: { user } } = await supabase.auth.getUser();
+  // getClaims kiểm chữ ký JWT ngay tại máy chủ web (khóa ES256 lấy một lần rồi giữ), không gọi máy chủ Auth mỗi lần chuyển trang;
+  // phiên hết hạn thì tự làm mới bằng refresh token như getUser
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims?.sub ? data.claims : null;
   const isLogin = request.nextUrl.pathname.startsWith('/login');
   if (!user && !isLogin) {
     const url = request.nextUrl.clone();

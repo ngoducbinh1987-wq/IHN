@@ -7,16 +7,16 @@ import { ROLE_NAMES } from '@/lib/format';
 import { signOut } from '../login/actions';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const me = await requireMe();
   const supabase = await createClient();
-  const [{ count: myTurn }, { count: unread }, { count: maintDue }] = await Promise.all([
+  // Hồ sơ người dùng và các số đếm trên menu chạy song song (một lượt hỏi database thay vì hai)
+  const [me, { count: myTurn }, { count: unread }, { count: maintAll }] = await Promise.all([
+    requireMe(),
     supabase.schema('app').from('v_approvals').select('id', { count: 'exact', head: true }).eq('my_turn', true),
     supabase.schema('app').from('v_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
-    // Việc bảo dưỡng quá hạn chưa có phiếu (chỉ đếm khi có quyền xem máy)
-    can(me, 'machine', 'view')
-      ? supabase.schema('app').from('v_maint_plans').select('id', { count: 'exact', head: true }).eq('active', true).eq('state', 'OVERDUE').is('open_wo', null)
-      : Promise.resolve({ count: 0 }),
+    // Việc bảo dưỡng quá hạn chưa có phiếu (RLS chỉ trả dòng cho người có quyền xem máy)
+    supabase.schema('app').from('v_maint_plans').select('id', { count: 'exact', head: true }).eq('active', true).eq('state', 'OVERDUE').is('open_wo', null),
   ]);
+  const maintDue = can(me, 'machine', 'view') ? maintAll : 0;
 
   const items: NavItem[] = [
     { href: '/', label: 'Tổng quan', icon: 'gauge', group: 'Điều hành' },
