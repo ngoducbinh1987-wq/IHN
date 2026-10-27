@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026004500: tồn dự phòng (TP Mua lập → Giám đốc duyệt, cảnh báo, mua bù, MRP), đề xuất mua theo loại
+-- Kiểm thử migration 20261026004600: tồn dự phòng (TP Mua lập → Giám đốc duyệt, cảnh báo, mua bù, MRP), đề xuất mua theo loại
 -- (TP Mua → Giám đốc), PO bỏ ngưỡng, Chủ tịch HĐQT ra khỏi bước Giám đốc, lịch máy / lệnh SX ngày chờ Giám đốc duyệt.
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 set client_min_messages = warning;
@@ -165,9 +165,10 @@ select pg_temp.v('plan'), p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', '
 insert into t select 'line', id from plan.plan_lines where plan_id = pg_temp.v('plan');
 select pg_temp.as_user('G_SXTP');
 insert into t select 'run', app.plan_run_mrp(pg_temp.v('plan'));
-select pg_temp.ok((select reserve = 400 and net_short = round(total_issue + 400 - available - incoming - requested, 4) and projected = round(available + incoming + requested - total_issue, 4)
+select pg_temp.ok((select reserve = 400 and net_short = round(greatest(0, total_issue + 400 - available - incoming - requested), 4)
+                          and projected = round(available + incoming + requested - total_issue - 400, 4)
                    from plan.mrp_lines l join master.materials m on m.id = l.material_id where l.run_id = pg_temp.v('run') and m.code = 'CU-024'),
-  'MRP: dự phòng = mức đã duyệt, đề nghị mua bù đủ mức; tồn dự kiến sau SX không trừ dự phòng');
+  'MRP: dự phòng = mức đã duyệt, đề nghị mua bù đủ mức; tồn dự kiến sau SX tính sau khi giữ mức dự phòng');
 select pg_temp.ok((select x.per_day > 0 and x.plan_no = 'KH-G1' from purchase.use_rates() x where x.material_id = (select id from master.materials where code = 'CU-024')),
   'Tiêu hao/ngày tính theo kế hoạch tháng đã duyệt (gợi ý mức dự phòng)');
 

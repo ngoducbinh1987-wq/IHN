@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Alert, Bar, FinishPill, GROUP_BG, GROUP_BORDER, GROUP_NAME, LockNote, SubTabs, Swatch, dd, pc, wd, wdl } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Kpi, Pill, StatusPill, Toolbar } from '@/components/ui';
-import { LEVEL, type ProductRow, type Step, readChange, simulate } from '@/lib/kh/change';
+import { LEVEL, type ProductRow, type Step, readChange, simulate, stepsFor } from '@/lib/kh/change';
 import { type Kh, ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import {
   BOBBIN, type Finish, OP_NAME, OP_SHORT, type Op, type Schedule, type Slot, UNIT, addDays, dayIndex, isWorkday, makeCalendar, nextWorkday, opName,
@@ -14,7 +14,7 @@ import { DOC_STATUS, df, nf } from '@/lib/format';
 import { adminDeleteDoc } from '../quan-tri/doc-actions';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { applyChange, approveLot, changeStep, commitLot, confirmMaint, createChange, proposeMaint, rebuildSchedule, returnChange, setLine, setStart } from './actions';
+import { applyChange, approveLot, approveLots, changeStep, commitLot, commitLots, confirmMaint, createChange, editChange, proposeMaint, rebuildSchedule, returnChange, reviewSchedule, setLine, setStart } from './actions';
 
 export const metadata = { title: 'Lịch máy' };
 
@@ -28,12 +28,14 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
   const sp = await searchParams;
   const me = await requireMe();
   const db = await createClient();
-  const kh = await loadKh(db, { plan: sp.plan, roles: me.roles });
+  const kh = await loadKh(db, { plan: sp.plan, roles: me.roles, ver: sp.ver });
   const tab = TABS.find((t) => t.key === sp.tab)?.key ?? 'lich';
-  const canPlan = hasRole(me.roles, ROLE.plan) && kh.fromPlan;
+  const canPlan = hasRole(me.roles, ROLE.plan) && kh.fromPlan && !kh.viewingOther;
+  // Giám đốc duyệt cuối lịch máy, lịch lô, lệnh ngày (database chặn Chủ tịch HĐQT, người tự xếp)
+  const isGd = me.roles.includes('BGD') || me.roles.includes('ADMIN');
   const qs = (extra: SP) => {
     const p = new URLSearchParams();
-    const all = { plan: kh.planId ?? undefined, tab, ...extra };
+    const all = { plan: kh.planId ?? undefined, tab, ver: kh.viewingOther ? kh.version?.id : undefined, ...extra };
     Object.entries(all).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, v); });
     return '/lich-may?' + p.toString();
   };
@@ -65,14 +67,30 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
               <button className="btn btn-sm">Xem</button>
             </form>
           )}
-          {rebuildBtn ?? (kh.version || view ? <LockNote>Chỉ xem · Quản lý SX lập lịch</LockNote> : null)}
+          {rebuildBtn ?? (kh.version || view ? <LockNote>{kh.viewingOther ? 'Chỉ xem bản này' : 'Chỉ xem · TP SX xếp lịch, Giám đốc duyệt'}</LockNote> : null)}
         </>} />
       <div className="mt-3 text-[13px] text-muted">
         {kh.version
-          ? <>Phiên bản {kh.version.version} · {kh.version.reason} · {kh.version.created_by_name ?? ''} · {df(kh.version.created_at, true)} · {kh.cal.SPD} ca/ngày · mỗi ca xếp {kh.cal.S} phút ({kh.cal.RUN} × {kh.version.params.fill_pct}%)</>
-          : kh.planNo ? <>Chưa lưu lịch máy cho {kh.planNo}</> : null}
+          ? <>{kh.viewingOther ? <b className="text-warn">Đang xem bản {VER_STATUS[kh.version.status ?? '']?.toLowerCase() ?? 'khác'} · </b> : 'Lịch đang dùng · '}Phiên bản {kh.version.version} · {kh.version.reason} · {kh.version.created_by_name ?? ''} · {df(kh.version.created_at, true)}
+            {kh.version.approved_by_name && kh.version.status === 'APPROVED' ? ` · Giám đốc duyệt: ${kh.version.approved_by_name}` : ''} · {kh.cal.SPD} ca/ngày · mỗi ca xếp {kh.cal.S} phút ({kh.cal.RUN} × {kh.version.params.fill_pct}%)
+            {kh.viewingOther && <> · <Link className="link" href={qs({ ver: '' })}>Về lịch đang dùng</Link></>}</>
+          : kh.planNo ? <>Chưa có lịch máy đã duyệt cho {kh.planNo}</> : null}
       </div>
       <div className="mt-3"><Flash ok={sp.ok} err={sp.err} /></div>
+      {kh.proposal && (
+        <Alert tone="warn" title={`Lịch máy bản ${kh.proposal.version} chờ Giám đốc duyệt`}
+          action={kh.viewingOther && kh.version?.id === kh.proposal.id ? undefined : <Link className="btn btn-sm" href={qs({ ver: kh.proposal.id })}>Xem bản đề xuất</Link>}>
+          <div>{kh.proposal.created_by_name} xếp lúc {df(kh.proposal.created_at, true)}: {kh.proposal.reason}. Lịch đang dùng giữ nguyên đến khi Giám đốc duyệt; lệnh SX ngày phát theo lịch đã duyệt.</div>
+          {isGd && kh.proposal.created_by !== me.id && (
+            <form action={reviewSchedule} className="mt-2 flex flex-wrap items-center gap-2" id="schedule-review">
+              <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="version_id" value={kh.proposal.id} /><input type="hidden" name="tab" value={tab} />
+              <input className="inp min-w-[260px] flex-1 py-1" name="note" placeholder="Ý kiến (bắt buộc khi trả lại)" aria-label="Ý kiến duyệt lịch" />
+              <SubmitButton className="btn btn-sm btn-pri" formAction={async (f: FormData) => { 'use server'; f.set('approve', '1'); await reviewSchedule(f); }}>Duyệt lịch máy</SubmitButton>
+              <SubmitButton className="btn btn-sm btn-bad-o" formAction={async (f: FormData) => { 'use server'; f.set('approve', '0'); await reviewSchedule(f); }}>Trả lại</SubmitButton>
+            </form>
+          )}
+        </Alert>
+      )}
 
       {!kh.planId && <div className="card"><Empty>Chưa có kế hoạch tháng nào. Tạo kế hoạch ở mục Kế hoạch &amp; MRP trước.</Empty></div>}
       {kh.planId && kh.planStatus && kh.planStatus !== 'APPROVED' && (
@@ -98,7 +116,7 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
       )}
       {view?.preview && (
         <Alert tone="info" title="Bản xem trước, chưa lưu" action={rebuildBtn}>
-          Hệ thống xếp thử từ kế hoạch tháng với tham số hiện tại. {canPlan ? 'Bấm “Xếp lịch” để lưu thành phiên bản 1.' : 'Quản lý SX bấm “Xếp lịch” để lưu.'}
+          Hệ thống xếp thử từ kế hoạch tháng với tham số hiện tại. {canPlan ? 'Bấm “Xếp lịch” để lưu (TP SX xếp thì gửi Giám đốc duyệt).' : 'TP SX bấm “Xếp lịch” rồi Giám đốc duyệt.'}
         </Alert>
       )}
       {noDue.length > 0 && tab !== 'thang' && (
@@ -124,6 +142,7 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
 }
 
 const lc = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+const VER_STATUS: Record<string, string> = { PROPOSED: 'Chờ Giám đốc duyệt', APPROVED: 'Đã duyệt', RETURNED: 'Bị trả lại', SUPERSEDED: 'Đã thay bằng bản mới' };
 type View = { sch: Schedule; fin: Map<string, Finish>; preview: boolean };
 const fmtT = (kh: Kh, t: number) => {
   const s = Math.floor(t / kh.cal.S);
@@ -136,7 +155,9 @@ const fmtT = (kh: Kh, t: number) => {
 function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
   const { cal } = kh;
   const isBgd = hasRole(me, ROLE.params);
-  const isTp = hasRole(me, ['SX_TP', 'SX_KH', 'ADMIN']) && kh.fromPlan && kh.planStatus === 'APPROVED';
+  const isTp = hasRole(me, ['SX_TP', 'SX_KH', 'ADMIN']) && kh.fromPlan && kh.planStatus === 'APPROVED' && !kh.viewingOther;
+  // Giám đốc duyệt lịch lô (database chặn Chủ tịch HĐQT, người tự đệ trình)
+  const isGdLot = (me.includes('BGD') || me.includes('ADMIN')) && kh.fromPlan && kh.planStatus === 'APPROVED' && !kh.viewingOther;
   const lineOf = new Map(kh.lines.map((l) => [l.id, l]));
   // Cửa sổ tính tải: từ ngày gốc đến cuối tháng (còn dưới 10 ngày làm việc thì đến cuối tháng sau)
   const start = cal.days[Math.max(0, Math.min(kh.todayIdx, cal.days.length - 1))] ?? cal.base;
@@ -200,9 +221,21 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
       )}
       <section className="card">
         <div className="card-h"><h2>Lịch theo lô: hạn giao, ngày dự kiến, ngày chốt, giữ chỗ</h2>
-          <span className="text-[13px] font-normal text-muted">Giám đốc đặt hạn giao lần đầu, đánh dấu gấp · TP SX chốt ngày, duyệt lịch lô</span></div>
+          <span className="text-[13px] font-normal text-muted">Giám đốc đặt hạn giao lần đầu, đánh dấu gấp · TP SX đệ trình ngày chốt theo MES · Giám đốc duyệt lịch lô</span></div>
+        {(isTp || isGdLot) && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+            {isTp && kh.orders.some((o) => !lineOf.get(o.id)?.committed_date && view.fin.get(o.id)?.finDate) && (
+              <form action={commitLots}><input type="hidden" name="plan_id" value={kh.planId ?? ''} />
+                <SubmitButton className="btn btn-sm" pendingText="…">Đệ trình mọi lô chưa chốt theo ngày MES dự kiến</SubmitButton></form>
+            )}
+            {isGdLot && kh.lines.some((l) => l.committed_date && !l.lot_approved_at) && (
+              <form action={approveLots}><input type="hidden" name="plan_id" value={kh.planId ?? ''} />
+                <SubmitButton className="btn btn-sm btn-pri" pendingText="…">Giám đốc duyệt mọi lô đã đệ trình</SubmitButton></form>
+            )}
+          </div>
+        )}
         <div className="overflow-x-auto"><table className="tbl">
-          <thead><tr><th>Dòng</th><th>Sản phẩm</th><th>Công đoạn</th><th className="num">Số mét</th><th>Nguồn</th><th>Hạn giao · ưu tiên</th><th className="num">Dự kiến xong (MES)</th><th>Tình trạng</th><th>Ngày chốt (TP SX)</th><th>Lịch lô</th></tr></thead>
+          <thead><tr><th>Dòng</th><th>Sản phẩm</th><th>Công đoạn</th><th className="num">Số mét</th><th>Nguồn</th><th>Hạn giao · ưu tiên</th><th className="num">Dự kiến xong (MES)</th><th>Tình trạng</th><th>Ngày chốt (TP SX đệ trình)</th><th>Lịch lô (Giám đốc duyệt)</th></tr></thead>
           <tbody>{kh.orders.map((o) => {
             const f = view.fin.get(o.id);
             const ln = lineOf.get(o.id);
@@ -227,29 +260,34 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
                     {ln.committed_note && <div className="text-[12px] text-muted">{ln.committed_note}</div>}</div>}
                   {isTp && (
                     <details>
-                      <summary className="cursor-pointer text-[12.5px] text-brand">{ln?.committed_date ? 'Chốt lại' : 'Chốt ngày'}</summary>
+                      <summary className="cursor-pointer text-[12.5px] text-brand">{ln?.committed_date ? 'Đệ trình lại' : 'Đệ trình ngày'}</summary>
                       <form action={commitLot} className="mt-1 flex flex-col gap-1">
                         <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} />
                         <input type="date" name="date" defaultValue={ln?.committed_date ?? f?.finDate ?? ''} className="inp py-1" aria-label={`Ngày chốt ${o.label}`} />
                         <input name="note" className="inp py-1" placeholder="Ghi chú (bắt buộc nếu sớm hơn dự kiến hoặc sau hạn giao)" aria-label={`Ghi chú chốt ${o.label}`} />
                         <label className="flex items-center gap-1.5 text-[12px]"><input type="checkbox" name="accept" value="1" />Đồng ý lùi các lô MES báo</label>
-                        <SubmitButton className="btn btn-sm" pendingText="…">Chốt</SubmitButton>
+                        <SubmitButton className="btn btn-sm" pendingText="…">Đệ trình Giám đốc</SubmitButton>
                       </form>
                     </details>
                   )}
                   {!ln?.committed_date && !isTp && <span className="text-[12.5px] text-muted">Chưa chốt</span>}
                 </td>
-                <td>{ln?.lot_approved_at ? <>
+                <td className="min-w-[200px]">{ln?.lot_approved_at ? <>
                     <Pill tone="ok">Đã duyệt · giữ chỗ</Pill><div className="text-[12px] text-muted">{ln.lot_approved_by_name}</div>
-                    {isTp && <form action={approveLot}><input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} /><input type="hidden" name="approve" value="0" /><SubmitButton className="btn btn-sm mt-1" pendingText="…">Bỏ giữ chỗ</SubmitButton></form>}
-                  </> : isTp && ln?.committed_date ? (
-                    <form action={approveLot}><input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} /><input type="hidden" name="approve" value="1" /><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt lịch lô</SubmitButton></form>
-                  ) : <span className="text-[12.5px] text-muted">{ln?.committed_date ? 'Chờ TP SX duyệt' : '—'}</span>}</td>
+                    {isGdLot && <form action={approveLot}><input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} /><input type="hidden" name="approve" value="0" /><SubmitButton className="btn btn-sm mt-1" pendingText="…">Bỏ giữ chỗ</SubmitButton></form>}
+                  </> : isGdLot && ln?.committed_date ? (
+                    <form action={approveLot} className="flex flex-col gap-1">
+                      <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} /><input type="hidden" name="approve" value="1" />
+                      <input type="date" name="date" defaultValue={ln.committed_date} className="inp py-1" aria-label={`Ngày chốt Giám đốc duyệt ${o.label}`} />
+                      <input name="note" className="inp py-1" placeholder="Ghi chú (bắt buộc khi sửa ngày)" aria-label={`Ghi chú duyệt ${o.label}`} />
+                      <SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt lịch lô</SubmitButton>
+                    </form>
+                  ) : <span className="text-[12.5px] text-muted">{ln?.committed_date ? 'Chờ Giám đốc duyệt' : '—'}</span>}</td>
               </tr>
             );
           })}</tbody>
         </table></div>
-        <p className="px-4 py-3 text-[12.5px] text-muted">Dự kiến xong = công đoạn cuối xong + 1 ca kiểm tra, đóng gói (MES xếp 90 % thời gian ca). TP SX chốt ngày hoàn thành: sớm hơn dự kiến thì MES mô phỏng, báo không đủ máy hoặc chỉ ra lô bị lùi. Chốt xong bấm “Xếp lại lịch” (lịch xếp theo ngày chốt) rồi “Duyệt lịch lô”: lô đã duyệt được giữ chỗ trên lịch máy, xếp lại không dời. Đổi hạn giao, sản lượng của kế hoạch đã duyệt: lập phiếu điều chỉnh (Chủ tịch HĐQT duyệt) ở trang Kế hoạch.</p>
+        <p className="px-4 py-3 text-[12.5px] text-muted">Dự kiến xong = công đoạn cuối xong + 1 ca kiểm tra, đóng gói (MES xếp 90 % thời gian ca). TP SX đệ trình ngày hoàn thành theo ngày MES dự kiến (sớm hơn dự kiến thì MES mô phỏng, báo không đủ máy hoặc chỉ ra lô bị lùi; xếp lại lịch, Giám đốc duyệt lịch máy). Giám đốc duyệt lịch lô (được sửa ngày chốt): lô đã duyệt được giữ chỗ trên lịch máy, xếp lại không dời. Chủ tịch HĐQT không duyệt lô sản xuất. Đổi hạn giao, sản lượng của kế hoạch đã duyệt: lập phiếu điều chỉnh (Chủ tịch HĐQT duyệt) ở mục Điều chỉnh kế hoạch tháng.</p>
       </section>
       {isBgd && !kh.version && kh.fromPlan && (
         <section className="card">
@@ -584,9 +622,9 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
         <div className="overflow-x-auto border-t border-line"><table className="tbl">
           <thead><tr><th>Mức</th><th>Khi nào</th><th>Ai duyệt</th><th>Hỏi ý kiến / báo</th></tr></thead>
           <tbody>
-            <tr><td><Pill tone="ok">A</Pill></td><td>Không chạm vùng khóa, không lệnh nào thành trễ, đơn mới kịp hạn</td><td>Chủ tịch HĐQT duyệt lô ngoài kế hoạch</td><td>Báo Giám đốc</td></tr>
-            <tr><td><Pill tone="warn">B</Pill></td><td>Không chạm vùng khóa nhưng có lệnh khác thành trễ, hoặc đơn mới không kịp hạn</td><td>Chủ tịch HĐQT duyệt lô, rồi Giám đốc duyệt, chốt ngày giao với kinh doanh</td><td>Báo các SO bị lùi</td></tr>
-            <tr><td><Pill tone="bad">C</Pill></td><td>Đơn gấp chen vào vùng khóa (tách lệnh đang chạy, đổi lệnh đã phát)</td><td>Chủ tịch HĐQT duyệt lô, rồi Giám đốc duyệt chen vùng khóa</td><td>Hỏi TP Kỹ thuật/QA; báo kế toán (phiếu lĩnh bổ sung), TP mua hàng, Chủ tịch nếu trễ SO</td></tr>
+            <tr><td><Pill tone="ok">A</Pill></td><td>Không chạm vùng khóa, không lệnh nào thành trễ, đơn mới kịp hạn</td><td>Giám đốc duyệt lô phát sinh</td><td>Báo Giám đốc</td></tr>
+            <tr><td><Pill tone="warn">B</Pill></td><td>Không chạm vùng khóa nhưng có lệnh khác thành trễ, hoặc đơn mới không kịp hạn</td><td>Giám đốc duyệt, chốt ngày giao với kinh doanh</td><td>Báo các SO bị lùi</td></tr>
+            <tr><td><Pill tone="bad">C</Pill></td><td>Đơn gấp chen vào vùng khóa (tách lệnh đang chạy, đổi lệnh đã phát)</td><td>TP Kỹ thuật/QA cho ý kiến, rồi Giám đốc duyệt chen vùng khóa</td><td>Báo kế toán (phiếu lĩnh bổ sung), TP mua hàng, kinh doanh nếu trễ SO</td></tr>
           </tbody>
         </table></div>
       </section>
@@ -638,7 +676,7 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
           )}
           <div className="border-t border-line px-4 py-3 text-[13.5px]">
             <div className="mb-1 font-medium">Các bước duyệt (hệ thống tự chọn theo mức)</div>
-            <ol className="list-decimal pl-5 text-muted">{(sim.level === 'A' ? ['Quản lý SX lập đề nghị, chạy mô phỏng', 'Chủ tịch HĐQT duyệt lô ngoài kế hoạch', 'Quản lý SX áp dụng'] : sim.level === 'B' ? ['Quản lý SX lập đề nghị', 'Chủ tịch HĐQT duyệt lô ngoài kế hoạch', 'Giám đốc duyệt, chốt ngày giao với kinh doanh', 'Áp dụng lịch mới'] : ['Quản lý SX lập đề nghị', 'TP Kỹ thuật/QA cho ý kiến', 'Chủ tịch HĐQT duyệt lô ngoài kế hoạch', 'Giám đốc duyệt chen vào vùng khóa', 'Áp dụng lịch mới']).map((s) => <li key={s}>{s}</li>)}</ol>
+            <ol className="list-decimal pl-5 text-muted">{[...stepsFor(sim.level).map((s) => s.label), 'TP SX áp dụng: thêm vào kế hoạch, xếp lại lịch'].map((s) => <li key={s}>{s}</li>)}</ol>
             <div className="mt-1 text-muted">Hệ thống báo: {sim.notify.join(', ')}.</div>
           </div>
           <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
@@ -691,6 +729,24 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
                   ) : <LockNote>{mine && self ? 'Bạn đã lập hoặc đã làm bước trước: người khác duyệt' : `Chờ ${STEP_ROLE[curStep.role] ?? curStep.role}`}</LockNote>}
                 </div>
               )}
+              {curStep && mine && !self && (
+                <details className="mt-2 text-[13px]" id={`dps-edit-${c.req_no}`}>
+                  <summary className="cursor-pointer text-brand">Sửa số mét, hạn giao trước khi duyệt</summary>
+                  <form action={editChange} className="mt-2 flex flex-wrap items-end gap-2">
+                    <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="id" value={c.id} />
+                    <label className="lbl">Số mét<input className="inp w-[120px] py-1 text-right" name="qty" defaultValue={String(c.payload.qty_m ?? '')} inputMode="decimal" /></label>
+                    <label className="lbl">Hạn giao<input className="inp w-[150px] py-1" type="date" name="due" defaultValue={String(c.payload.due_date ?? '')} /></label>
+                    <label className="lbl">Ưu tiên<select className="inp w-auto py-1" name="prio" defaultValue={String(c.payload.priority ?? '1')}><option value="1">Thường</option><option value="0">Gấp</option></select></label>
+                    <label className="lbl min-w-[220px] flex-1"><span className="req">Lý do sửa</span><input className="inp py-1" name="reason" required /></label>
+                    <SubmitButton className="btn btn-sm" pendingText="Đang mô phỏng…">Lưu sửa</SubmitButton>
+                  </form>
+                  <p className="mt-1 text-muted">MES chạy lại mô phỏng; sửa làm đơn cần mức cao hơn thì phải trả lại để TP SX lập lại. Lần sửa ghi vào đề nghị và báo người lập.</p>
+                </details>
+              )}
+              {c.steps.some((s) => (s as Step & { edits?: unknown[] }).edits?.length) && (
+                <div className="mt-1 text-[12.5px] text-muted">{c.steps.flatMap((s) => ((s as Step & { edits?: { name: string; at: string; reason: string; old: { qty_m: number; due_date: string }; new: { qty_m: number; due_date: string } }[] }).edits ?? []))
+                  .map((e, i) => <div key={i}>Sửa khi duyệt: {e.name} · {df(e.at, true)} · {nf(Number(e.old.qty_m))} m hạn {dd(e.old.due_date)} → {nf(Number(e.new.qty_m))} m hạn {dd(e.new.due_date)} · {e.reason}</div>)}</div>
+              )}
               {canApply && (
                 <form action={applyChange} className="mt-2"><input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="id" value={c.id} />
                   <SubmitButton className="btn btn-sm btn-pri" pendingText="Đang xếp lại…">Áp dụng: thêm vào kế hoạch và xếp lại lịch</SubmitButton></form>
@@ -716,11 +772,17 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
       <section className="card">
         <div className="card-h"><h2>Lịch sử phiên bản lịch máy</h2></div>
         <div className="overflow-x-auto"><table className="tbl">
-          <thead><tr><th>Phiên bản</th><th>Lúc</th><th>Nội dung</th><th>Người xếp</th><th>Ca/ngày · phút xếp/ca</th></tr></thead>
-          <tbody>{(vers ?? []).length ? (vers as { id: string; version: number; created_at: string; reason: string; created_by_name: string | null; change_no: string | null; is_current: boolean; params: { SPD: number; S: number } }[]).map((v) => (
-            <tr key={v.id}><td className="mono">{v.version}{v.is_current && <> <Pill tone="ok">Đang dùng</Pill></>}</td><td className="whitespace-nowrap">{df(v.created_at, true)}</td>
-              <td>{v.reason}{v.change_no ? ` · ${v.change_no}` : ''}</td><td className="text-[12.5px]">{v.created_by_name ?? ''}</td><td className="num">{v.params.SPD} · {v.params.S}</td></tr>
-          )) : <tr><td colSpan={5} className="text-[13px] text-muted">Chưa có phiên bản nào.</td></tr>}</tbody>
+          <thead><tr><th>Phiên bản</th><th>Lúc</th><th>Nội dung</th><th>Người xếp</th><th>Giám đốc duyệt</th><th>Ca/ngày · phút xếp/ca</th></tr></thead>
+          <tbody>{(vers ?? []).length ? (vers as { id: string; version: number; created_at: string; reason: string; created_by_name: string | null; change_no: string | null; is_current: boolean;
+            status: string | null; approved_by_name: string | null; approved_at: string | null; review_note: string | null; params: { SPD: number; S: number } }[]).map((v) => (
+            <tr key={v.id}><td className="mono">{v.version}{v.is_current ? <> <Pill tone="ok">Đang dùng</Pill></>
+                : v.status && v.status !== 'APPROVED' ? <> <Pill tone={v.status === 'PROPOSED' ? 'warn' : 'mute'}>{VER_STATUS[v.status] ?? v.status}</Pill></> : null}</td>
+              <td className="whitespace-nowrap">{df(v.created_at, true)}</td>
+              <td>{v.reason}{v.change_no ? ` · ${v.change_no}` : ''}{v.review_note && <div className="text-[12.5px] text-muted">Ý kiến Giám đốc: {v.review_note}</div>}</td>
+              <td className="text-[12.5px]">{v.created_by_name ?? ''}</td>
+              <td className="text-[12.5px]">{v.approved_by_name ? <>{v.approved_by_name}<div className="text-muted">{df(v.approved_at, true)}</div></> : '—'}</td>
+              <td className="num">{v.params.SPD} · {v.params.S}</td></tr>
+          )) : <tr><td colSpan={6} className="text-[13px] text-muted">Chưa có phiên bản nào.</td></tr>}</tbody>
         </table></div>
       </section>
     </div>

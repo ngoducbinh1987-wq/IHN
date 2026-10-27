@@ -12,18 +12,17 @@ export type ChangeInput = { product_code: string; qty: number; due: string; so: 
 export type Step = { role: string; label: string; done_by?: string; done_name?: string; done_at?: string; result?: string; comment?: string; user_ids?: string[] };
 
 export const LEVEL: Record<string, { tone: 'ok' | 'warn' | 'bad'; label: string }> = {
-  A: { tone: 'ok', label: 'Mức A · Quản lý SX tự áp dụng' },
-  B: { tone: 'warn', label: 'Mức B · Giám đốc duyệt' },
-  C: { tone: 'bad', label: 'Mức C · chen vào vùng khóa' },
+  A: { tone: 'ok', label: 'Mức A · Giám đốc duyệt lô phát sinh' },
+  B: { tone: 'warn', label: 'Mức B · Giám đốc duyệt, chốt ngày giao' },
+  C: { tone: 'bad', label: 'Mức C · chen vào vùng khóa (TP KT/QA → Giám đốc)' },
 };
 
 export function stepsFor(level: 'A' | 'B' | 'C'): Step[] {
-  // Quy trình final: lô ngoài kế hoạch tháng phải được Chủ tịch HĐQT duyệt; Giám đốc duyệt phần chen lịch (database tự lập bước)
-  const first = { role: 'SX_TP', label: 'Quản lý SX lập đề nghị, chạy mô phỏng' };
-  const chair = { role: 'BGD', label: 'Chủ tịch HĐQT duyệt lô ngoài kế hoạch tháng' };
-  if (level === 'A') return [first, chair];
-  if (level === 'B') return [first, chair, { role: 'BGD', label: 'Giám đốc duyệt, chốt ngày giao với kinh doanh' }];
-  return [first, { role: 'KT_TP', label: 'TP Kỹ thuật/QA cho ý kiến: đổi mã, mẫu đầu mã, thông số' }, chair, { role: 'BGD', label: 'Giám đốc duyệt chen vào vùng khóa' }];
+  // Quy trình 28/10/2026: lô phát sinh TP SX đệ trình, Giám đốc duyệt (Chủ tịch HĐQT không duyệt lô); database tự lập bước
+  const first = { role: 'SX_TP', label: 'TP SX lập đề nghị, chạy mô phỏng' };
+  if (level === 'A') return [first, { role: 'BGD', label: 'Giám đốc duyệt lô phát sinh' }];
+  if (level === 'B') return [first, { role: 'BGD', label: 'Giám đốc duyệt, chốt ngày giao với kinh doanh' }];
+  return [first, { role: 'KT_TP', label: 'TP Kỹ thuật/QA cho ý kiến: đổi mã, mẫu đầu mã, thông số' }, { role: 'BGD', label: 'Giám đốc duyệt chen vào vùng khóa' }];
 }
 
 export function simulate(kh: Kh, product: ProductRow, input: ChangeInput) {
@@ -41,8 +40,8 @@ export function simulate(kh: Kh, product: ProductRow, input: ChangeInput) {
   const level: 'A' | 'B' | 'C' = br ? 'C' : (newly.length || !n.placed || (n.slack !== null && n.slack < 0)) ? 'B' : 'A';
   const notify: string[] = [];
   if (level === 'A') notify.push('Giám đốc');
-  if (level === 'B') notify.push('Giám đốc', ...(soLate.length || (n.slack ?? 0) < 0 ? ['Chủ tịch HĐQT (SO bị lùi)'] : []));
-  if (level === 'C') notify.push('TP Kỹ thuật/QA', 'Giám đốc', 'Kế toán (phiếu lĩnh bổ sung)', 'TP mua hàng (kiểm vật tư)', ...(soLate.length ? ['Chủ tịch HĐQT (SO bị lùi)'] : []));
+  if (level === 'B') notify.push('Giám đốc', ...(soLate.length || (n.slack ?? 0) < 0 ? ['Kinh doanh (SO bị lùi)'] : []));
+  if (level === 'C') notify.push('TP Kỹ thuật/QA', 'Giám đốc', 'Kế toán (phiếu lĩnh bổ sung)', 'TP mua hàng (kiểm vật tư)', ...(soLate.length ? ['Kinh doanh (SO bị lùi)'] : []));
   const B = (kh.todayIdx + kh.cfg.frozen_days) * r.cal.SPD * r.cal.S;
   const touched = br ? [...new Set(r.sch.slots.filter((s) => s.lineId === 'new' && s.start < B).map((s) => s.machine))] : [];
   return {

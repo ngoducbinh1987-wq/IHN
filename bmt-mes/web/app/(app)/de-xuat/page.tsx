@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/server';
 export const metadata = { title: 'Đề xuất mua hàng' };
 
 type Pr = { id: string; pr_no: string; source: string; status: string; need_date: string | null; note: string | null;
-  created_at: string; created_by_name: string | null; line_count: number; request_id: string | null };
+  created_at: string; created_by_name: string | null; line_count: number; request_id: string | null; pr_kind_label: string | null };
 
 const TABS = [
   { key: 'dang-xu-ly', label: 'Đang thực hiện', st: ['DRAFT', 'PENDING_APPROVAL'] },
@@ -33,12 +33,17 @@ export default async function PrList({ searchParams }: { searchParams: Promise<{
     : { data: [] as Approval[] };
   const byId = new Map((reqs ?? []).map((r) => [r.id, r]));
   const href = (t: string) => `/de-xuat?tab=${t}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
+  const { data: below } = await supabase.schema('app').rpc('safety_below_count');
 
   return (
     <>
       <Toolbar title="Đề xuất mua hàng" reload={href(tab.key)} search={{ placeholder: 'Tìm số đề xuất, nội dung', value: sp.q }} hidden={{ tab: tab.key }}
         add={can(me, 'purchase', 'create') ? { href: '/de-xuat/moi', label: 'Thêm đề xuất' } : undefined} />
       <Tabs active={tab.key} items={TABS.map((t) => ({ key: t.key, label: t.label, href: href(t.key) }))} />
+      <p className="mb-3 text-[13.5px] text-muted">
+        Loại đề xuất: <b>theo kế hoạch tháng</b> (sinh từ MRP), <b>mua bổ sung</b>, <b>mua tích trữ</b>, <b>mua tối ưu</b> (NV mua / TP Mua lập, số lượng bất kỳ). Quy trình: TP Mua duyệt → Giám đốc duyệt.{' '}
+        <Link href="/de-xuat/du-phong" className="font-medium text-brand hover:underline">Tồn dự phòng{Number(below ?? 0) > 0 ? ` – ${below} vật tư dưới mức` : ''}</Link>
+      </p>
       <Flash ok={sp.ok} err={sp.err ?? error?.message} />
       <div className="card overflow-x-auto">
         {data && data.length > 0 ? (
@@ -52,7 +57,7 @@ export default async function PrList({ searchParams }: { searchParams: Promise<{
                   <tr key={p.id}>
                     <td className="min-w-[280px] py-3">
                       <Link href={`/de-xuat/${p.id}`} className="text-[15px] font-medium text-brand hover:underline">{p.pr_no} – {p.note}</Link>
-                      <div className="mt-0.5 text-[13px] text-ink/80"><b>{p.source === 'MRP' ? 'Đề xuất từ MRP' : 'Đề xuất mua hàng'}</b> tạo bởi <b className="uppercase">{p.created_by_name ?? '—'}</b> vào lúc <b>{df(p.created_at, true)}</b></div>
+                      <div className="mt-0.5 text-[13px] text-ink/80"><b>{p.pr_kind_label ?? (p.source === 'MRP' ? 'Đề xuất từ MRP' : 'Đề xuất mua hàng')}</b> tạo bởi <b className="uppercase">{p.created_by_name ?? '—'}</b> vào lúc <b>{df(p.created_at, true)}</b></div>
                     </td>
                     <td>{a && pos ? <StageMini stages={a.steps ?? []} index={pos.index} total={pos.total} label={stageLabel(a)} overdue={a.overdue} /> : <span className="text-muted">Chưa gửi duyệt</span>}</td>
                     <td className="min-w-[160px]">

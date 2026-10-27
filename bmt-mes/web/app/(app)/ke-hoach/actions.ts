@@ -143,6 +143,7 @@ export async function createAdj(form: FormData) {
   const planId = String(form.get('plan_id'));
   const supabase = await createClient();
   const { data, error } = await supabase.schema('app').rpc('adj_create', { p_plan: planId, p_reason: String(form.get('reason') ?? '') });
+  if (error && form.get('from') === 'list') redirect('/ke-hoach/dieu-chinh?err=' + encodeURIComponent(error.message));
   if (error) back(planId, 'err', error.message);
   redirect(`/ke-hoach/dieu-chinh/${data}?ok=` + encodeURIComponent('Đã lập phiếu nháp. Thêm các dòng điều chỉnh rồi gửi Chủ tịch HĐQT duyệt.'));
 }

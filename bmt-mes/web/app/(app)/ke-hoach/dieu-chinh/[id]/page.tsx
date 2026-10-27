@@ -47,7 +47,8 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
     <>
       <Toolbar title={<span>{a.adj_no} · điều chỉnh {a.plan_no}</span>} actions={<>
         {a.approval_id && <Link className="btn btn-soft" href={`/duyet/${a.approval_id}`}>Xem quy trình duyệt</Link>}
-        <Link className="btn" href={`/ke-hoach/${a.plan_id}#dieu-chinh`}>Về kế hoạch</Link>
+        <Link className="btn btn-soft" href={`/ke-hoach/${a.plan_id}#dieu-chinh`}>Xem kế hoạch</Link>
+        <Link className="btn" href="/ke-hoach/dieu-chinh">Đóng</Link>
       </>} />
       <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
       <section className="card mb-4 flex flex-wrap items-center gap-3 px-4 py-3">

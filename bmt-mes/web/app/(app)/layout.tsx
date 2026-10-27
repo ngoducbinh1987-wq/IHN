@@ -9,7 +9,7 @@ import { signOut } from '../login/actions';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   // Hồ sơ người dùng và các số đếm trên menu chạy song song (một lượt hỏi database thay vì hai)
-  const [me, { count: myTurn }, { count: unread }, { count: maintAll }, { count: qcWait }] = await Promise.all([
+  const [me, { count: myTurn }, { count: unread }, { count: maintAll }, { count: qcWait }, { data: safetyBelow }] = await Promise.all([
     requireMe(),
     supabase.schema('app').from('v_approvals').select('id', { count: 'exact', head: true }).eq('my_turn', true),
     supabase.schema('app').from('v_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
@@ -17,6 +17,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     supabase.schema('app').from('v_maint_plans').select('id', { count: 'exact', head: true }).eq('active', true).eq('state', 'OVERDUE').is('open_wo', null),
     // Bobin, lô chờ QC (RLS: chỉ người xem được kho)
     supabase.schema('inv').from('lots').select('id', { count: 'exact', head: true }).eq('qc_status', 'PENDING'),
+    // Vật tư dưới mức tồn dự phòng (hàm tự kiểm quyền mua hàng / kho / Ban giám đốc)
+    supabase.schema('app').rpc('safety_below_count'),
   ]);
   const maintDue = can(me, 'machine', 'view') ? maintAll : 0;
 
@@ -27,8 +29,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: '/thong-bao', label: 'Thông báo', icon: 'bell', group: 'Điều hành', badge: unread ?? 0 },
   ];
   if (can(me, 'purchase', 'view')) items.push({ href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' });
+  if (can(me, 'purchase', 'view') || can(me, 'inventory', 'view') || me.roles.includes('BGD')) {
+    items.push({ href: '/de-xuat/du-phong', label: 'Tồn dự phòng', icon: 'warehouse', group: 'Mua hàng', badge: Number(safetyBelow ?? 0) });
+  }
   if (can(me, 'master', 'view')) items.push({ href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' });
-  if (can(me, 'plan', 'view')) items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' });
+  if (can(me, 'plan', 'view')) {
+    items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' });
+    items.push({ href: '/ke-hoach/dieu-chinh', label: 'Điều chỉnh kế hoạch tháng', icon: 'flow', group: 'Sản xuất' });
+  }
   if (can(me, 'plan', 'view') || can(me, 'production', 'view') || can(me, 'inventory', 'view')) {
     items.push(
       { href: '/lich-may', label: 'Lịch máy', icon: 'calendar', group: 'Sản xuất' },

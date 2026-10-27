@@ -138,6 +138,8 @@ export const speedSig = (cfg: Pick<Config, 'speeds'>) => (cfg.speeds ?? [])
 export type VersionRow = {
   id: string; plan_id: string; version: number; is_current: boolean; base_date: string; created_at: string; created_by_name: string | null;
   reason: string; change_no: string | null;
+  // Từ 28/10/2026: TP SX xếp → bản đề xuất (PROPOSED) chờ Giám đốc duyệt mới thành lịch đang dùng
+  status?: 'PROPOSED' | 'APPROVED' | 'RETURNED' | 'SUPERSEDED'; approved_at?: string | null; approved_by_name?: string | null; review_note?: string | null; created_by?: string | null;
   params: { S: number; SPD: number; RUN: number; fill_pct: number; frozen_days: number; machines_per_operator: number; plan_no?: string; workdays?: number[];
     group_days?: number; speeds_sig?: string; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
 };
@@ -145,7 +147,7 @@ export type VersionRow = {
 export type Kh = Awaited<ReturnType<typeof loadKh>>;
 
 // Dữ liệu cho các màn hình: kế hoạch đang chọn, lịch máy đang dùng, lệnh, ngày xong
-export async function loadKh(db: Db, opts: { plan?: string | null; roles: string[] }) {
+export async function loadKh(db: Db, opts: { plan?: string | null; roles: string[]; ver?: string | null }) {
   const base = await loadConfig(db);
   const now = vnNow();
   // Kế hoạch: người xem được kế hoạch tháng chọn trong danh sách; người khác xem lịch đang dùng mới nhất
@@ -158,7 +160,16 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
     ?? visiblePlans.find((p) => current.some((v) => v.plan_id === p.id))?.id
     ?? visiblePlans.find((p) => p.status === 'APPROVED')?.id ?? visiblePlans[0]?.id ?? current[0]?.plan_id ?? null;
   const plan = visiblePlans.find((p) => p.id === planId) ?? null;
-  const version = current.find((v) => v.plan_id === planId) ?? null;
+  const currentVersion = current.find((v) => v.plan_id === planId) ?? null;
+  // Bản lịch TP SX xếp đang chờ Giám đốc duyệt; xem một bản khác (đề xuất, bản cũ) qua opts.ver
+  const [{ data: propRows }, { data: verRow }] = await Promise.all([
+    planId ? app(db).from('v_kh_versions').select('*').eq('plan_id', planId).eq('status', 'PROPOSED').order('created_at', { ascending: false }).limit(1)
+      : Promise.resolve({ data: [] as VersionRow[] }),
+    opts.ver && planId ? app(db).from('v_kh_versions').select('*').eq('id', opts.ver).eq('plan_id', planId).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  const proposal = ((propRows ?? [])[0] ?? null) as VersionRow | null;
+  const version = (verRow as VersionRow | null) ?? currentVersion;
+  const viewingOther = Boolean(version && version.id !== currentVersion?.id);
 
   const [{ data: lineRows }, { data: ordRows }, { data: slotRows }, { data: lastLog }, { data: maintRows }] = await Promise.all([
     planId && plan ? app(db).from('v_kh_plan_lines').select('*').eq('plan_id', planId).order('line_no') : Promise.resolve({ data: [] as LineRow[] }),
@@ -246,7 +257,7 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
   }
 
   return {
-    ...base, now, plans: visiblePlans, planId, planNo, planStatus, schedStart, lines, orders, fromPlan, version, cal, sch, fin,
+    ...base, now, plans: visiblePlans, planId, planNo, planStatus, schedStart, lines, orders, fromPlan, version, currentVersion, proposal, viewingOther, cal, sch, fin,
     todayIdx, nowT, frozenFrom, frozenTo, dirty, missing, roles: opts.roles, maint, windows, machAlerts,
   };
 }

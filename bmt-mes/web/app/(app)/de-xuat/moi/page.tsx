@@ -8,7 +8,8 @@ export const metadata = { title: 'Thêm đề xuất mua hàng' };
 
 export default async function NewPr({ searchParams }: { searchParams: Promise<{ err?: string }> }) {
   const sp = await searchParams;
-  await requirePerm('purchase', 'create');
+  const me = await requirePerm('purchase', 'create');
+  const buyer = me.roles.some((r) => r === 'MUA_NV' || r === 'MUA_TP' || r === 'ADMIN');
   const supabase = await createClient();
   const { data: mats } = await supabase.schema('app').from('v_materials').select('code, name, uom').order('code');
   return (
@@ -17,7 +18,14 @@ export default async function NewPr({ searchParams }: { searchParams: Promise<{ 
       <div className="mt-4"><Flash err={sp.err} /></div>
       <form action={createPr} className="card flex flex-col gap-4 p-4 md:p-5">
         <datalist id="mats">{(mats ?? []).map((m) => <option key={m.code} value={`${m.code} · ${m.name} (${m.uom})`} />)}</datalist>
-        <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
+        <div className="grid gap-4 md:grid-cols-[1fr_2fr_1fr]">
+          <label className="lbl"><span className="req">Loại đề xuất</span>
+            <select className="inp" name="kind" defaultValue="BO_SUNG">
+              <option value="BO_SUNG">Mua bổ sung</option>
+              {buyer && <option value="TICH_TRU">Mua tích trữ</option>}
+              {buyer && <option value="TOI_UU">Mua tối ưu (giá, MOQ, rủi ro cung ứng)</option>}
+            </select>
+          </label>
           <label className="lbl"><span className="req">Nội dung / lý do đề xuất</span>
             <input className="inp" name="note" required placeholder="Ví dụ: Mua bổ sung đồng 0,24 cho đơn hàng tháng 11" />
           </label>
@@ -37,7 +45,7 @@ export default async function NewPr({ searchParams }: { searchParams: Promise<{ 
             </tbody>
           </table>
         </div>
-        <p className="text-[13px] text-muted">Cần thêm dòng: lưu nháp rồi thêm tiếp ở trang chi tiết. Số dùng dấu phẩy cho phần thập phân (12,5).</p>
+        <p className="text-[13px] text-muted">Đề xuất theo kế hoạch tháng sinh từ MRP (Kế hoạch &amp; MRP). Số lượng tùy nhu cầu. Cần thêm dòng: lưu nháp rồi thêm tiếp ở trang chi tiết. Số dùng dấu phẩy cho phần thập phân (12,5). Gửi duyệt: TP Mua duyệt → Giám đốc duyệt.</p>
         <div className="flex flex-wrap gap-2">
           <SubmitButton className="btn btn-pri">Lưu và gửi duyệt</SubmitButton>
           <SubmitButton className="btn" formAction={async (f: FormData) => { 'use server'; f.set('send', '0'); await createPr(f); }}>Lưu nháp</SubmitButton>

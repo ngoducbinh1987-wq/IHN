@@ -204,17 +204,18 @@ export default async function PlanDetail({ params, searchParams }:
         )}
         {mrp && mrp.length > 0 ? (
           <table className="tbl">
-            <thead><tr><th>Mã VT</th><th>Vật tư</th><th>ĐVT</th><th className="num">Lý thuyết</th><th className="num">Tổng cấp SX</th><th className="num">Tồn KD</th><th className="num">Chờ QC</th><th className="num">Hàng về</th><th className="num">Đã đề xuất</th><th className="num">Thiếu ròng</th><th className="num">Bội số</th><th className="num">Đề nghị mua</th><th className="num">Tồn dự kiến sau SX</th>{showPrice && <th className="num">Thành tiền</th>}<th>Ngày cần</th><th>Ghi chú</th><th>TT</th>{adjustable && <th />}</tr></thead>
+            <thead><tr><th>Mã VT</th><th>Vật tư</th><th>ĐVT</th><th className="num">Lý thuyết</th><th className="num">Tổng cấp SX</th><th className="num">Tồn KD</th><th className="num">Chờ QC</th><th className="num">Hàng về</th><th className="num">Đã đề xuất</th><th className="num" title="Mức tồn dự phòng Giám đốc đã duyệt: MRP mua bù đủ mức">Dự phòng</th><th className="num">Thiếu ròng</th><th className="num">Bội số</th><th className="num">Đề nghị mua</th><th className="num">Tồn dự kiến sau SX</th>{showPrice && <th className="num">Thành tiền</th>}<th>Ngày cần</th><th>Ghi chú</th><th>TT</th>{adjustable && <th />}</tr></thead>
             <tbody>
               {mrp.map((m) => adjustable && sp.mrp === m.id ? (
                 <tr key={m.id} className="bg-brand-soft/40">
-                  <td colSpan={showPrice ? 18 : 17} className="p-0"><MrpForm planId={id} m={m} /></td>
+                  <td colSpan={showPrice ? 19 : 18} className="p-0"><MrpForm planId={id} m={m} /></td>
                 </tr>
               ) : (
                 <tr key={m.id}>
                   <td className="mono font-medium">{m.material_code}</td><td className="min-w-[160px]">{m.material_name}</td><td>{m.uom}</td>
                   <td className="num">{nf(m.theoretical, 2)}</td><td className="num font-medium">{nf(m.total_issue, 2)}</td>
                   <td className="num">{nf(m.available, 1)}</td><td className="num text-muted">{nf(m.in_quality, 1)}</td><td className="num">{nf(m.incoming, 1)}</td><td className="num">{nf(m.requested, 1)}</td>
+                  <td className="num text-muted">{Number(m.reserve) > 0 ? nf(m.reserve, 1) : '—'}</td>
                   <td className={`num ${Number(m.net_short) > 0 ? 'text-bad' : 'text-muted'}`}>{nf(m.net_short, 2)}</td>
                   <td className="num">{nf(m.pack_multiple)}</td>
                   <td className="num font-medium">{nf(m.suggest_qty)}

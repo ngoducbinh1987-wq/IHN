@@ -8,12 +8,13 @@ import { UNIT, addDays, isWorkday, opName, prevWorkday as prevWd } from '@/lib/k
 import { df, nf } from '@/lib/format';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { approveSlip, releaseDay } from './actions';
+import { approveSlip, releaseDay, reviewRelease } from './actions';
 
 export const metadata = { title: 'Lệnh sản xuất ngày' };
 
 type Release = {
-  id: string; work_date: string; revision: number; version_id: string; note: string | null; released_at: string; released_by_name: string | null;
+  id: string; work_date: string; revision: number; version_id: string; note: string | null; released_at: string | null; released_by_name: string | null;
+  status: 'PROPOSED' | 'RELEASED' | 'RETURNED' | 'SUPERSEDED'; proposed_by: string | null; proposed_by_name: string | null; proposed_at: string | null; review_note: string | null;
   slip_id: string | null; slip_no: string | null; slip_lines: SlipLine[] | null; slip_status: string | null; approved_at: string | null; approved_by_name: string | null;
   requisitions: { id: string; req_no: string; status: string; wo_no: string; product_code: string }[] | null;
 };
@@ -33,8 +34,13 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
   const date = sp.d && /^\d{4}-\d{2}-\d{2}$/.test(sp.d) ? sp.d : todayW;
   const chips = [prevWorkday(todayW), todayW, nextWd(todayW, 1), nextWd(todayW, 2), nextWd(todayW, 3), nextWd(todayW, 4)];
   const { data: rel } = await db.schema('app').from('v_kh_releases').select('*').eq('plan_id', kh.planId ?? '').eq('work_date', date).order('revision', { ascending: false });
-  const releases = (rel ?? []) as Release[];
+  const all = (rel ?? []) as Release[];
+  // Lệnh đã phát (Giám đốc duyệt); bản TP SX đề xuất chờ Giám đốc; bản bị trả lại gần nhất
+  const releases = all.filter((r) => r.status === 'RELEASED');
   const last = releases[0] ?? null;
+  const pending = all.find((r) => r.status === 'PROPOSED') ?? null;
+  const returned = all.find((r) => r.status === 'RETURNED' && (!last || r.revision > last.revision) && (!pending || r.revision > pending.revision)) ?? null;
+  const isGd = me.roles.includes('BGD') || me.roles.includes('ADMIN');
   const { data: reps } = await db.schema('app').from('v_kh_reports').select('machine_code, shift_code, status, lines').eq('work_date', date);
   const actual = (machine: string, shift: string, key: string) => {
     const r = (reps ?? []).find((x) => x.machine_code === machine && x.shift_code === shift);
@@ -52,11 +58,13 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
   const preview = (pv ?? { checks: [], slip: [] }) as Preview;
   const checks = past ? [] : [...preview.checks, ...infoChecks(kh, date)];
   const warns = checks.filter((c) => !c.ok).length;
-  const canRelease = hasRole(me.roles, ROLE.release) && kh.fromPlan;
+  const canRelease = hasRole(me.roles, [...ROLE.release, 'BGD']) && kh.fromPlan;
+  const direct = me.roles.includes('BGD') || me.roles.includes('ADMIN');
   const canSlip = hasRole(me.roles, ROLE.slip);
   const stale = last && kh.version && last.version_id !== kh.version.id && !past;
   const deadline = `${kh.cfg.cutoff_time} ${dd(prevWorkday(date))}`;
   const status: [string, 'ok' | 'warn' | 'info' | 'mute'] = past ? (last ? ['Đã chạy', 'mute'] : ['Đã qua · không phát lệnh', 'mute'])
+    : pending ? ['Chờ Giám đốc duyệt phát', 'warn']
     : last ? [last.revision > 1 ? `Đã phát bản ${last.revision}` : 'Đã phát', 'ok']
     : date === today ? ['Chưa phát · đang trong ngày', 'warn']
     : ['Chưa phát · hạn ' + deadline, date === nextWd(todayW, 1) || date === todayW ? 'warn' : 'info'];
@@ -68,7 +76,7 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
     <>
       <Toolbar title={<span>Lệnh sản xuất ngày {wdl(date).toLowerCase()} {dd(date)}</span>} reload={q(date)}
         actions={<Pill tone={status[1]}>{status[0]}</Pill>} />
-      <div className="mt-3 text-[13px] text-muted">{kh.planNo ? `${kh.planNo} · ` : ''}Quản lý SX lập từ lịch máy{kh.version ? ` phiên bản ${kh.version.version}` : ''} · {work.length} việc trên {new Set(work.map((x) => x.machine.code)).size} máy · người: {people.join(', ') || '—'}</div>
+      <div className="mt-3 text-[13px] text-muted">{kh.planNo ? `${kh.planNo} · ` : ''}TP SX lập từ lịch máy đã duyệt{kh.version ? ` phiên bản ${kh.version.version}` : ''} · Giám đốc duyệt phát · {work.length} việc trên {new Set(work.map((x) => x.machine.code)).size} máy · người: {people.join(', ') || '—'}</div>
       <div className="my-3 flex flex-wrap gap-2">
         {chips.map((d) => (
           <Link key={d} href={q(d)} aria-current={d === date ? 'page' : undefined}
@@ -83,10 +91,26 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
         </form>
       </div>
       <Flash ok={sp.ok} err={sp.err} />
-      {!kh.version && <div className="card"><Empty>Chưa có lịch máy. Quản lý SX xếp lịch ở mục Lịch máy trước.</Empty></div>}
+      {!kh.version && <div className="card"><Empty>Chưa có lịch máy đã duyệt. TP SX xếp lịch ở mục Lịch máy, Giám đốc duyệt trước.</Empty></div>}
       {kh.version && (
         <div className="flex flex-col gap-4">
-          {stale && <Alert tone="warn" title={`Lịch máy đã đổi sau khi phát bản ${last!.revision}`}>Lịch đang dùng là phiên bản {kh.version.version}. Quản lý SX phát lại bản mới để máy nhận lệnh đúng; phiếu lĩnh bổ sung tạo theo bản mới.</Alert>}
+          {stale && <Alert tone="warn" title={`Lịch máy đã đổi sau khi phát bản ${last!.revision}`}>Lịch đang dùng là phiên bản {kh.version.version}. TP SX đề xuất phát lại bản mới (Giám đốc duyệt) để máy nhận lệnh đúng; phiếu lĩnh tạo theo bản mới.</Alert>}
+          {pending && (
+            <Alert tone="warn" title={`Lệnh ngày ${dd(date)} bản ${pending.revision} chờ Giám đốc duyệt phát`}>
+              <div>{pending.proposed_by_name} đề xuất lúc {df(pending.proposed_at, true)}{pending.note ? ` · Ghi chú: ${pending.note}` : ''}</div>
+              {isGd && pending.proposed_by !== me.id && (
+                <form action={reviewRelease} className="mt-2 flex flex-wrap items-center gap-2" id="release-review">
+                  <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="d" value={date} /><input type="hidden" name="release_id" value={pending.id} />
+                  <input name="note" className="inp min-w-[260px] flex-1 py-1" placeholder="Ý kiến Giám đốc (bắt buộc khi trả lại)" aria-label="Ý kiến duyệt lệnh ngày" />
+                  <SubmitButton className="btn btn-sm btn-pri" formAction={async (f: FormData) => { 'use server'; f.set('approve', '1'); await reviewRelease(f); }}>Duyệt phát lệnh</SubmitButton>
+                  <SubmitButton className="btn btn-sm btn-bad-o" formAction={async (f: FormData) => { 'use server'; f.set('approve', '0'); await reviewRelease(f); }}>Trả lại</SubmitButton>
+                </form>
+              )}
+            </Alert>
+          )}
+          {returned && (
+            <Alert tone="bad" title={`Giám đốc trả lại bản ${returned.revision}`}>{returned.review_note}</Alert>
+          )}
           {!past && (
             <section className="card">
               <div className="card-h"><h2>Kiểm tra trước khi phát</h2>{warns ? <Pill tone="warn">{warns} cảnh báo</Pill> : <Pill tone="ok">Đạt</Pill>}</div>
@@ -105,19 +129,20 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
                     <label className="lbl">Ghi chú xử lý cảnh báo {warns ? <span className="text-bad">(bắt buộc vì còn {warns} cảnh báo)</span> : '(nếu có)'}
                       <textarea name="note" rows={2} className="inp" placeholder="Ví dụ: Line silicone 2 không chạy vì NV1, NV5 đang đứng line khác → TP Kỹ thuật/QA làm bảo trì định kỳ." /></label>
                     <label className="flex items-start gap-2 text-[13.5px]"><input type="checkbox" name="confirm" value="1" className="mt-1" required />
-                      <span>Tôi xác nhận phát lệnh ngày {dd(date)}. Lệnh hiện ở màn hình Ghi nhận ca tại từng máy; hệ thống tạo phiếu lĩnh cả ca gửi Kế toán kho duyệt. Sau khi phát muốn đổi phải theo quy trình thay đổi lịch.</span></label>
+                      <span>{direct ? `Tôi (Giám đốc) phát lệnh ngày ${dd(date)}.` : `Tôi đề xuất lệnh ngày ${dd(date)}, gửi Giám đốc duyệt phát.`} Giám đốc duyệt xong lệnh hiện ở màn hình Ghi nhận ca tại từng máy; hệ thống tạo phiếu lĩnh cả ca gửi Kế toán SX duyệt. Sau khi phát muốn đổi phải theo quy trình thay đổi lịch.</span></label>
                     <div className="flex flex-wrap items-center gap-3">
-                      <SubmitButton>{last ? `Phát lại bản ${last.revision + 1}` : `Phát lệnh ngày ${dd(date)}`}</SubmitButton>
+                      <SubmitButton>{direct ? (last ? `Phát lại bản ${(all[0]?.revision ?? 0) + 1}` : `Phát lệnh ngày ${dd(date)}`) : pending ? 'Đề xuất lại (thay bản đang chờ)' : last ? 'Đề xuất phát lại bản mới' : `Đề xuất lệnh ngày ${dd(date)}`}</SubmitButton>
                       <span className="text-[12.5px] text-muted">Hạn phát: {deadline}.</span>
                     </div>
                   </form>
-                ) : <LockNote>Chỉ Quản lý SX phát lệnh ngày (Giám đốc được báo)</LockNote>}
+                ) : <LockNote>TP SX đề xuất lệnh ngày, Giám đốc duyệt phát</LockNote>}
               </div>
             </section>
           )}
           {last && (
-            <Alert tone="ok" title={`Đã phát bản ${last.revision} lúc ${df(last.released_at, true)} · ${last.released_by_name ?? ''}`}>
-              {last.note ? <>Ghi chú: {last.note}</> : null}
+            <Alert tone="ok" title={`Đã phát bản ${last.revision} lúc ${df(last.released_at, true)} · Giám đốc duyệt: ${last.released_by_name ?? ''}`}>
+              {last.proposed_by_name && last.proposed_by_name !== last.released_by_name ? <div className="text-[12.5px]">TP SX đề xuất: {last.proposed_by_name} · {df(last.proposed_at, true)}</div> : null}
+              {last.note ? <>Ghi chú: {last.note}</> : null}{last.review_note ? <div>Ý kiến Giám đốc: {last.review_note}</div> : null}
               {releases.length > 1 && <div className="text-[12.5px] text-muted">Các bản trước: {releases.slice(1).map((r) => `bản ${r.revision} (${df(r.released_at, true)})`).join(', ')}</div>}
             </Alert>
           )}

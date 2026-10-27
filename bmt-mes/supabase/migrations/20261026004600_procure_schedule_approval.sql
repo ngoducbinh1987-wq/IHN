@@ -1,4 +1,4 @@
--- BMT MES · 4500 · Chuẩn hóa mua NVL và duyệt lịch sản xuất (anh Bình chốt 28/10/2026)
+-- BMT MES · 4600 · Chuẩn hóa mua NVL và duyệt lịch sản xuất (anh Bình chốt 28/10/2026)
 --  1. Tồn dự phòng (thường 1 tháng sản xuất) theo từng vật tư: TP Mua lập phiếu điều chỉnh mức → Giám đốc duyệt (được sửa khi duyệt);
 --     dưới mức thì cảnh báo; dự trù MRP mua bù đủ mức dự phòng; NV/TP Mua lập đề xuất mua bù dự phòng một lần bấm.
 --  2. Người duyệt sửa được phiếu (nguyên tắc của 4400) áp thêm cho phiếu dự phòng, đơn phát sinh, ngày chốt lô.
@@ -546,22 +546,15 @@ left join lateral (select ms.unit_price, ms.lead_time_days from master.material_
                    order by ms.is_preferred desc, ms.supplier_id nulls first limit 1) t on true
 left join inv.v_material_availability a on a.material_id = m.id;
 
--- Dự trù MRP: dự phòng mặc định = mức tồn dự phòng đã duyệt (mua bù đủ mức); tồn dự kiến sau SX không trừ dự phòng
--- (so trực tiếp với mức dự phòng); đề xuất sinh từ MRP ghi nhu cầu = cấp SX (dự phòng hiện ở cột riêng)
+-- Dự trù MRP: dự phòng mặc định = mức tồn dự phòng đã duyệt (mua bù đủ mức). Tồn dự kiến sau SX vẫn tính sau khi giữ mức
+-- dự phòng (> 0 là thừa so với mức, 4500 plan_month_revise dùng số này để giảm đề xuất mua chưa duyệt khi hiệu chỉnh kế hoạch).
 do $$
 declare d text;
 begin
   d := replace(pg_get_functiondef('plan.run_mrp(uuid, jsonb)'::regprocedure), E'\r', '');
   if position('m.safety_stock' in d) = 0 then
     if position('coalesce((p_reserve ->> m.code)::numeric, 0) as reserve' in d) = 0 then raise exception 'plan.run_mrp: không thấy đoạn dự phòng'; end if;
-    d := replace(d, 'coalesce((p_reserve ->> m.code)::numeric, 0) as reserve', 'coalesce((p_reserve ->> m.code)::numeric, m.safety_stock, 0) as reserve');
-    if position('round(available + incoming + requested - total - reserve, 4)' in d) = 0 then raise exception 'plan.run_mrp: không thấy công thức tồn dự kiến'; end if;
-    d := replace(d, 'round(available + incoming + requested - total - reserve, 4)', 'round(available + incoming + requested - total, 4)');
-    execute d;
-  end if;
-  d := replace(pg_get_functiondef('plan.create_pr_from_mrp(uuid)'::regprocedure), E'\r', '');
-  if position('total_issue + reserve, available' in d) > 0 then
-    execute replace(d, 'total_issue + reserve, available', 'total_issue, available');
+    execute replace(d, 'coalesce((p_reserve ->> m.code)::numeric, 0) as reserve', 'coalesce((p_reserve ->> m.code)::numeric, m.safety_stock, 0) as reserve');
   end if;
 end $$;
 

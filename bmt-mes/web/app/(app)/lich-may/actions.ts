@@ -63,16 +63,20 @@ export async function rebuildSchedule(form: FormData) {
   const reason = kh.version
     ? (down.length ? `Xếp lại lịch: ${down.join('; ')}` : kh.dirty ? 'Xếp lại lịch theo tham số mới' : 'Xếp lại lịch theo báo cáo ca và kế hoạch')
     : 'Xếp lịch lần đầu';
-  const { error } = await db.schema('app').rpc('kh_save_schedule', { p_plan: planId, ...payload(kh, kh.orders, r), p_reason: reason.slice(0, 300), p_change: null });
+  const { data: verId, error } = await db.schema('app').rpc('kh_save_schedule', { p_plan: planId, ...payload(kh, kh.orders, r), p_reason: reason.slice(0, 300), p_change: null });
   if (error) go(q, 'err', error.message);
+  const { data: saved } = await db.schema('app').from('v_kh_versions').select('version, status').eq('id', verId as string).single();
   revalidatePath('/lich-may');
   revalidatePath('/lenh-ngay');
-  if (!kh.version) go(q, 'ok', `Đã xếp lịch máy từ ${kh.planNo}. Phiên bản 1.`);
+  // TP SX xếp: bản đề xuất chờ Giám đốc duyệt; Giám đốc xếp: dùng ngay
+  const sent = saved?.status === 'PROPOSED' ? `Đã gửi Giám đốc duyệt lịch bản ${saved.version} (lịch đang dùng giữ nguyên đến khi duyệt)` : '';
+  if (!kh.version) go(q, 'ok', sent || `Đã xếp lịch máy từ ${kh.planNo}. Phiên bản ${saved?.version ?? 1}.`);
   const { pushed, late } = pushedLots(kh, r);
   // Lô trễ hạn giao do xếp lại (máy hỏng, bảo dưỡng…): cảnh báo đỏ Giám đốc
   if (late.length) await db.schema('app').rpc('kh_late_alert', { p_plan: planId, p_reason: reason, p_lines: late });
   go(q, 'ok', [
-    `Đã xếp lại lịch · ${moved(kh, r)} lệnh đổi ngày xong`,
+    sent || 'Đã xếp lại lịch',
+    `${moved(kh, r)} lệnh đổi ngày xong`,
     r.early ? 'máy không chạy được trong vùng khóa: xếp lại từ ngày mai, lệnh ngày đã phát cần phát lại bản mới' : `phần đã chạy và vùng khóa ${kh.cfg.frozen_days} ngày giữ nguyên`,
     pushed.length ? `Lô bị lùi: ${pushed.join('; ')}` : '',
     late.length ? `Đã cảnh báo đỏ Giám đốc: ${late.length} lô trễ hạn giao` : '',
@@ -125,7 +129,36 @@ export async function createChange(form: FormData) {
   });
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
-  go(q, 'ok', `Đã gửi đề nghị mức ${sim.level}: Chủ tịch HĐQT duyệt lô ngoài kế hoạch${sim.level === 'A' ? '' : ', sau đó Giám đốc duyệt chen lịch'}. Người duyệt đã nhận thông báo.`);
+  go(q, 'ok', `Đã gửi đề nghị mức ${sim.level}: ${sim.level === 'C' ? 'TP KT/QA cho ý kiến, sau đó ' : ''}Giám đốc duyệt. Người duyệt đã nhận thông báo.`);
+}
+
+// Người đang duyệt sửa số mét / hạn giao / ưu tiên của đơn phát sinh: chạy lại mô phỏng rồi lưu (database kiểm mức, ghi lịch sử, báo người lập)
+export async function editChange(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const id = String(form.get('id'));
+  const q = `plan=${planId}&tab=phatsinh`;
+  const me = await requireMe();
+  const db = await createClient();
+  const { data: req } = await db.schema('app').from('v_kh_changes').select('*').eq('id', id).single();
+  if (!req) go(q, 'err', 'Không tìm thấy đề nghị');
+  const p = req.payload as Record<string, unknown>;
+  const input = readChange({ sp: String(p.product_code), qty: String(form.get('qty') ?? ''), due: String(form.get('due') ?? ''), so: String(form.get('so') ?? p.so ?? ''),
+    prio: String(form.get('prio') ?? p.priority ?? '1'), br: p.br ? '1' : undefined });
+  if (typeof input === 'string') go(q, 'err', input);
+  const inp = input as ChangeInput;
+  const kh = await loadKh(db, { plan: planId, roles: me.roles });
+  const { data: prod } = await db.schema('app').from('v_kh_products').select('*').eq('product_code', inp.product_code).maybeSingle<ProductRow>();
+  if (!prod) go(q, 'err', 'Mã sản phẩm chưa có spec đã phát hành');
+  const sim = simulate(kh, prod!, inp);
+  const { error } = await db.schema('app').rpc('kh_change_edit', {
+    p_req: id,
+    p_payload: { product_code: inp.product_code, product_name: prod!.product_name, qty_m: inp.qty, due_date: inp.due, so: inp.so, priority: String(inp.prio), br: inp.br },
+    p_result: { finish: sim.n.finDate, slack: sim.n.slack, placed: sim.n.placed, rows: sim.rows, newly: sim.newly, notify: sim.notify, touched: sim.touched },
+    p_reason: String(form.get('reason') ?? ''),
+  });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  go(q, 'ok', `Đã sửa đề nghị (mô phỏng lại: xong ${sim.n.finDate ? sim.n.finDate.split('-').reverse().slice(0, 2).join('/') : 'chưa xếp được'}). Kiểm tra rồi bấm Đồng ý.`);
 }
 
 async function step(form: FormData, action: 'approve' | 'return') {
@@ -200,19 +233,63 @@ export async function commitLot(form: FormData) {
   const { error } = await db.schema('app').rpc('kh_commit_lot', { p_line: lineId, p_date: date || null, p_note: note || null });
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
-  go(q, 'ok', date ? `Đã chốt ngày hoàn thành. Bấm Xếp lại lịch để lịch theo ngày chốt rồi duyệt lịch lô.` : 'Đã bỏ ngày chốt');
+  go(q, 'ok', date ? `Đã đệ trình ngày hoàn thành, Giám đốc nhận thông báo duyệt lịch lô. Ngày chốt sớm hơn MES dự kiến thì bấm Xếp lại lịch (Giám đốc duyệt lịch máy) trước.` : 'Đã bỏ ngày chốt');
 }
 
-// TP SX duyệt lịch lô (giữ chỗ trên lịch máy) hoặc bỏ giữ chỗ
+// TP SX đệ trình một lần mọi lô chưa chốt theo ngày MES dự kiến
+export async function commitLots(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const q = `plan=${planId}&tab=thang`;
+  const db = await createClient();
+  const { data, error } = await db.schema('app').rpc('kh_commit_lots', { p_plan: planId });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  go(q, 'ok', `Đã đệ trình ${data} lô theo ngày MES dự kiến. Giám đốc nhận thông báo duyệt lịch lô.`);
+}
+
+// Giám đốc duyệt mọi lô TP SX đã đệ trình
+export async function approveLots(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const q = `plan=${planId}&tab=thang`;
+  const db = await createClient();
+  const { data, error } = await db.schema('app').rpc('kh_approve_lots', { p_plan: planId });
+  if (error) go(q, 'err', error.message);
+  const r = data as { ok: number; fail: { code: string; msg: string }[] };
+  revalidatePath('/lich-may');
+  if (r.fail.length) go(q, r.ok ? 'ok' : 'err', `Đã duyệt ${r.ok} lô. Chưa duyệt được: ${r.fail.map((x) => `${x.code} (${x.msg})`).join('; ')}`);
+  go(q, 'ok', `Đã duyệt ${r.ok} lô: giữ chỗ trên lịch máy, xếp lại lịch không dời các lô này.`);
+}
+
+// Giám đốc duyệt / trả lại bản lịch máy TP SX xếp
+export async function reviewSchedule(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const ok = form.get('approve') === '1';
+  const q = `plan=${planId}&tab=${String(form.get('tab') ?? 'lich')}`;
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('kh_schedule_review', {
+    p_version: String(form.get('version_id')), p_approve: ok, p_note: String(form.get('note') ?? '').trim() || null,
+  });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  revalidatePath('/lenh-ngay');
+  go(q, 'ok', ok ? 'Đã duyệt lịch máy: bản mới là lịch đang dùng, TP SX phát lệnh SX ngày theo lịch này.' : 'Đã trả lại lịch máy, TP SX nhận thông báo.');
+}
+
+// Giám đốc duyệt lịch lô (giữ chỗ trên lịch máy) hoặc bỏ giữ chỗ
 export async function approveLot(form: FormData) {
   const planId = String(form.get('plan_id'));
   const q = `plan=${planId}&tab=thang`;
   const db = await createClient();
   const ok = form.get('approve') === '1';
-  const { error } = await db.schema('app').rpc('kh_approve_lot', { p_line: String(form.get('line_id')), p_approve: ok });
+  const date = String(form.get('date') ?? '');
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) go(q, 'err', 'Chọn ngày chốt');
+  // Giám đốc duyệt (được sửa ngày chốt, bắt buộc ghi chú khi sửa)
+  const { error } = await db.schema('app').rpc('kh_approve_lot', {
+    p_line: String(form.get('line_id')), p_approve: ok, p_date: date || null, p_note: String(form.get('note') ?? '').trim() || null,
+  });
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
-  go(q, 'ok', ok ? 'Đã duyệt lịch lô: giữ chỗ trên lịch máy, xếp lại lịch không dời lô này. MES phát lệnh SX từng ngày theo lịch.' : 'Đã bỏ giữ chỗ lịch lô');
+  go(q, 'ok', ok ? 'Đã duyệt lịch lô: giữ chỗ trên lịch máy, xếp lại lịch không dời lô này. TP SX phát lệnh SX ngày theo lịch.' : 'Đã bỏ giữ chỗ lịch lô');
 }
 
 // Bảo dưỡng trên lịch máy: TP KT/QA đề xuất ngày + cách làm; TP SX chốt (vùng khóa: Giám đốc) hoặc trả lại

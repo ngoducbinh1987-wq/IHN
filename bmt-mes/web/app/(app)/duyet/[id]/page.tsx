@@ -14,7 +14,7 @@ import { approve, comment, reject } from './actions';
 export const metadata = { title: 'Chi tiết quy trình' };
 
 // Chứng từ người đang duyệt sửa được trên trang chứng từ (database: wf.review_request); thêm loại mới khi có màn hình sửa
-const EDITABLE_BY_REVIEWER = ['PLAN', 'PR', 'PLAN_ADJ']; // PLAN còn có khung nhắc trong Thông tin chung
+const EDITABLE_BY_REVIEWER = ['PLAN', 'PR', 'PLAN_ADJ', 'SAFETY_STOCK']; // PLAN còn có khung nhắc trong Thông tin chung
 
 const ACTION: Record<string, [string, 'ok' | 'bad' | 'info']> = {
   APPROVE: ['Chuyển giai đoạn', 'ok'], REJECT: ['Trả lại', 'bad'], COMMENT: ['Trao đổi', 'info'],
@@ -209,20 +209,21 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
     const total = (lines ?? []).reduce((s, l) => s + (l.unit_price === null ? 0 : Number(l.qty) * Number(l.unit_price)), 0);
     return (
       <div className="flex flex-col gap-3">
+        <Field label="Loại đề xuất">{pr?.pr_kind_label}</Field>
         <Field label="Nội dung đề xuất">{pr?.note}</Field>
         <Field label="Ngày cần hàng">{df(pr?.need_date)}</Field>
         <div className="overflow-x-auto rounded border border-line">
           <table className="tbl">
-            <thead><tr><th>Mã VT</th><th>Vật tư</th><th className="num">Số lượng</th><th>ĐVT</th><th className="num">Tồn khả dụng</th><th>Ngày cần</th>{canSeePrice && <th className="num">Đơn giá</th>}{canSeePrice && <th className="num">Thành tiền</th>}</tr></thead>
+            <thead><tr><th>Mã VT</th><th>Vật tư</th><th className="num">Số lượng</th><th>ĐVT</th><th className="num">Tồn khả dụng</th><th className="num">Dự phòng</th><th>Ngày cần</th>{canSeePrice && <th className="num">Đơn giá</th>}{canSeePrice && <th className="num">Thành tiền</th>}</tr></thead>
             <tbody>
               {(lines ?? []).map((l) => (
                 <tr key={l.id}><td className="mono font-medium">{l.material_code}</td><td>{l.material_name}</td><td className="num font-medium">{nf(l.qty, 2)}</td><td>{l.uom}</td>
-                  <td className="num">{nf(l.available, 1)}</td><td>{df(l.need_date)}</td>
+                  <td className="num">{nf(l.available, 1)}</td><td className="num">{Number(l.safety_qty ?? 0) > 0 ? nf(l.safety_qty, 2) : '—'}</td><td>{df(l.need_date)}</td>
                   {canSeePrice && <td className="num">{l.unit_price === null ? <Pill tone="warn">Chưa có giá</Pill> : nf(l.unit_price)}</td>}
                   {canSeePrice && <td className="num">{l.unit_price === null ? '—' : nf(Number(l.qty) * Number(l.unit_price))}</td>}</tr>
               ))}
             </tbody>
-            {canSeePrice && <tfoot><tr><td colSpan={7} className="px-3 py-2 text-right font-medium">Tổng (dòng có giá)</td><td className="num px-3 font-medium">{nf(total)} đ</td></tr></tfoot>}
+            {canSeePrice && <tfoot><tr><td colSpan={8} className="px-3 py-2 text-right font-medium">Tổng (dòng có giá)</td><td className="num px-3 font-medium">{nf(total)} đ</td></tr></tfoot>}
           </table>
         </div>
       </div>
@@ -268,6 +269,27 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
             <Link className="font-medium text-brand hover:underline" href={`/ke-hoach/${a.doc_id}`}>Mở kế hoạch để chỉnh</Link>
           </div>
         )}
+      </div>
+    );
+  }
+  if (a.doc_type === 'SAFETY_STOCK') {
+    const [{ data: c }, { data: lines }] = await Promise.all([
+      supabase.schema('app').from('v_safety_changes').select('*').eq('id', a.doc_id).maybeSingle(),
+      supabase.schema('app').from('v_safety_change_lines').select('*').eq('change_id', a.doc_id).order('line_no'),
+    ]);
+    return (
+      <div className="flex flex-col gap-3">
+        <Field label="Lý do">{c?.reason}</Field>
+        <div className="overflow-x-auto rounded border border-line">
+          <table className="tbl">
+            <thead><tr><th>Mã VT</th><th>Vật tư</th><th className="num">Mức cũ</th><th className="num">Tiêu hao/ngày</th><th className="num">Số ngày SX</th><th className="num">Mức mới</th><th>ĐVT</th><th>Ghi chú</th></tr></thead>
+            <tbody>{(lines ?? []).map((l) => (
+              <tr key={l.id}><td className="mono font-medium">{l.material_code}</td><td>{l.material_name}</td><td className="num">{nf(l.old_qty, 2)}</td>
+                <td className="num">{Number(l.per_day) > 0 ? nf(l.per_day, 2) : '—'}</td><td className="num">{l.new_days != null ? nf(l.new_days, 1) : '—'}</td>
+                <td className="num font-medium">{nf(l.new_qty, 2)}</td><td>{l.uom}</td><td>{l.note}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
       </div>
     );
   }

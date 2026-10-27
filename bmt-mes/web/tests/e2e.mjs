@@ -242,7 +242,7 @@ ok('Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch s
   await login(p, 'bgd@bmt.test');
   await p.goto(planUrl);
   const cells = await p.locator('tr:has-text("CU-024") td').allInnerTexts();
-  if (cells[13] !== '26.800.000') fail(`BGĐ phải thấy thành tiền CU-024 = 26.800.000: ${cells.join(' | ')}`);
+  if (cells[14] !== '26.800.000') fail(`BGĐ phải thấy thành tiền CU-024 = 26.800.000: ${cells.join(' | ')}`);
   ok('BGĐ thấy thành tiền CU-024 = 100 kg × 268.000 = 26.800.000 đ');
   await c.close();
 }
@@ -324,6 +324,7 @@ await expectOk(page, 'Thêm vật tư mới TAPE-NEW');
 if (!(await page.textContent('tbody')).includes('TAPE-NEW')) fail('Vật tư mới phải hiện trong danh mục');
 await page.goto(`${BASE}/de-xuat`);
 await clickNav(page, 'a:has-text("Thêm đề xuất")');
+await page.selectOption('select[name=kind]', 'TOI_UU');
 await page.fill('input[name=note]', 'Mua bổ sung đồng cho đơn gấp');
 await page.fill('input[name=need_date]', '2026-11-05');
 const matInputs = page.locator('input[name=material_code]');
@@ -338,11 +339,13 @@ const prNo = (await page.textContent('main h1')).split(' – ')[0].trim();
 const prBody = await page.textContent('main');
 if (!prBody.includes('1.200') || !prBody.includes('12,5')) fail('Số lượng đề xuất phải là 1.200 và 12,5');
 ok('Số lượng "1.200" và "12,5" được hiểu đúng');
+if (!prBody.includes('Mua tối ưu')) fail('NV mua lập được đề xuất mua tối ưu (loại đề xuất hiện trên phiếu)');
 const stageText = await page.locator('ol[aria-label="Các giai đoạn duyệt"]').innerText();
-if (!stageText.includes('Nguyễn Văn An')) fail(`Thanh giai đoạn phải ghi người duyệt tiếp theo: ${stageText}`);
-ok(`Thanh giai đoạn hiện người duyệt tiếp theo: Nguyễn Văn An (Giám đốc) · ${prNo}`);
+if (!stageText.includes('Hoàng Thu Hà') || !stageText.includes('Giám đốc duyệt đề xuất mua')) fail(`Thanh giai đoạn phải ghi TP Mua duyệt trước, Giám đốc sau: ${stageText}`);
+ok(`Đề xuất mua tối ưu: TP Mua (Hoàng Thu Hà) duyệt → Giám đốc duyệt · ${prNo}`);
 await page.screenshot({ path: `${SHOTS}/09-de-xuat.png`, fullPage: true });
 await ctx.close();
+await approveAs('mua.tp@bmt.test', prNo, 'TP Mua');
 {
   const [c, p] = await ctxFor();
   await login(p, 'bgd@bmt.test');
@@ -483,9 +486,9 @@ if (!(await flash(page)).includes('Nhắc trước hạn')) fail('Phải chặn 
 ok('Chặn cấu hình sai: nhắc trước hạn ≥ thời hạn');
 await page.goto(`${BASE}/quan-tri/quy-trinh?f=PO`);
 const poText = await page.textContent('main');
-if (!poText.includes('giá trị ≥ 20.000.000 đ') || !poText.includes('Chủ tịch HĐQT phê duyệt')) fail(`Quy trình PO phải hiện hạn mức: ${poText.slice(0, 200)}`);
+if (poText.includes('20.000.000') || poText.includes('200.000.001') || !poText.includes('TP Mua duyệt đơn mua hàng')) fail(`Quy trình PO phải bỏ hạn mức 20/200 triệu: ${poText.slice(0, 300)}`);
 if (await page.locator('a:has-text("Thay đổi nhỏ spec")').count()) fail('Không còn quy trình Spec thay đổi nhỏ');
-ok('Cài đặt quy trình: PO theo hạn mức 20 triệu / 200 triệu; đã bỏ Spec thay đổi nhỏ');
+ok('Cài đặt quy trình: PO bỏ hạn mức 20 triệu / 200 triệu (TP Mua → Giám đốc); đã bỏ Spec thay đổi nhỏ');
 await page.goto(`${BASE}/bao-cao/hao-hut?tab=dong`);
 if (!(await page.textContent('main')).includes('Cân bằng đồng')) fail('Báo cáo hao hụt phải có tab cân bằng đồng');
 await page.goto(`${BASE}/kho/phieu?tab=duyet`);
@@ -537,7 +540,7 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   const pages = ['/kho', '/kho/ton', '/kho/phieu', '/kho/quet', '/kho/cap-phat', '/kho/kiem-ke', '/kho/nhan-hang', '/kho/so-cai', '/kho/cai-dat',
     '/lich-may', '/lenh-ngay', '/ghi-nhan-ca', '/kh-thuc-te', '/tham-so', '/may', '/may/checklist', '/may/bao-duong', '/may/toc-do',
     '/may/kiem-tra', '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut', '/phieu-hoan-thanh', '/kho/qc',
-    '/phieu-xuat-nvl', '/bao-cao/ngay', '/in/phieu-xuat-nvl', '/in/bao-cao-ca'];
+    '/phieu-xuat-nvl', '/bao-cao/ngay', '/in/phieu-xuat-nvl', '/in/bao-cao-ca', '/de-xuat/du-phong', '/de-xuat/du-phong?tab=phieu', '/ke-hoach/dieu-chinh'];
   for (const u of pages) {
     const res = await page.goto(`${BASE}${u}`);
     const body = await page.innerText('body');
@@ -608,10 +611,64 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   if (await rb.count()) {
     await Promise.all([page.waitForURL(/ok=|err=/), rb.click()]);
     await expectOk(page, 'TP SX xếp lại lịch sau khi máy hỏng');
+    if (!(await flash(page)).includes('Giám đốc duyệt')) fail('TP SX xếp lịch phải gửi Giám đốc duyệt');
+    if (!(await page.innerText('body')).includes('chờ Giám đốc duyệt')) fail('Lịch máy phải hiện bản đề xuất chờ Giám đốc duyệt');
+    await ctx.close();
+    [ctx, page] = await ctxFor();
+    await login(page, 'bgd@bmt.test');
+    await page.goto(`${BASE}/lich-may?tab=lich`);
+    if (!(await page.locator('#schedule-review').count())) fail('Giám đốc phải thấy nút duyệt lịch máy');
+    await clickNav(page, '#schedule-review button:has-text("Duyệt lịch máy")');
+    await expectOk(page, 'Giám đốc duyệt bản lịch TP SX xếp lại');
+    if (await page.locator('#schedule-review').count()) fail('Duyệt xong không còn bản chờ duyệt');
     await page.goto(`${BASE}/lich-may?tab=lich`);
     if (!(await page.innerText('body')).includes('EXT-SI-02 hỏng')) fail('Gantt không hiện khối máy hỏng');
   }
-  ok('Đợt A: vận hành không báo hỏng trên MES; TP KT/QA báo hỏng bắt buộc giờ chạy lại; Lịch máy hiện máy hỏng, TP SX xếp lại lịch');
+  ok('Đợt A: vận hành không báo hỏng trên MES; TP KT/QA báo hỏng bắt buộc giờ chạy lại; Lịch máy hiện máy hỏng, TP SX xếp lại lịch, Giám đốc duyệt');
+  await ctx.close();
+}
+
+// 11. Tồn dự phòng: TP Mua lập phiếu mức dự phòng → Giám đốc sửa khi duyệt → dưới mức: NV mua lập đề xuất mua bổ sung
+{
+  [ctx, page] = await ctxFor();
+  await login(page, 'mua.tp@bmt.test');
+  await page.goto(`${BASE}/de-xuat/du-phong`);
+  await page.fill('#lap-phieu input[name=reason]', 'Dự phòng 1 tháng sản xuất');
+  await page.locator('#lap-phieu input[name^=code_]').first().fill('TAPE-NEW');
+  await page.locator('#lap-phieu input[name^=qty_]').first().fill('500');
+  await clickNav(page, '#lap-phieu button:has-text("Lập phiếu")');
+  await expectOk(page, 'TP Mua lập phiếu điều chỉnh mức dự phòng');
+  const ssUrl = page.url().split('?')[0];
+  const ssNo = (await page.textContent('main h1')).split(' · ')[0].trim();
+  await clickNav(page, 'button:has-text("Gửi Giám đốc duyệt")');
+  await expectOk(page, `Gửi ${ssNo} cho Giám đốc duyệt`);
+  await ctx.close();
+  [ctx, page] = await ctxFor();
+  await login(page, 'bgd@bmt.test');
+  await page.goto(ssUrl);
+  if (!(await page.locator('#review-edit').count())) fail('Giám đốc đang duyệt phải sửa được phiếu dự phòng');
+  await page.locator('input[name=qty_0]').fill('400');
+  await clickNav(page, 'button:has-text("Lưu")');
+  await expectOk(page, 'Giám đốc sửa mức dự phòng TAPE-NEW 500 → 400 khi duyệt');
+  await ctx.close();
+  await approveAs('bgd@bmt.test', ssNo, 'Giám đốc');
+  [ctx, page] = await ctxFor();
+  await login(page, 'mua.nv@bmt.test');
+  await page.goto(`${BASE}/de-xuat/du-phong`);
+  const ssBody = await page.innerText('main');
+  if (!/TAPE-NEW[\s\S]{0,300}400/.test(ssBody)) fail(`TAPE-NEW phải dưới mức dự phòng 400: ${ssBody.slice(0, 400)}`);
+  await clickNav(page, '#pr-from-safety button:has-text("Lập đề xuất mua bổ sung")');
+  await expectOk(page, 'NV mua lập đề xuất mua bổ sung bù tồn dự phòng');
+  const sb = await page.innerText('main');
+  if (!sb.includes('Mua bổ sung') || !sb.includes('TAPE-NEW')) fail('Đề xuất mua bù dự phòng phải là loại Mua bổ sung, có TAPE-NEW');
+  ok('Dưới mức dự phòng: NV mua lập đề xuất mua bổ sung một lần bấm');
+  await ctx.close();
+  [ctx, page] = await ctxFor();
+  await login(page, 'sx.kh@bmt.test');
+  await page.goto(`${BASE}/ke-hoach/dieu-chinh?tab=tat-ca`);
+  const adjBody = await page.innerText('main');
+  if (!adjBody.includes('Lập phiếu đề xuất thay đổi kế hoạch tháng') || !/PDC-\d/.test(adjBody)) fail('Màn hình Điều chỉnh kế hoạch tháng phải có form lập phiếu và danh sách phiếu');
+  ok('Màn hình riêng Điều chỉnh kế hoạch tháng: lập phiếu, danh sách phiếu (Chủ tịch HĐQT duyệt)');
   await ctx.close();
 }
 
