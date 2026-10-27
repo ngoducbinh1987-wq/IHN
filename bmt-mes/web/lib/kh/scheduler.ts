@@ -28,7 +28,12 @@ export type Config = {
   plc_speeds?: PlcSpeedCfg[]; // tốc độ thực tế đo từ PLC (máy chế độ Tự động)
   group_days?: number;   // khung gom lô (ngày); 0 = không gom
 };
-export type MachineInfo = { code: string; name: string; machine_type: string; data_mode: string; tag_count: number; operators: string[] };
+export type MachineInfo = {
+  id?: string; code: string; name: string; machine_type: string; data_mode: string; tag_count: number; operators: string[];
+  status?: string; status_since?: string | null; status_eta?: string | null; status_note?: string | null;
+};
+// Khoảng máy không chạy được (phút xếp lịch): hỏng / bảo dưỡng đến giờ dự kiến chạy lại, ngừng dùng, bảo dưỡng đã chốt giữ chỗ
+export type Window = { machine: string; from: number; to: number; kind: 'DOWN' | 'MAINT' | 'OFF' | 'PM'; label: string };
 export type OperatorInfo = { code: string; job: string; extra: string | null; is_deputy: boolean; keeps_fg: boolean; skills: string[]; learning: string[] };
 
 export type Order = {
@@ -252,7 +257,18 @@ export type ScheduleOpts = {
   split?: boolean;                   // tách việc đang chạy qua mốc (đơn gấp chen vùng khóa)
   credit?: Map<string, number>;      // mét chưa làm được ở ca đã qua (theo báo cáo ca) cộng lại vào việc
   keep?: Set<string>;                // lô TP SX đã duyệt lịch: giữ nguyên chỗ trên lịch máy (cả sau mốc)
+  windows?: Window[];                // máy không chạy được: việc chưa chạy trong khoảng này xếp lại, việc mới tránh khoảng này
 };
+type Block = [number, number, string];
+// Dời điểm bắt đầu qua các khối chồng lên [st, st + len); không còn chỗ (khối vô hạn) → Infinity
+function fit(st: number, len: number, blocks: Block[]): { s: number; hit: string | null } {
+  let s = st, hit: string | null = null;
+  for (let moved = true, g = 0; moved && g < 200 && Number.isFinite(s); g++) {
+    moved = false;
+    for (const b of blocks) if (s < b[1] && s + len > b[0]) { s = b[1]; moved = true; hit = b[2]; }
+  }
+  return { s, hit };
+}
 
 export function schedule(
   orders: Order[],
@@ -264,12 +280,14 @@ export function schedule(
   const tasks = buildTasks(orders, cfg);
   const byKey = new Map(tasks.map((t) => [t.key, t]));
   const orderById = new Map(orders.map((o) => [o.id, o]));
-  const machines = ctx.machines.map((m) => ({ ...m, free: 0, last: null as Prev, slots: [] as Slot[], blocks: [] as [number, number][] }));
+  const machines = ctx.machines.map((m) => ({ ...m, free: 0, last: null as Prev, slots: [] as Slot[], blocks: [] as Block[] }));
   const cap = Math.max(1, Number(cfg.machines_per_operator) || 1);
   const workers = ctx.operators.filter((w) => w.skills.length)
-    .map((w) => ({ ...w, lanes: Array(cap).fill(0) as number[], blocks: Array.from({ length: cap }, () => [] as [number, number][]) }));
+    .map((w) => ({ ...w, lanes: Array(cap).fill(0) as number[], blocks: Array.from({ length: cap }, () => [] as Block[]) }));
   const B = opt.boundary ?? 0;
   const keep = opt.keep ?? new Set<string>();
+  const wins = (opt.windows ?? []).filter((w) => w.to > w.from);
+  const KEEP_LABEL = 'khối giữ chỗ của lô TP SX đã duyệt lịch';
 
   if (opt.from) {
     const k = (S * SPD) / (opt.from.S * opt.from.SPD); // giữ vị trí theo ngày khi đổi ca hoặc tỷ lệ xếp lịch
@@ -278,14 +296,26 @@ export function schedule(
       const m = machines.find((x) => x.code === sl.machine);
       if (!t || !m) continue;
       const start = sl.start * k, rs = sl.runStart * k, end = sl.end * k, rate = sl.rate / k;
+      // Máy hỏng / ngừng dùng / bảo dưỡng giữ chỗ: phần chưa chạy trước khi máy dừng xếp lại (sang máy cùng loại hoặc sau khi chạy lại)
+      const hit = wins.find((w) => w.machine === sl.machine && end > w.from && start < w.to);
+      if (hit) {
+        if (rs >= hit.from) continue;
+        const mm = (hit.from - rs) * rate;
+        const ns = { ...sl, start, runStart: rs, end: hit.from, rate, meters: mm, part: true, reason: `Phần đã chạy trước khi ${hit.label}, phần còn lại xếp lại` };
+        t.m -= mm;
+        m.slots.push(ns);
+        const w = workers.find((x) => x.code === sl.operator);
+        if (w) { const li = Math.min(sl.lane || 0, cap - 1); w.lanes[li] = Math.max(w.lanes[li], ns.end); ns.lane = li; }
+        continue;
+      }
       if (start >= B) {
         // Lô đã duyệt lịch: giữ chỗ (khối cố định trên máy và người), việc khác xếp vào khoảng trống trước/sau khối
         if (!keep.has(sl.lineId)) continue;
         const ns = { ...sl, start, runStart: rs, end, rate, reason: sl.reason.startsWith('Giữ chỗ') ? sl.reason : `Giữ chỗ (TP SX đã duyệt lịch lô) · ${sl.reason}` };
         t.m -= sl.meters;
-        m.slots.push(ns); m.blocks.push([start, end]);
+        m.slots.push(ns); m.blocks.push([start, end, KEEP_LABEL]);
         const w = workers.find((x) => x.code === sl.operator);
-        if (w) { const li = Math.min(sl.lane || 0, cap - 1); w.blocks[li].push([start, end]); ns.lane = li; }
+        if (w) { const li = Math.min(sl.lane || 0, cap - 1); w.blocks[li].push([start, end, KEEP_LABEL]); ns.lane = li; }
         continue;
       }
       let ns: Slot;
@@ -304,6 +334,7 @@ export function schedule(
     }
   }
   if (opt.credit) for (const [key, mm] of opt.credit) { const t = byKey.get(key); if (t) t.m += mm; } // thiếu thì cộng, vượt thì trừ
+  for (const w of wins) machines.find((m) => m.code === w.machine)?.blocks.push([w.from, w.to, w.label]);
 
   const pending = new Set<number>();
   for (const t of tasks) { if (t.m > 1) { t.run = t.m / t.rate; pending.add(t.id); } else t.m = 0; }
@@ -369,9 +400,10 @@ export function schedule(
 
   let guard = 0;
   while (pending.size && guard++ < 50000) {
-    const opts: { m: (typeof machines)[number]; t: Task; r: number; st: number; rs: number; sp: Speed; run: number; lead: Task; ln: NonNullable<ReturnType<typeof laneFor>> }[] = [];
+    const opts: { m: (typeof machines)[number]; t: Task; r: number; st: number; raw: number; hit: string | null; rs: number; sp: Speed; run: number; lead: Task; ln: NonNullable<ReturnType<typeof laneFor>> }[] = [];
     for (const m of machines) {
       const ln = laneFor(m.code); if (!ln) continue;
+      const bl = [...m.blocks, ...ln.w.blocks[ln.li]];
       const cands: Cand[] = [];
       for (const id of pending) {
         const t = tasks[id];
@@ -380,12 +412,17 @@ export function schedule(
         const r = ready(t, run); if (r !== null) cands.push({ t, r, sp, run });
       }
       if (!cands.length) continue;
-      const startOf = (x: { r: number }) => Math.max(m.free, x.r, ln.f);
-      const minStart = Math.min(...cands.map(startOf));
-      const pool = cands.filter((x) => startOf(x) <= minStart + S / 2);
+      // Bắt đầu sớm nhất trên máy này, đã tránh khối máy hỏng / bảo dưỡng / giữ chỗ (máy hỏng thì máy cùng loại thắng)
+      const rawOf = (x: { r: number }) => Math.max(m.free, x.r, ln.f);
+      const startOf = (x: Cand) => fit(rawOf(x), x.run, bl).s;
+      const ok = cands.filter((x) => Number.isFinite(startOf(x)));
+      if (!ok.length) continue;
+      const minStart = Math.min(...ok.map(startOf));
+      const pool = ok.filter((x) => startOf(x) <= minStart + S / 2);
       const { x, lead, su } = pick(pool, m.last);
-      const st0 = startOf(x);
-      opts.push({ m, t: x.t, r: x.r, st: st0, rs: st0 + su, sp: x.sp, run: x.run, lead: lead.t, ln });
+      const f = fit(rawOf(x), su + x.run, bl);
+      if (!Number.isFinite(f.s)) continue;
+      opts.push({ m, t: x.t, r: x.r, st: f.s, raw: rawOf(x), hit: f.s > rawOf(x) ? f.hit : null, rs: f.s + su, sp: x.sp, run: x.run, lead: lead.t, ln });
     }
     if (!opts.length) break;
     // máy dùng chung người: trong nửa ca đầu, ưu tiên đơn gấp và hạn giao sớm
@@ -395,19 +432,13 @@ export function schedule(
     const { m, t, ln, sp, run, lead } = best;
     const [su, why] = changeover(cfg, m.last, t);
     const prevOp = t.k > 0 ? t.order.route[t.k - 1] : null;
-    // Tránh khối giữ chỗ của lô đã duyệt (máy và người): dời đến sau khối nếu chồng lên
-    let st0 = best.st;
-    for (let moved = true, g = 0; moved && g < 100; g++) {
-      moved = false;
-      const e0 = st0 + su + run;
-      for (const b of [...m.blocks, ...ln.w.blocks[ln.li]]) if (st0 < b[1] && e0 > b[0]) { st0 = b[1]; moved = true; }
-    }
+    const st0 = best.st;
     let reason: string;
     if (prevOp && st0 === best.r && best.r > m.free && best.r >= ln.f) reason = `Chờ ${OP_NAME[prevOp].toLowerCase()} của lệnh này chạy trước ít nhất 1 ca (gối đầu)`;
     else if (st0 === ln.f && ln.f > m.free) reason = `Chờ người: ${ln.w.code} đang đứng máy khác, xong việc mới sang máy này`;
     else reason = m.last ? 'Máy làm xong việc trước thì chạy tiếp' : 'Máy và người đều sẵn, chạy ngay';
     const dmy = (d: string | null) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'chưa có';
-    if (st0 > best.st) reason += ' · Dời sau khối giữ chỗ của lô TP SX đã duyệt lịch';
+    if (best.hit) reason += ` · Dời sau ${best.hit}`;
     if (lead !== t) reason += ` · Gom lô: chạy liền ${what(t)} để giảm đổi máy (hạn ${dmy(t.order.due)}, trong khung ${G} ngày so với ${lead.order.label} hạn ${dmy(lead.order.due)})`;
     else if (m.last && su === 0 && m.last.order.id !== t.order.id) reason += ` · Cùng ${what(t)} với việc trước, không đổi máy`;
     const v1 = Math.round(sp.v * 10) / 10;

@@ -35,6 +35,18 @@ function payload(kh: Kh, orders: Order[], r: ReturnType<typeof rebuild>) {
 
 // Số lệnh đã có trong lịch cũ bị đổi ngày xong (không tính lệnh mới thêm)
 const moved = (kh: Kh, r: ReturnType<typeof rebuild>) => kh.orders.filter((o) => kh.fin.has(o.id) && kh.fin.get(o.id)!.placed && (kh.fin.get(o.id)!.finDate ?? null) !== (r.fin.get(o.id)?.finDate ?? null)).length;
+const dm = (d: string | null | undefined) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'chưa xếp');
+// Lô bị lùi ngày xong và lô mới trễ hạn giao sau khi xếp lại
+function pushedLots(kh: Kh, r: ReturnType<typeof rebuild>) {
+  const pushed: string[] = [], late: string[] = [];
+  for (const o of kh.orders) {
+    const a = kh.fin.get(o.id), b = r.fin.get(o.id);
+    if (!a?.placed || !a.finDate) continue;
+    if (!b?.finDate || b.finDate > a.finDate) pushed.push(`${o.label} ${o.product_code} ${dm(a.finDate)} → ${dm(b?.finDate)}`);
+    if ((b?.slack ?? 0) < 0 && !((a.slack ?? 0) < 0)) late.push(`${o.label} ${o.product_code} xong ${dm(b?.finDate)}, hạn ${dm(o.due)}`);
+  }
+  return { pushed, late };
+}
 
 export async function rebuildSchedule(form: FormData) {
   const planId = String(form.get('plan_id'));
@@ -47,14 +59,25 @@ export async function rebuildSchedule(form: FormData) {
   const { credit, missingReports } = await carryOver(db, kh);
   const r = rebuild(kh, kh.orders, { credit });
   if (!r.sch.slots.length) go(q, 'err', 'Không xếp được việc nào: kiểm tra người đứng máy và tay nghề');
-  const reason = kh.version ? (kh.dirty ? 'Xếp lại lịch theo tham số mới' : 'Xếp lại lịch theo báo cáo ca và kế hoạch') : 'Xếp lịch lần đầu';
-  const { error } = await db.schema('app').rpc('kh_save_schedule', { p_plan: planId, ...payload(kh, kh.orders, r), p_reason: reason, p_change: null });
+  const down = r.windows.filter((w) => w.kind !== 'PM').map((w) => w.label);
+  const reason = kh.version
+    ? (down.length ? `Xếp lại lịch: ${down.join('; ')}` : kh.dirty ? 'Xếp lại lịch theo tham số mới' : 'Xếp lại lịch theo báo cáo ca và kế hoạch')
+    : 'Xếp lịch lần đầu';
+  const { error } = await db.schema('app').rpc('kh_save_schedule', { p_plan: planId, ...payload(kh, kh.orders, r), p_reason: reason.slice(0, 300), p_change: null });
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
-  const n = kh.version ? moved(kh, r) : 0;
-  go(q, 'ok', kh.version
-    ? `Đã xếp lại lịch · ${n} lệnh đổi ngày xong · phần đã chạy và vùng khóa ${kh.cfg.frozen_days} ngày giữ nguyên${missingReports ? ` · ${missingReports} ca-máy đã qua chưa có báo cáo ca xác nhận (coi như đạt kế hoạch)` : ''}`
-    : `Đã xếp lịch máy từ ${kh.planNo}. Phiên bản 1.`);
+  revalidatePath('/lenh-ngay');
+  if (!kh.version) go(q, 'ok', `Đã xếp lịch máy từ ${kh.planNo}. Phiên bản 1.`);
+  const { pushed, late } = pushedLots(kh, r);
+  // Lô trễ hạn giao do xếp lại (máy hỏng, bảo dưỡng…): cảnh báo đỏ Giám đốc
+  if (late.length) await db.schema('app').rpc('kh_late_alert', { p_plan: planId, p_reason: reason, p_lines: late });
+  go(q, 'ok', [
+    `Đã xếp lại lịch · ${moved(kh, r)} lệnh đổi ngày xong`,
+    r.early ? 'máy không chạy được trong vùng khóa: xếp lại từ ngày mai, lệnh ngày đã phát cần phát lại bản mới' : `phần đã chạy và vùng khóa ${kh.cfg.frozen_days} ngày giữ nguyên`,
+    pushed.length ? `Lô bị lùi: ${pushed.join('; ')}` : '',
+    late.length ? `Đã cảnh báo đỏ Giám đốc: ${late.length} lô trễ hạn giao` : '',
+    missingReports ? `${missingReports} ca-máy đã qua chưa có báo cáo ca xác nhận (coi như đạt kế hoạch)` : '',
+  ].filter(Boolean).join(' · '));
 }
 
 export async function setLine(form: FormData) {
@@ -190,4 +213,30 @@ export async function approveLot(form: FormData) {
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
   go(q, 'ok', ok ? 'Đã duyệt lịch lô: giữ chỗ trên lịch máy, xếp lại lịch không dời lô này. MES phát lệnh SX từng ngày theo lịch.' : 'Đã bỏ giữ chỗ lịch lô');
+}
+
+// Bảo dưỡng trên lịch máy: TP KT/QA đề xuất ngày + cách làm; TP SX chốt (vùng khóa: Giám đốc) hoặc trả lại
+export async function proposeMaint(form: FormData) {
+  const q = `plan=${String(form.get('plan_id') ?? '')}&tab=baoduong`;
+  const date = String(form.get('date') ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) go(q, 'err', 'Chọn ngày bảo dưỡng');
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('maint_propose', {
+    p_plan: form.get('maint_plan') ? String(form.get('maint_plan')) : null, p_wo: form.get('wo') ? String(form.get('wo')) : null,
+    p_date: date, p_mode: String(form.get('mode') ?? ''), p_note: String(form.get('note') ?? '') || null,
+  });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  go(q, 'ok', 'Đã đề xuất ngày bảo dưỡng. TP SX (trong vùng khóa lịch: Giám đốc) đã nhận thông báo để chốt.');
+}
+
+export async function confirmMaint(form: FormData) {
+  const q = `plan=${String(form.get('plan_id') ?? '')}&tab=baoduong`;
+  const ok = form.get('ok') === '1';
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('maint_confirm', { p_wo: String(form.get('wo')), p_ok: ok, p_note: String(form.get('note') ?? '') || null });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  revalidatePath('/lenh-ngay');
+  go(q, 'ok', ok ? 'Đã chốt ngày bảo dưỡng. Bảo dưỡng trong ca thành khối giữ chỗ khi bấm Xếp lại lịch.' : 'Đã trả lại TP KT/QA chọn ngày khác');
 }

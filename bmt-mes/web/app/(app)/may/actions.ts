@@ -59,7 +59,7 @@ export async function setStatus(form: FormData) {
     p_note: opt(form, 'note'), p_eta: vnDateTime(form.get('eta')),
   });
   if (error) back(form, 'err', friendly(error.message));
-  done(form, txt(form, 'status') === 'DOWN' ? 'Đã báo hỏng, mở phiếu sửa chữa và báo TP Kỹ thuật/QA' : 'Đã cập nhật trạng thái máy');
+  done(form, txt(form, 'status') === 'DOWN' ? 'Đã báo hỏng: mở phiếu sửa chữa, báo TP Kỹ thuật/QA; TP SX được báo xếp lại lịch máy' : 'Đã cập nhật trạng thái máy');
 }
 
 // ---------------------------------------------------------------- Thông số, linh kiện, dải, tốc độ, người, tài liệu
@@ -291,7 +291,7 @@ export async function confirmWo(form: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.schema('app').rpc('confirm_maint_wo', { p_id: txt(form, 'id') });
   if (error) back(form, 'err', friendly(error.message));
-  done(form, 'Đã xác nhận phiếu');
+  done(form, 'Đã xác nhận máy chạy lại đạt');
 }
 
 export async function cancelWo(form: FormData) {

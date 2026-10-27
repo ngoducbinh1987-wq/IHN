@@ -34,8 +34,8 @@ export default async function WoPage({ params, searchParams }: { params: Promise
         {w.status === 'OPEN' && can(me, 'machine', 'edit') && (
           <form action={startWo}><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><SubmitButton>Bắt đầu làm</SubmitButton></form>
         )}
-        {w.status === 'DONE' && !w.confirmed_at && can(me, 'machine', 'approve') && (
-          <form action={confirmWo}><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><SubmitButton>Xác nhận phiếu</SubmitButton></form>
+        {w.status === 'DONE' && !w.confirmed_at && ['SX_TP', 'ADMIN'].some((r) => me.roles.includes(r)) && w.done_by !== me.id && (
+          <form action={confirmWo}><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><SubmitButton>Xác nhận máy chạy lại đạt</SubmitButton></form>
         )}
         {w.plan_id && <Link className="btn btn-soft" href={`/may/bao-duong/ke-hoach/${w.plan_id}`}>Kế hoạch</Link>}
         <Link className="btn" href="/may/bao-duong?loc=phieu">Đóng</Link>
@@ -133,7 +133,7 @@ export default async function WoPage({ params, searchParams }: { params: Promise
           {w.started_at && <InfoRow label="Bắt đầu">{df(w.started_at, true)}</InfoRow>}
           {w.finished_at && <InfoRow label="Xong">{df(w.finished_at, true)}{w.done_by_name ? ` · ${w.done_by_name}` : ''}</InfoRow>}
           {w.result && <InfoRow label="Kết quả">{w.result === 'OK' ? <Pill tone="ok">Đạt</Pill> : <Pill tone="bad">Chưa đạt</Pill>}</InfoRow>}
-          <InfoRow label="TP Kỹ thuật/QA">{w.confirmed_at ? `Đã xác nhận ${df(w.confirmed_at, true)} · ${w.confirmed_by_name ?? ''}` : w.status === 'DONE' ? 'Chờ xác nhận' : '—'}</InfoRow>
+          <InfoRow label="TP SX xác nhận">{w.confirmed_at ? `Máy chạy lại đạt · ${df(w.confirmed_at, true)} · ${w.confirmed_by_name ?? ''}` : w.status === 'DONE' ? 'Chờ TP SX xác nhận máy chạy lại đạt' : '—'}</InfoRow>
           {w.status === 'OPEN' && can(me, 'machine', 'edit') && (
             <form action={cancelWo} className="py-3"><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} />
               <SubmitButton className="btn btn-sm btn-bad-o" pendingText="…">Hủy phiếu</SubmitButton></form>

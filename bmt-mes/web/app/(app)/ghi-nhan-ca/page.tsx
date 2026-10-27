@@ -180,7 +180,7 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
             </section>
 
             <section className="card">
-              <div className="card-h"><h2>Dừng máy</h2><span className="text-[13px] font-normal text-muted">trên {kh.cfg.downtime_reason_min} phút bắt buộc chọn lý do · hỏng máy báo ngay TP Kỹ thuật/QA</span></div>
+              <div className="card-h"><h2>Dừng máy</h2><span className="text-[13px] font-normal text-muted">trên {kh.cfg.downtime_reason_min} phút bắt buộc chọn lý do · chốt ca: MES ghi vào lịch sử máy, hỏng máy chưa có phiếu thì mở phiếu sửa chữa</span></div>
               <div className="overflow-x-auto"><table className="tbl">
                 <thead><tr><th>Dừng lúc</th><th>Chạy lại lúc</th><th className="num">Phút</th><th>Lý do</th></tr></thead>
                 <tbody>{dts.length ? dts.map((d, i) => (
