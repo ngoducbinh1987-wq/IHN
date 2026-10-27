@@ -121,14 +121,14 @@ export async function deleteRow(form: FormData) {
   done(form, 'Đã xóa');
 }
 
-// Dải hoạt động: một khoảng đường kính (mm) cho mỗi dây chuyền; để trống cả hai thì bỏ dải
+// Dải hoạt động: một khoảng tiết diện ruột dẫn (mm²) cho mỗi dây chuyền; để trống cả hai thì bỏ dải
 export async function saveRange(form: FormData) {
   const supabase = await createClient();
   const machineId = txt(form, 'machine_id');
   const min = num(form, 'min_value'), max = num(form, 'max_value');
-  if ((min !== null && min <= 0) || (max !== null && max <= 0)) back(form, 'err', 'Đường kính phải lớn hơn 0');
-  if (min !== null && max !== null && min > max) back(form, 'err', 'Đường kính "từ" lớn hơn "đến"');
-  const { data: cur, error: e0 } = await supabase.schema('master').from('machine_ranges').select('id').eq('machine_id', machineId).eq('param', 'OD_MM');
+  if ((min !== null && min <= 0) || (max !== null && max <= 0)) back(form, 'err', 'Tiết diện phải lớn hơn 0');
+  if (min !== null && max !== null && min > max) back(form, 'err', 'Tiết diện "từ" lớn hơn "đến"');
+  const { data: cur, error: e0 } = await supabase.schema('master').from('machine_ranges').select('id').eq('machine_id', machineId).eq('param', 'SIZE_MM2');
   if (e0) back(form, 'err', friendly(e0.message));
   const id = cur?.[0]?.id as string | undefined;
   if (min === null && max === null) {
@@ -139,10 +139,10 @@ export async function saveRange(form: FormData) {
     }
     done(form, 'Đã bỏ dải hoạt động');
   }
-  const row = { min_value: min, max_value: max, uom: 'mm' };
+  const row = { min_value: min, max_value: max, uom: 'mm²' };
   const res = id
     ? await supabase.schema('master').from('machine_ranges').update(row).eq('id', id).select('id')
-    : await supabase.schema('master').from('machine_ranges').insert({ ...row, machine_id: machineId, param: 'OD_MM', label: 'Đường kính' }).select('id');
+    : await supabase.schema('master').from('machine_ranges').insert({ ...row, machine_id: machineId, param: 'SIZE_MM2', label: 'Tiết diện ruột' }).select('id');
   if (res.error) back(form, 'err', friendly(res.error.message));
   if (!res.data?.length) back(form, 'err', 'Bạn chưa có quyền sửa dải hoạt động');
   done(form, 'Đã lưu dải hoạt động');

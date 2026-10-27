@@ -229,11 +229,7 @@ function DeleteBtn({ table, id, back, label = 'Xóa' }: { table: string; id: str
 }
 
 // ---------------------------------------------------------------- Tốc độ + dải hoạt động
-// Dải hoạt động = đường kính sản phẩm ra khỏi máy (kiểm tra kế hoạch so với đường kính trong spec)
-const RANGE_HINT: Record<string, string> = {
-  BUNCHER: 'đường kính ruột sau khi bện', EXTRUDER_SI: 'đường kính lõi sau khi bọc cách điện',
-  EXTRUDER_TP: 'đường kính lõi/cáp sau khi bọc', TWISTER: 'đường kính bó cáp sau khi xoắn',
-};
+// Dải hoạt động = tiết diện ruột dẫn (mm²) máy làm được; kiểm tra kế hoạch so với tiết diện trong spec, mọi loại máy
 
 async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, canApprove, back }:
   { lineId: string; isLine: boolean; machineType: string | null; cfg: boolean; canPropose: boolean; meId: string; canApprove: boolean; back: string }) {
@@ -242,7 +238,7 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
   }
   const supabase = await createClient();
   const [{ data: ranges }, { data: speeds }, { data: ops }, { data: cores }, { data: products }, { data: line }, { data: plcAll }] = await Promise.all([
-    supabase.schema('app').from('v_machine_ranges').select('id, min_value, max_value').eq('machine_id', lineId).eq('param', 'OD_MM'),
+    supabase.schema('app').from('v_machine_ranges').select('id, min_value, max_value').eq('machine_id', lineId).eq('param', 'SIZE_MM2'),
     supabase.schema('app').from('v_machine_speeds').select('*').eq('machine_id', lineId).neq('status', 'OBSOLETE'),
     supabase.schema('master').from('operations').select('code, name').order('seq'),
     supabase.schema('master').from('core_types').select('code, nominal_mm2').order('nominal_mm2'),
@@ -265,17 +261,17 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
   return (
     <>
       <section className="card mb-4">
-        <div className="card-h">Dải hoạt động<span className="text-[13px] font-normal text-muted">{RANGE_HINT[machineType ?? ''] ?? 'đường kính sản phẩm ra khỏi máy'} · kiểm tra kế hoạch chặn mã ngoài dải</span></div>
+        <div className="card-h">Dải hoạt động<span className="text-[13px] font-normal text-muted">tiết diện ruột dẫn máy làm được · kiểm tra kế hoạch chặn mã ngoài dải</span></div>
         {cfg ? (
           <form action={saveRange} className="flex flex-wrap items-end gap-3 p-4">
             <input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="back" value={back} />
-            <label className="lbl w-[130px]">Từ (mm)<input name="min_value" className="inp" inputMode="decimal" defaultValue={numIn(rg?.min_value)} /></label>
-            <label className="lbl w-[130px]">Đến (mm)<input name="max_value" className="inp" inputMode="decimal" defaultValue={numIn(rg?.max_value)} /></label>
+            <label className="lbl w-[130px]">Từ (mm²)<input name="min_value" className="inp" inputMode="decimal" defaultValue={numIn(rg?.min_value)} /></label>
+            <label className="lbl w-[130px]">Đến (mm²)<input name="max_value" className="inp" inputMode="decimal" defaultValue={numIn(rg?.max_value)} /></label>
             <SubmitButton>Lưu dải</SubmitButton>
             <span className="pb-2 text-[12.5px] text-muted">Để trống cả hai là không giới hạn.</span>
           </form>
         ) : (
-          <div className="p-4 text-[15px]">{rg ? <>Đường kính <b className="tabular-nums">{rg.min_value === null ? '…' : nf(rg.min_value, 2)} – {rg.max_value === null ? '…' : nf(rg.max_value, 2)} mm</b></> : <span className="text-muted">Chưa khai (không giới hạn)</span>}</div>
+          <div className="p-4 text-[15px]">{rg ? <>Tiết diện ruột <b className="tabular-nums">{rg.min_value === null ? '…' : nf(rg.min_value, 2)} – {rg.max_value === null ? '…' : nf(rg.max_value, 2)} mm²</b></> : <span className="text-muted">Chưa khai (không giới hạn)</span>}</div>
         )}
       </section>
 
