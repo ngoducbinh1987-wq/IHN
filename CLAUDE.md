@@ -169,7 +169,7 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 ## Gọn menu theo quy trình final (28/10/2026, chỉ web, đẩy `main`)
 - Anh Bình duyệt: bỏ khỏi menu Quét mã QR, Cấp NVL cho SX, Nhận NVL tại máy (công nhân dùng giấy, xuất NVL qua `/phieu-xuat-nvl`); trang vẫn còn (link mã tem `/kho/quet?ma=`, `/lenh-ngay` → `/kho/cap-phat/[id]`). Tổng quan kho bỏ ô Quét mã, Cấp NVL, Nhận NVL tại máy, Trả NVL thừa, thêm ô "Phiếu xuất NVL, NVL thừa"; số "Phiếu lĩnh chờ cấp" dẫn sang `/phieu-xuat-nvl`; bỏ số "NVL chờ tôi xác nhận". Menu công nhân/tổ trưởng bỏ các trang kho này.
 - "Máy, người & tham số" đổi thành **Tham số xếp lịch** (`/tham-so`): bỏ bảng Người và tay nghề (trùng Hồ sơ máy → Người đứng máy, có link); thẻ "Ca làm việc" thêm **ngày làm việc** (server action `saveShifts` gọi `kh_save_shifts` rồi `save_work_calendar` khi đổi ngày, giờ ca A chia đôi quanh giờ nghỉ); thẻ tham số đổi tên "Tham số chung". `/may/cai-dat` bỏ form lịch làm việc (chỉ hiện giá trị + link sang Tham số xếp lịch), xóa action `saveWorkCalendar`; hàm DB `app.save_work_calendar` vẫn dùng. Ca, ngày làm việc, tỷ lệ xếp lịch, số máy/người giờ chỉ sửa ở `/tham-so`.
-- Kiểm thử: E2E mục 8b (menu, thêm/bỏ CN ở ngày làm việc, Cài đặt máy không còn form).
+- Kiểm thử: E2E 77/77 (mục 8b: menu, thêm/bỏ CN ở ngày làm việc, Cài đặt máy không còn form; mục 7: menu vận hành không còn Nhận NVL, Quét mã).
 
 ## Việc còn chờ
 - Tạo tài khoản: Quản lý SX (Quản lý sản xuất + Tổ trưởng ca + Kế hoạch SX + Thủ kho, kho KNL/KBTP/KPL), Kế toán SX (Kế toán kho + Kế toán giá thành), NV mua hàng, 5 công nhân (email nội bộ; NV3 thêm NV kho, kho KTP vì NV3 giữ kho thành phẩm theo chỉ đạo 25/10/2026; NV1 là tổ phó).
