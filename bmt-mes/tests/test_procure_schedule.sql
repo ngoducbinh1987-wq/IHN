@@ -62,6 +62,8 @@ do $$ begin
 end $$;
 -- Vật tư thử: chưa có tồn, mức dự phòng 0 (đặt lại trong giao dịch)
 update master.materials set safety_stock = 0, safety_days = null where safety_stock <> 0 or safety_days is not null;
+-- Dữ liệu thật có thể đã có kế hoạch tháng duyệt (tiêu hao/ngày theo MRP): tạm coi là sơ bộ trong giao dịch để kiểm từ đầu
+update plan.production_plans set mode = 'PRELIMINARY' where status = 'APPROVED' and mode = 'OFFICIAL';
 insert into t select 'm_other', id from master.materials where code not in ('CU-024', 'PVC-FR') and not is_scrap and active order by code limit 1;
 
 -- ================================================================ 1. Chủ tịch HĐQT ra khỏi bước Giám đốc
