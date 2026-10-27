@@ -51,13 +51,13 @@ set client_min_messages = notice;
 -- ---------------------------------------------------------------- người dùng thử, tạm ngưng tài khoản thật
 update core.profiles set status = 'INACTIVE' where coalesce(employee_code, '') not like 'Q\_%';
 with u(code, role) as (values ('Q_ADM','ADMIN'),('Q_BGD','BGD'),('Q_SXTP','SX_TP'),('Q_CT','BGD'),('Q_CT','SX_TP'),('Q_MUA','MUA_NV'),
-                              ('Q_KHONV','KHO_NV'),('Q_KTTP','KT_TP'),('Q_KTTP','QC'),('Q_KTTP2','KT_TP')),
+                              ('Q_KHONV','KHO_NV'),('Q_KTTP','KT_TP'),('Q_KTTP','QC'),('Q_KTTP2','KT_TP'),('Q_MUATP','MUA_TP')),
 ins as (insert into auth.users (id, email) select gen_random_uuid(), lower(code) || '@bmt.test' from (select distinct code from u) x returning id, email)
 insert into core.profiles (id, employee_code, full_name, status)
 select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('Q_ADM','ADMIN'),('Q_BGD','BGD'),('Q_SXTP','SX_TP'),('Q_CT','BGD'),('Q_CT','SX_TP'),('Q_MUA','MUA_NV'),
-  ('Q_KHONV','KHO_NV'),('Q_KTTP','KT_TP'),('Q_KTTP','QC'),('Q_KTTP2','KT_TP')) u(code, role) on u.code = p.employee_code;
+  ('Q_KHONV','KHO_NV'),('Q_KTTP','KT_TP'),('Q_KTTP','QC'),('Q_KTTP2','KT_TP'),('Q_MUATP','MUA_TP')) u(code, role) on u.code = p.employee_code;
 -- Bước Chủ tịch HĐQT của kế hoạch tháng giao đích danh Q_CT
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('Q_CT')] where doc_type = 'PLAN' and seq = 2;
 -- Máy duyệt cần quy trình 2 bước có bước 1 của vai trò khác: trong giao dịch thử đặt bước 1 kế hoạch tháng = Quản lý SX
@@ -75,6 +75,8 @@ select pg_temp.ok(pg_temp.api($$select (core.has_role('KT_KHO') or core.is_admin
 select pg_temp.as_user('Q_MUA');
 insert into t select 'pr', pg_temp.api($$select app.create_pr(null, 'Thử UAT', '[{"material_code":"CU-024","qty":100}]')::text$$)::uuid;
 select pg_temp.api(format($$select wf.submit('PR', %L, '', 'Thử')::text$$, pg_temp.v('pr')));
+select pg_temp.as_user('Q_MUATP');   -- bước 1 TP Mua (migration 4500), bước 2 Giám đốc
+select pg_temp.api(format($$select wf.act(%L, 'APPROVE', 'TP Mua duyệt')$$, pg_temp.req(pg_temp.v('pr'))));
 select pg_temp.as_user('Q_ADM');
 select pg_temp.api(format($$select wf.act(%L, 'APPROVE', 'Quản trị duyệt')$$, pg_temp.req(pg_temp.v('pr'))));
 select pg_temp.ok((select status from purchase.purchase_requests where id = pg_temp.v('pr')) = 'APPROVED', 'Quản trị duyệt được bước Giám đốc của PR');

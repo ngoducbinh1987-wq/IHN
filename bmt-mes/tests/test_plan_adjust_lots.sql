@@ -155,21 +155,31 @@ insert into t select 'adj2', app.adj_create((select v from t where k = 'plan'), 
 select app.adj_save((select v from t where k = 'adj2'), null, jsonb_build_array(jsonb_build_object('kind', 'REMOVE', 'plan_line_id', (select v from t where k = 'line'))));
 select pg_temp.fails($$select app.adj_submit((select v from t where k = 'adj2'))$$, 'không bỏ được', 'Lô đang sản xuất không bỏ được: giảm số mét thay vì bỏ');
 
--- ================================================================ 4. Đơn phát sinh: lô ngoài kế hoạch phải qua Chủ tịch HĐQT
+-- ================================================================ 4. Đơn phát sinh: Chủ tịch HĐQT không duyệt, Giám đốc duyệt (quy trình 28/10/2026)
 insert into t select 'dps', app.kh_create_change((select v from t where k = 'plan'),
   '{"product_code":"PFR-2C-1P5","qty_m":500,"priority":"1","due_date":"2099-01-01"}', '{"placed":true,"slack":-1,"newly":["x"]}', 'B', '[]');
-select pg_temp.ok((select jsonb_array_length(steps) = 3 and steps->1->>'label' like 'Chủ tịch HĐQT%' and steps->2->>'role' = 'BGD'
-                          and (steps->1->'user_ids') ? pg_temp.uid('P_CT')::text
+select pg_temp.ok((select jsonb_array_length(steps) = 2 and steps->1->>'role' = 'BGD' and steps::text not like '%Chủ tịch%'
                    from plan.change_requests where id = (select v from t where k = 'dps')),
-  'Đơn phát sinh mức B: lập → Chủ tịch HĐQT (đích danh) → Giám đốc');
-select pg_temp.as_user('P_GD');
-select pg_temp.fails($$select app.kh_change_step((select v from t where k = 'dps'), 'approve', null)$$, 'Chủ tịch', 'Giám đốc không duyệt thay bước Chủ tịch');
+  'Đơn phát sinh mức B: lập → Giám đốc (không có bước Chủ tịch HĐQT)');
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title like 'Đơn phát sinh%')
+  and not exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_CT') and title like 'Đơn phát sinh%'),
+  'Đơn phát sinh báo Giám đốc, không báo Chủ tịch');
 select pg_temp.as_user('P_CT');
-select pg_temp.ok(app.kh_change_step((select v from t where k = 'dps'), 'approve', null) = 'PENDING', 'Chủ tịch duyệt lô ngoài kế hoạch, chuyển Giám đốc duyệt chen lịch');
+select pg_temp.fails($$select app.kh_change_step((select v from t where k = 'dps'), 'approve', null)$$, 'Chủ tịch HĐQT không duyệt', 'Chủ tịch không duyệt lô phát sinh');
 select pg_temp.as_user('P_GD');
-select pg_temp.ok(app.kh_change_step((select v from t where k = 'dps'), 'approve', null) = 'READY', 'Giám đốc duyệt phần chen lịch');
+select pg_temp.fails($$select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"PFR-2C-1P5","qty_m":400,"priority":"1","due_date":"2099-01-01"}',
+  '{"placed":true,"slack":-1,"newly":["x"]}', ' ')$$, 'lý do', 'Giám đốc sửa đơn phát sinh phải ghi lý do');
+select pg_temp.fails($$select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"PFR-2C-1P5","qty_m":400,"priority":"0","br":true,"due_date":"2099-01-01"}',
+  '{"placed":true,"slack":-1,"newly":["x"]}', 'Gấp')$$, 'cần mức C', 'Sửa làm đơn cần mức cao hơn (chen vùng khóa): phải trả lại lập lại');
+select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"PFR-2C-1P5","qty_m":400,"priority":"1","due_date":"2099-01-05"}',
+  '{"placed":true,"slack":2,"newly":[]}', 'Khách chỉ cần 400 m');
+select pg_temp.ok((select (payload->>'qty_m')::numeric = 400 and payload->>'due_date' = '2099-01-05' and jsonb_array_length(steps->1->'edits') = 1
+                   from plan.change_requests where id = (select v from t where k = 'dps'))
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_SXKH') and title like 'Đơn phát sinh%sửa khi duyệt'),
+  'Giám đốc sửa số mét, hạn giao khi duyệt: ghi lịch sử, báo người lập');
+select pg_temp.ok(app.kh_change_step((select v from t where k = 'dps'), 'approve', null) = 'READY', 'Giám đốc duyệt lô phát sinh');
 
--- ================================================================ 5. Lịch theo lô: ngày dự kiến, ngày chốt, giữ chỗ
+-- ================================================================ 5. Lịch theo lô: TP SX đệ trình ngày chốt, Giám đốc duyệt giữ chỗ
 -- Lịch máy đang dùng: lô xong dự kiến +12 ngày
 insert into plan.schedule_versions (plan_id, version, is_current, base_date, params, reason)
 values ((select v from t where k = 'plan'), 1, true, pg_temp.today(), '{}', 'thử');
@@ -180,20 +190,39 @@ insert into plan.schedule_slots (version_id, plan_line_id, op_code, machine_code
 values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'CD1', 'BUN-01', 0, 10, 400, 10000, 25, 25);
 select pg_temp.ok((select eta_date = pg_temp.today() + 12 from app.v_kh_plan_lines where id = (select v from t where k = 'line')), 'Ngày dự kiến xong lấy từ lịch máy đang dùng');
 select pg_temp.as_user('P_GD');
-select pg_temp.fails($$select app.kh_commit_lot((select v from t where k = 'line'), pg_temp.today() + 14, null)$$, 'TP SX', 'Chỉ TP SX chốt ngày lô');
+select pg_temp.fails($$select app.kh_commit_lot((select v from t where k = 'line'), pg_temp.today() + 14, null)$$, 'TP SX', 'Chỉ TP SX đệ trình ngày lô');
+select pg_temp.fails($$select app.kh_approve_lot((select v from t where k = 'line'), true)$$, 'chưa đệ trình', 'TP SX chưa đệ trình thì Giám đốc chưa duyệt lịch lô');
 select pg_temp.as_user('P_SXTP');
-select pg_temp.fails($$select app.kh_approve_lot((select v from t where k = 'line'), true)$$, 'Chốt ngày', 'Chưa chốt ngày thì chưa duyệt lịch lô');
+select pg_temp.fails($$select app.kh_approve_lot((select v from t where k = 'line'), true)$$, 'Chỉ Giám đốc', 'TP SX không tự duyệt lịch lô');
 select pg_temp.fails($$select app.kh_commit_lot((select v from t where k = 'line'), pg_temp.today() + 10, null)$$, 'sớm hơn',
   'Chốt sớm hơn ngày MES dự kiến phải ghi rõ lô nào chịu lùi');
 select app.kh_commit_lot((select v from t where k = 'line'), pg_temp.today() + 10, 'Lùi D02 2 ngày, khách D02 đồng ý');
+select pg_temp.as_user('P_GD');
 select pg_temp.fails($$select app.kh_approve_lot((select v from t where k = 'line'), true)$$, 'sau ngày chốt', 'Lịch hiện xong sau ngày chốt: phải xếp lại lịch trước khi duyệt');
-select app.kh_commit_lot((select v from t where k = 'line'), pg_temp.today() + 14, null);
-select app.kh_approve_lot((select v from t where k = 'line'), true);
-select pg_temp.ok((select lot_version_id = (select v from t where k = 'ver') and lot_approved_at is not null and committed_date = pg_temp.today() + 14
+select pg_temp.as_user('P_SXTP');
+select app.kh_commit_lot((select v from t where k = 'line'), null, null);
+insert into t select 'n_commit', null where app.kh_commit_lots((select v from t where k = 'plan')) >= 1;
+select pg_temp.ok(exists (select 1 from t where k = 'n_commit')
+  and (select committed_date = pg_temp.today() + 12 from plan.plan_lines where id = (select v from t where k = 'line')),
+  'TP SX đệ trình một lần theo ngày MES dự kiến');
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title like '%chờ Giám đốc duyệt%')
+  and not exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_CT') and title like '%chờ Giám đốc duyệt%'),
+  'Giám đốc (không phải Chủ tịch) nhận lô chờ duyệt');
+select pg_temp.as_user('P_CT');
+select pg_temp.fails($$select app.kh_approve_lot((select v from t where k = 'line'), true)$$, 'Chỉ Giám đốc', 'Chủ tịch HĐQT không duyệt lịch lô');
+select pg_temp.as_user('P_GD');
+select pg_temp.ok((app.kh_approve_lots((select v from t where k = 'plan')) ->> 'ok')::int = 1, 'Giám đốc duyệt lịch lô đã đệ trình');
+select pg_temp.ok((select lot_version_id = (select v from t where k = 'ver') and lot_approved_at is not null and lot_approved_by = pg_temp.uid('P_GD')
                    from plan.plan_lines where id = (select v from t where k = 'line'))
-  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title like 'Đã duyệt lịch lô%'),
-  'TP SX duyệt lịch lô: giữ chỗ theo lịch đang dùng, Giám đốc được báo');
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_SXTP') and title like 'Giám đốc đã duyệt lịch lô%'),
+  'Giám đốc duyệt lịch lô: giữ chỗ theo lịch đang dùng, TP SX được báo');
+select pg_temp.as_user('P_SXTP');
 select app.kh_commit_lot((select v from t where k = 'line'), pg_temp.today() + 16, 'Khách lùi nhận hàng');
-select pg_temp.ok((select lot_approved_at is null from plan.plan_lines where id = (select v from t where k = 'line')), 'Đổi ngày chốt thì bỏ giữ chỗ, TP SX duyệt lại');
+select pg_temp.ok((select lot_approved_at is null from plan.plan_lines where id = (select v from t where k = 'line')), 'Đổi ngày chốt thì bỏ giữ chỗ, Giám đốc duyệt lại');
+select pg_temp.as_user('P_GD');
+select pg_temp.fails($$select app.kh_approve_lot((select v from t where k = 'line'), true, pg_temp.today() + 13, null)$$, 'ghi lý do', 'Giám đốc sửa ngày chốt phải ghi lý do');
+select app.kh_approve_lot((select v from t where k = 'line'), true, pg_temp.today() + 13, 'Khách cần sớm hơn');
+select pg_temp.ok((select committed_date = pg_temp.today() + 13 and lot_approved_at is not null and committed_note like '%Giám đốc sửa%'
+                   from plan.plan_lines where id = (select v from t where k = 'line')), 'Giám đốc sửa ngày chốt khi duyệt lịch lô');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;

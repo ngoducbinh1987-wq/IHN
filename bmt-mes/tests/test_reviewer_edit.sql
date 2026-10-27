@@ -51,7 +51,9 @@ update core.profiles set status = 'LOCKED' where (employee_code is null or emplo
 update wf.approval_steps set enabled = true, assignee_ids = array[pg_temp.uid('E_GD')] where doc_type = 'PLAN' and seq = 1;
 update wf.approval_steps set enabled = true, assignee_ids = array[pg_temp.uid('E_CT')] where doc_type = 'PLAN' and seq = 2;
 update wf.approval_steps set enabled = false where doc_type = 'PLAN' and seq > 2;
-update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_GD')] where doc_type = 'PR' and seq = 1;
+-- Đề xuất mua từ 4500: TP Mua duyệt → Giám đốc duyệt
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_MUATP')] where doc_type = 'PR' and seq = 1;
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_GD')] where doc_type = 'PR' and seq = 2;
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_CT')] where doc_type = 'PLAN_ADJ' and seq = 1;
 update wf.approval_flows set submit_role = null, submit_user_ids = '{}' where doc_type in ('PLAN', 'PR', 'PLAN_ADJ');
 
@@ -148,8 +150,11 @@ select pg_temp.as_user('E_MUANV');
 insert into t select 'pr', app.create_pr(pg_temp.today() + 7, 'Mua đồng', '[{"material_code": "CU-024", "qty": 100}, {"material_code": "PVC-FR", "qty": 50}]');
 insert into t select 'pr_req', wf.submit('PR', pg_temp.v('pr'), (select pr_no from purchase.purchase_requests where id = pg_temp.v('pr')), 'Mua đồng');
 select pg_temp.fails($$select app.save_pr_line(pg_temp.v('pr'), 'CU-024', 120, null)$$, 'Người lập không sửa', 'Người lập không sửa đề xuất đang chờ duyệt');
+select pg_temp.as_user('E_GD');
+select pg_temp.fails($$select app.save_pr_line(pg_temp.v('pr'), 'CU-024', 120, null)$$, 'TP Mua', 'Giám đốc chưa tới bước của mình thì không sửa');
 select pg_temp.as_user('E_MUATP');
-select pg_temp.fails($$select app.save_pr_line(pg_temp.v('pr'), 'CU-024', 120, null)$$, 'Giám đốc', 'Người không giữ bước duyệt không sửa');
+select app.save_pr_line(pg_temp.v('pr'), 'CU-024', 90, null);
+select pg_temp.ok(wf.act(pg_temp.v('pr_req'), 'APPROVE', null) = 'PENDING', 'TP Mua sửa số mua 100 → 90 rồi duyệt, chuyển Giám đốc');
 select pg_temp.as_user('E_GD');
 select app.save_pr_line(pg_temp.v('pr'), 'CU-024', 80, null);
 select pg_temp.ok((select l.qty = 80 from purchase.pr_lines l join master.materials m on m.id = l.material_id and m.code = 'CU-024' where l.pr_id = pg_temp.v('pr')),
@@ -157,7 +162,7 @@ select pg_temp.ok((select l.qty = 80 from purchase.pr_lines l join master.materi
 select app.delete_pr_line((select l.id from purchase.pr_lines l join master.materials m on m.id = l.material_id and m.code = 'PVC-FR' where l.pr_id = pg_temp.v('pr')));
 select pg_temp.fails($$select app.delete_pr_line((select id from purchase.pr_lines where pr_id = pg_temp.v('pr')))$$, 'ít nhất một dòng', 'Không bỏ dòng cuối cùng khi duyệt');
 select app.save_pr_header(pg_temp.v('pr'), 'Mua đồng (Giám đốc chỉnh)', pg_temp.today() + 5);
-select pg_temp.ok(pg_temp.edits(pg_temp.v('pr_req')) = 3, 'Lịch sử duyệt PR ghi 3 lần sửa (số mua, bỏ dòng, ngày cần)');
+select pg_temp.ok(pg_temp.edits(pg_temp.v('pr_req')) = 4, 'Lịch sử duyệt PR ghi 4 lần sửa (TP Mua: số mua; Giám đốc: số mua, bỏ dòng, ngày cần)');
 select pg_temp.ok(wf.act(pg_temp.v('pr_req'), 'APPROVE', null) = 'APPROVED', 'Giám đốc duyệt PR sau khi sửa phần đầu (mã kiểm cập nhật theo lần sửa)');
 select pg_temp.fails($$select app.save_pr_line(pg_temp.v('pr'), 'CU-024', 90, null)$$, 'nháp hoặc đang chờ duyệt', 'Đề xuất đã duyệt không sửa được');
 

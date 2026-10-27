@@ -85,9 +85,9 @@ select pg_temp.ok((select data_hash <> wf.doc_hash('plan.production_plans', doc_
 select pg_temp.as_user('V_SXKH');
 insert into t select 'cr_c', app.kh_create_change((select id from plan.production_plans where plan_no = 'KH-V2'),
   '{"product_code":"X","qty_m":100,"priority":"0","br":true}', '{"placed":true,"slack":2,"newly":[]}', 'C', '[{"role":"SX_KH","label":"tự duyệt"}]');
-select pg_temp.ok((select jsonb_array_length(steps) = 4 and steps->1->>'role' = 'KT_TP' and steps->2->>'label' like 'Chủ tịch HĐQT%'
-                          and steps->3->>'role' = 'BGD' and status = 'PENDING'
-  from plan.change_requests where id = (select v from t where k = 'cr_c')), 'Mức C: database tự lập 4 bước (lập → TP KT/QA → Chủ tịch HĐQT duyệt lô ngoài kế hoạch → Giám đốc duyệt chen lịch), bỏ qua bước do trình duyệt gửi');
+select pg_temp.ok((select jsonb_array_length(steps) = 3 and steps->1->>'role' = 'KT_TP' and steps->2->>'role' = 'BGD'
+                          and steps::text not like '%Chủ tịch%' and status = 'PENDING'
+  from plan.change_requests where id = (select v from t where k = 'cr_c')), 'Mức C: database tự lập 3 bước (lập → TP KT/QA → Giám đốc duyệt chen lịch; Chủ tịch HĐQT không duyệt lô phát sinh), bỏ qua bước do trình duyệt gửi');
 do $$ begin
   begin
     perform app.kh_create_change((select id from plan.production_plans where plan_no = 'KH-V2'),
@@ -108,8 +108,8 @@ do $$ begin
 end $$;
 insert into t select 'cr_a', app.kh_create_change((select id from plan.production_plans where plan_no = 'KH-V2'),
   '{"product_code":"X","qty_m":100,"priority":"1"}', '{"placed":true,"slack":3,"newly":[]}', 'A', '[]');
-select pg_temp.ok((select jsonb_array_length(steps) = 2 and steps->1->>'label' like 'Chủ tịch HĐQT%' and status = 'PENDING' from plan.change_requests where id = (select v from t where k = 'cr_a')),
-  'Mức A hợp lệ: không ảnh hưởng lịch, chỉ cần Chủ tịch HĐQT duyệt lô ngoài kế hoạch');
+select pg_temp.ok((select jsonb_array_length(steps) = 2 and steps->1->>'role' = 'BGD' and steps->1->>'label' = 'Giám đốc duyệt lô phát sinh' and status = 'PENDING' from plan.change_requests where id = (select v from t where k = 'cr_a')),
+  'Mức A hợp lệ: không ảnh hưởng lịch, chỉ cần Giám đốc duyệt lô phát sinh');
 -- Người lập (có thêm vai trò TP KT/QA) không tự duyệt bước tiếp theo
 insert into core.user_roles (user_id, role_code) select id, 'KT_TP' from core.profiles where employee_code = 'V_SXKH';
 do $$ begin
@@ -122,7 +122,7 @@ do $$ begin
   end;
 end $$;
 select pg_temp.as_user('V_KTTP');
-select pg_temp.ok(app.kh_change_step((select v from t where k = 'cr_c'), 'approve', 'Đồng ý') = 'PENDING', 'TP KT/QA duyệt bước của mình, chuyển Chủ tịch HĐQT');
+select pg_temp.ok(app.kh_change_step((select v from t where k = 'cr_c'), 'approve', 'Đồng ý') = 'PENDING', 'TP KT/QA duyệt bước của mình, chuyển Giám đốc');
 
 -- ================================================================ 3. Quyền gọi hàm khi chưa đăng nhập
 select pg_temp.ok(not has_function_privilege('anon', 'wf.step_actor_ids(jsonb)', 'execute')

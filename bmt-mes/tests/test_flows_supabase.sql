@@ -150,13 +150,12 @@ select pg_temp.fails($$select wf.act((select v from t where k='req_po'), 'APPROV
 update wf.approval_requests set status = 'CANCELLED' where id = (select v from t where k='req_po');
 select pg_temp.as_user('U_MUANV');
 insert into t select 'req_po2', wf.submit('PO', (select id from purchase.purchase_orders where po_no = 'PO-T1'), 'PO-T1');
-select pg_temp.ok((select jsonb_array_length(flow_snapshot -> 'steps') = 3 and (flow_snapshot #>> '{facts,amount}')::numeric = 268000000
-  from wf.approval_requests where id = (select v from t where k='req_po2')), 'PO 268 triệu: 3 bước (TP mua → Giám đốc → Chủ tịch HĐQT)');
+-- Từ 28/10/2026 (migration 4500): bỏ ngưỡng 20/200 triệu, Chủ tịch HĐQT không duyệt PO
+select pg_temp.ok((select jsonb_array_length(flow_snapshot -> 'steps') = 2 and (flow_snapshot #>> '{facts,amount}')::numeric = 268000000
+  from wf.approval_requests where id = (select v from t where k='req_po2')), 'PO 268 triệu: 2 bước (TP mua → Giám đốc), không có bước Chủ tịch HĐQT');
 select pg_temp.as_user('U_MUATP'); select wf.act((select v from t where k='req_po2'), 'APPROVE');
 select pg_temp.as_user('U_BGD');   select wf.act((select v from t where k='req_po2'), 'APPROVE');
-select pg_temp.ok((select status from purchase.purchase_orders where po_no = 'PO-T1') = 'PENDING_APPROVAL', 'PO trên 200 triệu còn chờ Chủ tịch HĐQT');
-select pg_temp.as_user('U_CT');    select wf.act((select v from t where k='req_po2'), 'APPROVE');
-select pg_temp.ok((select status from purchase.purchase_orders where po_no = 'PO-T1') = 'APPROVED', 'PO qua TP mua + Giám đốc + Chủ tịch HĐQT');
+select pg_temp.ok((select status from purchase.purchase_orders where po_no = 'PO-T1') = 'APPROVED', 'PO qua TP mua + Giám đốc là xong');
 
 -- ================================================================ 5a. Lệnh SX (phiếu xuất NVL phải gắn lệnh SX)
 select pg_temp.as_user('U_SXKH');

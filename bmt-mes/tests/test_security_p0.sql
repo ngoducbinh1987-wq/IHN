@@ -39,12 +39,12 @@ end $$;
 grant execute on function pg_temp.ok(boolean, text) to authenticated;
 set client_min_messages = notice;
 
-with u(code, role) as (values ('S_VH','VAN_HANH'),('S_MUA','MUA_NV'),('S_BGD','BGD')),
+with u(code, role) as (values ('S_VH','VAN_HANH'),('S_MUA','MUA_NV'),('S_BGD','BGD'),('S_MUATP','MUA_TP')),
 ins as (insert into auth.users (id, email) select gen_random_uuid(), lower(code) || '@bmt.test' from u returning id, email)
 insert into core.profiles (id, employee_code, full_name, status)
 select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
-select p.id, u.role from core.profiles p join (values ('S_VH','VAN_HANH'),('S_MUA','MUA_NV'),('S_BGD','BGD')) u(code, role) on u.code = p.employee_code;
+select p.id, u.role from core.profiles p join (values ('S_VH','VAN_HANH'),('S_MUA','MUA_NV'),('S_BGD','BGD'),('S_MUATP','MUA_TP')) u(code, role) on u.code = p.employee_code;
 
 insert into purchase.purchase_requests (pr_no, source, status) values ('PR-S1', 'MANUAL', 'APPROVED'), ('PR-S2', 'MANUAL', 'DRAFT');
 insert into t select 'pr1', id from purchase.purchase_requests where pr_no = 'PR-S1';
@@ -83,6 +83,8 @@ select pg_temp.ok((select doc_no = 'PR-S2' and length(summary) = 500 from wf.app
 select pg_temp.ok((select status = 'PENDING_APPROVAL' from purchase.purchase_requests where pr_no = 'PR-S2'), 'PR nháp chuyển sang Chờ duyệt');
 select pg_temp.blocked($q$select wf.submit('PR', (select v from t where k = 'pr2'), 'PR-S2', 'lần 2')$q$, 'trạng thái PENDING_APPROVAL',
   'Không gửi duyệt hai lần cùng một chứng từ');
+select pg_temp.as_user('S_MUATP');   -- PR: TP Mua duyệt → Giám đốc duyệt (migration 4500)
+select pg_temp.as_api($q$select wf.act((select v from t where k = 'req'), 'APPROVE', 'Đồng ý')$q$);
 select pg_temp.as_user('S_BGD');
 select pg_temp.as_api($q$select wf.act((select v from t where k = 'req'), 'APPROVE', 'Đồng ý')$q$);
 select pg_temp.ok((select status = 'APPROVED' from purchase.purchase_requests where pr_no = 'PR-S2'), 'Giám đốc duyệt bình thường sau khi vá (mã kiểm khớp)');

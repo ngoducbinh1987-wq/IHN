@@ -109,12 +109,13 @@ insert into t select 'po200', wf.submit('PO', pg_temp.mk_po('R-PO-200', 'R-NCC-C
 insert into t select 'po250', wf.submit('PO', pg_temp.mk_po('R-PO-250', 'R-NCC-CU', 250000000), 'R-PO-250');
 insert into t select 'ponew', wf.submit('PO', pg_temp.mk_po('R-PO-NEW', 'R-NCC-NEW', 10000000), 'R-PO-NEW');
 insert into t select 'poimp', wf.submit('PO', pg_temp.mk_po('R-PO-IMP', 'R-NCC-CU', 10000000, true), 'R-PO-IMP');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'po10')) = 'Giám đốc ký', 'PO dưới 20 triệu, NCC cũ: chỉ Giám đốc ký');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'po50')) = 'TP mua hàng duyệt | Giám đốc ký', 'PO 50 triệu: TP mua hàng → Giám đốc');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'po200')) = 'TP mua hàng duyệt | Giám đốc ký', 'PO đúng 200 triệu: chưa cần Chủ tịch');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'po250')) = 'TP mua hàng duyệt | Giám đốc ký | Chủ tịch HĐQT phê duyệt', 'PO 250 triệu: thêm Chủ tịch HĐQT');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'ponew')) = 'TP mua hàng duyệt | Giám đốc ký', 'PO nhà cung cấp mới (dưới 20 triệu): thêm TP mua hàng');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'poimp')) = 'TP mua hàng duyệt | Giám đốc ký | Chủ tịch HĐQT phê duyệt', 'PO nhập khẩu (dưới 20 triệu): đủ 3 cấp');
+-- Từ 28/10/2026 (migration 4500): bỏ ngưỡng 20/200 triệu, bỏ bước Chủ tịch HĐQT: mọi PO TP Mua duyệt → Giám đốc ký
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'po10')) = 'TP Mua duyệt đơn mua hàng | Giám đốc ký đơn mua hàng', 'PO dưới 20 triệu, NCC cũ: TP Mua → Giám đốc');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'po50')) = 'TP Mua duyệt đơn mua hàng | Giám đốc ký đơn mua hàng', 'PO 50 triệu: TP Mua → Giám đốc');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'po200')) = 'TP Mua duyệt đơn mua hàng | Giám đốc ký đơn mua hàng', 'PO 200 triệu: TP Mua → Giám đốc');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'po250')) = 'TP Mua duyệt đơn mua hàng | Giám đốc ký đơn mua hàng', 'PO 250 triệu: không có bước Chủ tịch HĐQT');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'ponew')) = 'TP Mua duyệt đơn mua hàng | Giám đốc ký đơn mua hàng', 'PO nhà cung cấp mới: TP Mua → Giám đốc');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'poimp')) = 'TP Mua duyệt đơn mua hàng | Giám đốc ký đơn mua hàng', 'PO nhập khẩu: TP Mua → Giám đốc, không có Chủ tịch');
 insert into purchase.purchase_orders (po_no, supplier_id) select 'R-PO-NOPRICE', id from core.partners where code = 'R-NCC-CU';
 insert into purchase.po_lines (po_id, line_no, material_id, qty)
 select (select id from purchase.purchase_orders where po_no = 'R-PO-NOPRICE'), 1, id, 5 from master.materials where code = 'CU-024';
@@ -124,11 +125,17 @@ select pg_temp.fails($$select wf.submit('PO', (select id from purchase.purchase_
 -- ================================================================ D. Người duyệt duy nhất là người lập
 select pg_temp.as_user('R_MUATP');
 insert into t select 'po_tp', wf.submit('PO', pg_temp.mk_po('R-PO-TP', 'R-NCC-CU', 50000000), 'R-PO-TP');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'po_tp')) = 'Giám đốc ký', 'TP mua hàng tự lập PO: bỏ bước TP mua, Giám đốc vẫn ký');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'po_tp')) = 'Giám đốc ký đơn mua hàng', 'TP mua hàng tự lập PO: bỏ bước TP mua, Giám đốc vẫn ký');
 select pg_temp.as_user('R_BGD');
 insert into purchase.purchase_requests (pr_no, source) values ('R-PR-1', 'MANUAL');
 insert into t select 'pr_bgd', wf.submit('PR', (select id from purchase.purchase_requests where pr_no = 'R-PR-1'), 'R-PR-1');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'pr_bgd')) = 'TP Mua duyệt đề xuất mua | Giám đốc duyệt đề xuất mua · chuyển Giám đốc',
+  'PR: TP Mua duyệt → Giám đốc duyệt; Giám đốc tự lập thì bước Giám đốc chuyển cho Ban giám đốc (Chủ tịch)');
+select pg_temp.as_user('R_MUATP'); select wf.act((select v from t where k = 'pr_bgd'), 'APPROVE');
+select pg_temp.as_user('R_BGD');
 select pg_temp.fails($$select wf.act((select v from t where k = 'pr_bgd'), 'APPROVE')$$, 'không tự duyệt', 'Giám đốc lập PR thì Giám đốc khác (Chủ tịch) duyệt, không tự duyệt');
+select pg_temp.as_user('R_CT'); select wf.act((select v from t where k = 'pr_bgd'), 'APPROVE');
+select pg_temp.ok((select status from purchase.purchase_requests where pr_no = 'R-PR-1') = 'APPROVED', 'PR Giám đốc lập: TP Mua rồi Chủ tịch duyệt thay bước Giám đốc');
 
 -- ================================================================ E. Lệnh SX, phát lệnh, phiếu lĩnh theo định mức
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)

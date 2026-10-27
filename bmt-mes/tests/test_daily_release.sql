@@ -30,13 +30,13 @@ set client_min_messages = notice;
 
 -- Người dùng thử
 with u(code, role) as (values ('W_SXKH','SX_KH'),('W_SXTP','SX_TP'),('W_KTKHO','KT_KHO'),('W_BOTH','SX_KH'),('W_BOTH','KT_KHO'),
-  ('W_THUKHO','THU_KHO'),('W_ADMIN','ADMIN')),
+  ('W_THUKHO','THU_KHO'),('W_ADMIN','ADMIN'),('W_GD','BGD')),
 ins as (insert into auth.users (id, email) select gen_random_uuid(), lower(code) || '@bmt.test' from (select distinct code from u) c returning id, email)
 insert into core.profiles (id, employee_code, full_name, status)
 select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('W_SXKH','SX_KH'),('W_SXTP','SX_TP'),('W_KTKHO','KT_KHO'),('W_BOTH','SX_KH'),
-  ('W_BOTH','KT_KHO'),('W_THUKHO','THU_KHO'),('W_ADMIN','ADMIN')) u(code, role) on u.code = p.employee_code;
+  ('W_BOTH','KT_KHO'),('W_THUKHO','THU_KHO'),('W_ADMIN','ADMIN'),('W_GD','BGD')) u(code, role) on u.code = p.employee_code;
 -- Không để tài khoản thật nhận thông báo/được tính trong lúc thử
 update core.profiles set status = 'LOCKED' where (employee_code is null or employee_code !~ '^W_') and status = 'ACTIVE';
 
@@ -101,6 +101,19 @@ select pg_temp.fails($$select app.kh_release_day((select v from t where k = 'pla
 select pg_temp.as_user('W_BOTH');
 insert into t select 'rel1', app.kh_release_day((select v from t where k = 'plan'), pg_temp.today(), 'Thử: chờ hàng về', '[]',
   '[{"item":"Đồng giả","qty":1,"unit":"kg","note":"web gửi"}]');
+-- Từ migration 4500: TP SX / Kế hoạch SX đề xuất, Giám đốc duyệt mới phát lệnh
+select pg_temp.ok((select status = 'PROPOSED' and released_at is null from plan.daily_releases where id = (select v from t where k = 'rel1'))
+  and not exists (select 1 from plan.issue_slips where release_id = (select v from t where k = 'rel1'))
+  and not exists (select 1 from mfg.work_orders where plan_line_id = (select v from t where k = 'line')),
+  'Kế hoạch SX đề xuất lệnh ngày: chờ Giám đốc duyệt, chưa có phiếu lĩnh, chưa phát lệnh SX');
+select pg_temp.ok(exists (select 1 from wf.notifications n join core.profiles p on p.id = n.user_id where p.employee_code = 'W_GD' and n.title like 'Lệnh SX ngày%chờ duyệt'),
+  'Giám đốc nhận thông báo lệnh ngày chờ duyệt');
+select pg_temp.fails($$select app.kh_release_review((select v from t where k = 'rel1'), true, null)$$, 'Chỉ Giám đốc', 'Kế hoạch SX không tự duyệt phát lệnh');
+select pg_temp.as_user('W_GD');
+select pg_temp.fails($$select app.kh_release_review((select v from t where k = 'rel1'), false, ' ')$$, 'lý do', 'Giám đốc trả lại phải ghi lý do');
+select app.kh_release_review((select v from t where k = 'rel1'), true, 'Đồng ý, ưu tiên bện trước');
+select pg_temp.ok((select status = 'RELEASED' and released_by = (select id from core.profiles where employee_code = 'W_GD') and review_note like 'Đồng ý%' from plan.daily_releases where id = (select v from t where k = 'rel1')),
+  'Giám đốc duyệt: lệnh ngày phát, ghi người duyệt và ý kiến');
 select pg_temp.ok((select s.lines = (select j -> 'slip' from x where k = 'pv') from plan.issue_slips s where s.release_id = (select v from t where k = 'rel1')),
   'Phiếu lĩnh lưu theo database tính, bỏ dòng do web gửi');
 select pg_temp.ok((select count(*) = 1 and bool_and(wo.status = 'RELEASED') and bool_and(exists (select 1 from mfg.wo_operations o where o.wo_id = wo.id))
@@ -129,6 +142,8 @@ select pg_temp.ok((select jsonb_array_length(requisitions) = 1 from app.v_kh_rel
 -- ================================================================ 4. Phát lại bản 2 → bản trước chưa cấp thì tự hủy
 select pg_temp.as_user('W_SXTP');
 insert into t select 'rel2', app.kh_release_day((select v from t where k = 'plan'), pg_temp.today(), 'Bản 2', '[]', '[]');
+select pg_temp.as_user('W_GD');
+select app.kh_release_review((select v from t where k = 'rel2'), true, null);
 select pg_temp.ok((select count(*) = 1 from mfg.work_orders where plan_line_id = (select v from t where k = 'line')), 'Phát lại dùng lại lệnh SX đang chạy, không tạo trùng');
 select pg_temp.as_user('W_KTKHO');
 select app.kh_approve_slip((select id from plan.issue_slips where release_id = (select v from t where k = 'rel2')));
