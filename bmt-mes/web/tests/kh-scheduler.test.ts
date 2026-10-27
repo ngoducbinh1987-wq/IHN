@@ -188,6 +188,22 @@ const rn = schedule([...orders, urgK], ctx, { from: { S: r.S, SPD: r.SPD, slots:
 if (sig(rn.slots) === sig(r.slots)) console.log('(lưu ý: không giữ chỗ thì lô cuối cũng không đổi giờ trong bộ dữ liệu này)');
 console.log('Giữ chỗ', orders.find((o) => o.id === lastLine)?.label, ': đơn gấp xong', finishInfo(rk, cal, [...orders, urgK]).get(urgK.id)?.finDate,
   '(không giữ chỗ:', finishInfo(rn, cal, [...orders, urgK]).get(urgK.id)?.finDate + ')');
+// Máy hỏng (đợt A): EXT-SI-02 hỏng từ đầu ngày 1 đến hết ngày 3 → không việc nào nằm trên máy trong khoảng hỏng,
+// việc đang chạy cắt tại giờ hỏng, mét vẫn đủ; bọc silicone chuyển sang EXT-SI-01. Bảo dưỡng giữ chỗ EXT-SI-01 ngày 5 (1/2 ca)
+const D = (d: number) => d * cal.SPD * cal.S;
+const down = { machine: 'EXT-SI-02', from: D(1), to: D(4), kind: 'DOWN' as const, label: 'EXT-SI-02 hỏng' };
+const pm = { machine: 'EXT-SI-01', from: D(5), to: D(5) + cal.S / 2, kind: 'PM' as const, label: 'bảo dưỡng EXT-SI-01' };
+const rd = schedule(orders, ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: D(1), windows: [down, pm] });
+check(rd, orders, 'máy hỏng');
+for (const s of rd.slots) for (const w of [down, pm]) if (s.machine === w.machine && s.end > w.from + 1e-6 && s.start < w.to - 1e-6) bad(`việc ${s.key} nằm trong khoảng ${w.label}`);
+const siBefore = (sch: typeof r) => sch.slots.filter((s) => s.machine === 'EXT-SI-01' && s.start >= D(1) && s.start < D(4)).length;
+if (siBefore(rd) < siBefore(r)) bad('máy hỏng: line silicone còn lại không nhận thêm việc');
+const cut = rd.slots.find((s) => s.machine === 'EXT-SI-02' && s.part && s.reason.includes('EXT-SI-02 hỏng'));
+console.log('Máy hỏng: việc trên EXT-SI-01 trong ngày 1–3', siBefore(r), '→', siBefore(rd), cut ? `· cắt ${cut.key} tại giờ hỏng` : '· không có việc chạy dở',
+  '· lý do mẫu:', rd.slots.find((s) => s.reason.includes('Dời sau'))?.reason.split(' · ').find((x) => x.startsWith('Dời sau')) ?? '(không dời)');
+const off = schedule(orders, ctx, { windows: [{ machine: 'EXT-SI-02', from: 0, to: Infinity, kind: 'OFF', label: 'EXT-SI-02 ngừng dùng' }] });
+check(off, orders, 'ngừng dùng');
+if (off.slots.some((s) => s.machine === 'EXT-SI-02')) bad('máy ngừng dùng vẫn được xếp việc');
 // ---------- Trộn silicone (kg/giờ) và đóng gói trên máy cuốn bobin ----------
 {
   const cfgM: Config = { ...cfg, rates: [...cfg.rates, { op_code: 'CD0', label: '', unit: 'kg/giờ', rate_small: 30, rate_large: 30, confirmed: false, sort: 0 },

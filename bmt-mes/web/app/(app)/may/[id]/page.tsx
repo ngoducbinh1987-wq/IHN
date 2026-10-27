@@ -93,9 +93,9 @@ export default async function MachineProfile({ params, searchParams }:
             </div>
           </div>
         )}
-        {can(me, 'machine', 'create') && (
+        {['KT_TP', 'SX_TP', 'ADMIN'].some((r) => me.roles.includes(r)) && (
           <details className="border-t border-line">
-            <summary className="cursor-pointer px-4 py-2.5 text-[14px] font-medium text-brand">Cập nhật trạng thái / báo hỏng</summary>
+            <summary className="cursor-pointer px-4 py-2.5 text-[14px] font-medium text-brand">Báo hỏng / đổi trạng thái máy <span className="font-normal text-muted">(TP KT/QA; vắng thì TP SX)</span></summary>
             <StatusForm machineId={id} current={m.status} reasons={reasons ?? []} back={here} />
           </details>
         )}

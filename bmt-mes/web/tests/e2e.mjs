@@ -544,6 +544,50 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   await ctx.close();
 }
 
+// 10. Quản lý máy đợt A: TP KT/QA báo hỏng (bắt buộc giờ chạy lại) → Lịch máy tránh máy hỏng, TP SX xếp lại; vận hành không thấy form báo hỏng
+{
+  [ctx, page] = await ctxFor();
+  await login(page, 'vh@bmt.test');
+  await page.goto(`${BASE}/may`);
+  const si2 = await page.locator('a[href^="/may/"]', { hasText: 'EXT-SI-02' }).first().getAttribute('href');
+  await page.goto(`${BASE}${si2}`);
+  if (await page.locator('summary', { hasText: 'Báo hỏng' }).count()) fail('Vận hành vẫn thấy form báo hỏng trên MES');
+  await ctx.close();
+  [ctx, page] = await ctxFor();
+  await login(page, 'kt.tp@bmt.test');
+  await page.goto(`${BASE}${si2}`);
+  await page.locator('summary', { hasText: 'Báo hỏng' }).click();
+  await page.selectOption('select[name=status]', 'DOWN');
+  await page.selectOption('select[name=reason]', 'DT_BREAKDOWN');
+  await page.fill('input[name=note]', 'E2E: đứt dây trục vít');
+  await Promise.all([page.waitForURL(/err=|ok=/), page.locator('details form button', { hasText: 'Cập nhật' }).first().click()]);
+  if (!(await flash(page)).includes('dự kiến chạy lại')) fail('Báo hỏng không có giờ chạy lại phải bị chặn');
+  await page.locator('summary', { hasText: 'Báo hỏng' }).click();
+  await page.selectOption('select[name=status]', 'DOWN');
+  await page.selectOption('select[name=reason]', 'DT_BREAKDOWN');
+  await page.fill('input[name=note]', 'E2E: đứt dây trục vít');
+  const eta = new Date(Date.now() + 2 * 86400000 + 7 * 3600000).toISOString().slice(0, 10) + 'T08:00';
+  await page.fill('input[name=eta]', eta);
+  await Promise.all([page.waitForURL(/ok=/), page.locator('details form button', { hasText: 'Cập nhật' }).first().click()]);
+  await expectOk(page, 'TP KT/QA báo hỏng EXT-SI-02 có giờ dự kiến chạy lại');
+  await ctx.close();
+  [ctx, page] = await ctxFor();
+  await login(page, 'sx.tp@bmt.test');
+  await page.goto(`${BASE}/lich-may?tab=baoduong`);
+  const mb = await page.innerText('body');
+  if (!mb.includes('Tình trạng máy') || !mb.includes('Bảo dưỡng trên lịch máy') || !/EXT-SI-02[\s\S]{0,200}Hỏng/.test(mb)) fail('Thẻ Bảo dưỡng & máy hỏng thiếu tình trạng EXT-SI-02');
+  if (!mb.includes('Không xếp việc: EXT-SI-02 hỏng')) fail('Lịch máy chưa tính khoảng máy hỏng');
+  const rb = page.locator('form button', { hasText: /Xếp lại lịch|Xếp lịch/ }).first();
+  if (await rb.count()) {
+    await Promise.all([page.waitForURL(/ok=|err=/), rb.click()]);
+    await expectOk(page, 'TP SX xếp lại lịch sau khi máy hỏng');
+    await page.goto(`${BASE}/lich-may?tab=lich`);
+    if (!(await page.innerText('body')).includes('EXT-SI-02 hỏng')) fail('Gantt không hiện khối máy hỏng');
+  }
+  ok('Đợt A: vận hành không báo hỏng trên MES; TP KT/QA báo hỏng bắt buộc giờ chạy lại; Lịch máy hiện máy hỏng, TP SX xếp lại lịch');
+  await ctx.close();
+}
+
 // Ảnh tổng quan của BGĐ (điện thoại + máy tính)
 [ctx, page] = await ctxFor();
 await login(page, 'bgd@bmt.test');

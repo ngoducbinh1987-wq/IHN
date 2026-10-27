@@ -33,7 +33,7 @@ export function Meter({ value, tone }: { value: number; tone: 'ok' | 'warn' | 'b
 
 type Reason = { code: string; name: string };
 
-// Đổi trạng thái máy (NV vận hành, Quản lý SX, TP Kỹ thuật/QA). Dừng / Hỏng bắt buộc chọn lý do
+// Đổi trạng thái máy: TP Kỹ thuật/QA, vắng thì TP SX (công nhân báo TP SX). Dừng / Hỏng bắt buộc lý do; Hỏng bắt buộc giờ dự kiến chạy lại
 export function StatusForm({ machineId, current, reasons, back }: { machineId: string; current: string; reasons: Reason[]; back: string }) {
   return (
     <form action={setStatus} className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[150px_200px_minmax(0,1fr)_200px_auto] lg:items-end">
@@ -53,10 +53,11 @@ export function StatusForm({ machineId, current, reasons, back }: { machineId: s
       <label className="lbl">Ghi chú
         <input name="note" className="inp" placeholder="Ví dụ: biến tần máy kéo báo quá dòng" />
       </label>
-      <label className="lbl">Dự kiến chạy lại (khi Hỏng, Bảo dưỡng)
+      <label className="lbl">Dự kiến chạy lại (bắt buộc khi Hỏng)
         <input name="eta" type="datetime-local" className="inp" />
       </label>
       <SubmitButton>Cập nhật</SubmitButton>
+      <p className="text-[12.5px] text-muted sm:col-span-2 lg:col-span-5">Hỏng, Bảo dưỡng, Ngừng dùng: Lịch máy không xếp việc vào máy đến giờ dự kiến chạy lại; TP SX nhận thông báo bấm Xếp lại lịch. Ước lượng giờ chạy lại, sửa lại được khi biết rõ hơn.</p>
     </form>
   );
 }

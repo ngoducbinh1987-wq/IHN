@@ -2,25 +2,26 @@ import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Alert, Bar, FinishPill, GROUP_BG, GROUP_BORDER, GROUP_NAME, LockNote, SubTabs, Swatch, dd, pc, wd, wdl } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
-import { Empty, Flash, Kpi, Pill, Toolbar } from '@/components/ui';
+import { Empty, Flash, Kpi, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { LEVEL, type ProductRow, type Step, readChange, simulate } from '@/lib/kh/change';
 import { type Kh, ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import {
-  BOBBIN, type Finish, OP_NAME, OP_SHORT, type Op, type Schedule, type Slot, UNIT, addDays, dayIndex, makeCalendar, opName,
+  BOBBIN, type Finish, OP_NAME, OP_SHORT, type Op, type Schedule, type Slot, UNIT, addDays, dayIndex, isWorkday, makeCalendar, nextWorkday, opName,
   schedule, finishInfo, shiftDate, shiftCode, workdaysBetween,
 } from '@/lib/kh/scheduler';
+import { M_STATUS } from '@/lib/machine';
 import { DOC_STATUS, df, nf } from '@/lib/format';
 import { adminDeleteDoc } from '../quan-tri/doc-actions';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { applyChange, approveLot, changeStep, commitLot, createChange, rebuildSchedule, returnChange, setLine, setStart } from './actions';
+import { applyChange, approveLot, changeStep, commitLot, confirmMaint, createChange, proposeMaint, rebuildSchedule, returnChange, setLine, setStart } from './actions';
 
 export const metadata = { title: 'Lịch máy' };
 
 type SP = Record<string, string | undefined>;
 const TABS = [
   { key: 'thang', label: 'Kế hoạch tháng & công suất' }, { key: 'lich', label: 'Lịch máy' }, { key: 'tiendo', label: 'Tiến độ từng lệnh' },
-  { key: 'cancu', label: 'Căn cứ xếp lịch' }, { key: 'phatsinh', label: 'Đơn phát sinh & thay đổi' },
+  { key: 'cancu', label: 'Căn cứ xếp lịch' }, { key: 'phatsinh', label: 'Đơn phát sinh & thay đổi' }, { key: 'baoduong', label: 'Bảo dưỡng & máy hỏng' },
 ];
 
 export default async function LichMay({ searchParams }: { searchParams: Promise<SP> }) {
@@ -40,7 +41,7 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
   // Chưa có lịch: tạo bản xem trước (không lưu) để Quản lý SX và Giám đốc xem trước khi bấm Xếp lịch
   let view: { sch: Schedule; fin: Map<string, Finish>; preview: boolean } | null = kh.sch ? { sch: kh.sch, fin: kh.fin, preview: false } : null;
   if (!view && kh.orders.length) {
-    const sch = schedule(kh.orders, { cfg: kh.cfg, cal: kh.cal, machines: kh.machines, operators: kh.operators });
+    const sch = schedule(kh.orders, { cfg: kh.cfg, cal: kh.cal, machines: kh.machines, operators: kh.operators }, { windows: kh.windows });
     view = { sch, fin: finishInfo(sch, kh.cal, kh.orders), preview: true };
   }
   const noDue = kh.orders.filter((o) => !o.due);
@@ -84,6 +85,12 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
           Quản lý SX bấm “Xếp lại lịch” để tính lại. Phần đã chạy và vùng khóa {kh.cfg.frozen_days} ngày giữ nguyên.
         </Alert>
       )}
+      {kh.machAlerts.length > 0 && (
+        <Alert tone="bad" title="Máy không chạy được: lịch đang dùng cần xếp lại" action={rebuildBtn}>
+          {kh.machAlerts.map((x) => <div key={x}>{x}</div>)}
+          <div className="mt-1 text-[12.5px]">Xếp lại: việc chưa chạy trên máy này chuyển sang máy cùng loại hoặc chờ máy chạy lại; MES báo lô bị lùi, lô trễ hạn giao thì cảnh báo đỏ Giám đốc. <Link className="link" href={qs({ tab: 'baoduong' })}>Xem tình trạng máy</Link></div>
+        </Alert>
+      )}
       {kh.missing.length > 0 && (
         <Alert tone="warn" title={`${kh.missing.length} dòng kế hoạch chưa có trong lịch máy`} action={rebuildBtn}>
           {kh.missing.map((o) => `${o.label} ${o.product_code}`).join(', ')}
@@ -103,12 +110,13 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
       {kh.planId && (
         <>
           <SubTabs active={tab} items={TABS.map((t) => ({ ...t, href: qs({ tab: t.key }) }))} />
-          {!view && tab !== 'cancu' && tab !== 'phatsinh' && <div className="card"><Empty>Kế hoạch chưa có dòng nào xếp được. Cần mã có spec đã phát hành, có đường đi công đoạn và số mét &gt; 0.</Empty></div>}
+          {!view && tab !== 'cancu' && tab !== 'phatsinh' && tab !== 'baoduong' && <div className="card"><Empty>Kế hoạch chưa có dòng nào xếp được. Cần mã có spec đã phát hành, có đường đi công đoạn và số mét &gt; 0.</Empty></div>}
           {view && tab === 'thang' && <Month kh={kh} view={view} me={me.roles} />}
           {view && tab === 'lich' && <Gantt kh={kh} view={view} sp={sp} qs={qs} canPlan={canPlan} />}
           {view && tab === 'tiendo' && <Progress kh={kh} view={view} />}
           {tab === 'cancu' && <Basis kh={kh} view={view} />}
           {tab === 'phatsinh' && <Changes kh={kh} sp={sp} roles={me.roles} userId={me.id} />}
+          {tab === 'baoduong' && <Maint kh={kh} view={view} roles={me.roles} userId={me.id} />}
         </>
       )}
     </>
@@ -320,6 +328,12 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
       if (sl.start < W0 + W && sl.start >= W0) setupWeek += sl.setup;
       prevEnd = Math.max(prevEnd, sl.end);
     });
+    // Máy hỏng / ngừng dùng / bảo dưỡng giữ chỗ (theo trạng thái hiện tại, chưa cần xếp lại mới hiện)
+    for (const win of kh.windows.filter((x) => x.machine === m.code && x.to > W0 && x.from < W0 + W)) {
+      const bad = win.kind === 'DOWN' || win.kind === 'OFF';
+      els.push(<div key={'w' + win.from} className={`absolute inset-y-0.5 z-[5] flex items-center overflow-hidden rounded border-2 px-1.5 text-[11.5px] font-medium ${bad ? 'border-bad bg-[repeating-linear-gradient(135deg,rgba(217,48,37,0.18)_0_4px,rgba(255,255,255,0.75)_4px_8px)] text-bad' : 'border-info bg-[repeating-linear-gradient(135deg,rgba(26,95,208,0.15)_0_4px,rgba(255,255,255,0.75)_4px_8px)] text-info'}`}
+        style={{ left: `${X(win.from)}%`, width: `calc(${X(Math.min(win.to, W0 + W)) - X(win.from)}% - 2px)` }} title={win.label}>{win.label}</div>);
+    }
     if (prevEnd < W0 + W - S / 2) {
       const nx = all.find((s) => s.start >= W0 + W);
       const lab = idleWhy(nx);
@@ -378,6 +392,8 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
           ))}
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border border-dashed border-muted bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.15)_0_3px,transparent_3px_6px)]" />Đổi máy</span>
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm bg-info/20" />Vùng khóa {kh.cfg.frozen_days} ngày</span>
+          <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-bad" />Máy hỏng, ngừng dùng</span>
+          <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-info" />Bảo dưỡng giữ chỗ</span>
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-0.5 bg-bad" />Bây giờ</span>
           <span>Đổi máy cả tuần: {nf(setupWeek)} phút</span>
         </div>
@@ -706,6 +722,131 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
               <td>{v.reason}{v.change_no ? ` · ${v.change_no}` : ''}</td><td className="text-[12.5px]">{v.created_by_name ?? ''}</td><td className="num">{v.params.SPD} · {v.params.S}</td></tr>
           )) : <tr><td colSpan={5} className="text-[13px] text-muted">Chưa có phiên bản nào.</td></tr>}</tbody>
         </table></div>
+      </section>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------- Bảo dưỡng & máy hỏng
+type DuePlan = { id: string; name: string; level: string; stop_minutes: number; line_code: string; machine_code: string; due_date: string; state: string; off_shift: boolean };
+const MODE: Record<string, string> = { IN_SHIFT: 'Trong ca (giữ chỗ trên lịch máy)', CHANGEOVER: 'Gộp vào lần đổi máy lớn', OFF_SHIFT: 'Ngoài giờ ca / Chủ nhật' };
+
+// Gợi ý ngày, cách làm bảo dưỡng: bảo dưỡng lớn / dừng ≥ 120 phút → ngày nghỉ hoặc sau giờ ca; còn lại → ngày lịch có lần đổi máy lớn
+// (thay khuôn, xả nhựa ≥ 30 phút) gần hạn nhất; không có → đầu ca ngày đến hạn (giữ chỗ trên lịch máy)
+function suggestMaint(kh: Kh, view: View | null, line: string, due: string, stop: number, level: string | null) {
+  const today = kh.now.date;
+  const last = due < today ? today : due;
+  if (level === 'MAJOR' || stop >= 120) {
+    for (let d = last; d >= today; d = addDays(d, -1)) if (!isWorkday(d, kh.cal.wd)) return { date: d, mode: 'OFF_SHIFT', text: `${wdl(d)} ${dd(d)} (ngày nghỉ): làm ngoài giờ ca, không trừ năng lực máy` };
+    return { date: last, mode: 'OFF_SHIFT', text: `sau giờ ca ngày ${dd(last)}: ngoài giờ ca, không trừ năng lực máy` };
+  }
+  const S = view?.sch.S ?? kh.cal.S, SPD = view?.sch.SPD ?? kh.cal.SPD, RUN = view?.sch.RUN ?? kh.cal.RUN;
+  const big = (view?.sch.byMachine.get(line) ?? []).filter((x) => x.setup * RUN / S >= 30)
+    .map((x) => ({ x, d: kh.cal.days[Math.floor(x.start / (S * SPD))] })).filter((y) => y.d && y.d > today && y.d <= last);
+  const pick = big[big.length - 1];
+  if (pick) {
+    const o = kh.orders.find((z) => z.id === pick.x.lineId);
+    return { date: pick.d, mode: 'CHANGEOVER', text: `${wd(pick.d)} ${dd(pick.d)}: lịch có ${pick.x.why || 'đổi máy'} ${Math.round(pick.x.setup * RUN / S)} phút (${o?.label ?? ''} ${o?.product_code ?? ''}), làm cùng lúc không mất thêm giờ máy` };
+  }
+  const d = isWorkday(last, kh.cal.wd) ? last : nextWorkday(last, kh.cal.wd);
+  return { date: d, mode: 'IN_SHIFT', text: `đầu ca ${wd(d)} ${dd(d)}: giữ chỗ ${stop} phút trên lịch máy` };
+}
+
+async function Maint({ kh, view, roles, userId }: { kh: Kh; view: View | null; roles: string[]; userId: string }) {
+  const db = await createClient();
+  const lines = new Set(kh.machines.map((m) => m.code));
+  const { data: dueRows } = await db.schema('app').from('v_maint_plans').select('id, name, level, stop_minutes, line_code, machine_code, due_date, state, off_shift')
+    .eq('active', true).is('open_wo', null).lte('due_date', addDays(kh.now.date, 21)).order('due_date');
+  const due = ((dueRows ?? []) as DuePlan[]).filter((p) => lines.has(p.line_code));
+  const maint = kh.maint.filter((w) => lines.has(w.machine_code));
+  const isKt = hasRole(roles, ['KT_TP', 'ADMIN']);
+  const isBgd = hasRole(roles, ['BGD', 'ADMIN']);
+  const isSx = hasRole(roles, ['SX_TP', 'SX_KH', 'BGD', 'ADMIN']);
+  const planQ = <input type="hidden" name="plan_id" value={kh.planId ?? ''} />;
+  const proposeForm = (sg: ReturnType<typeof suggestMaint>, key: { plan?: string; wo?: string }) => (
+    <form action={proposeMaint} className="mt-1.5 flex flex-wrap items-end gap-1.5">
+      {planQ}{key.plan && <input type="hidden" name="maint_plan" value={key.plan} />}{key.wo && <input type="hidden" name="wo" value={key.wo} />}
+      <input type="date" name="date" defaultValue={sg.date} min={kh.now.date} className="inp w-[150px] py-1" aria-label="Ngày bảo dưỡng" required />
+      <select name="mode" defaultValue={sg.mode} className="inp w-auto py-1" aria-label="Cách làm">{Object.entries(MODE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+      <input name="note" className="inp w-[160px] py-1" placeholder="Ghi chú" aria-label="Ghi chú" />
+      <SubmitButton className="btn btn-sm" pendingText="…">Đề xuất</SubmitButton>
+    </form>
+  );
+  return (
+    <div className="flex flex-col gap-4">
+      <section className="card overflow-x-auto">
+        <div className="card-h"><h2>Tình trạng máy</h2><span className="text-[13px] font-normal text-muted">TP KT/QA báo hỏng (vắng thì TP SX) ở hồ sơ máy · công nhân báo TP SX, không bấm trên MES</span></div>
+        <table className="tbl">
+          <thead><tr><th>Máy</th><th>Trạng thái</th><th>Dự kiến chạy lại</th><th>Ảnh hưởng lịch máy</th><th /></tr></thead>
+          <tbody>{kh.machines.map((m) => {
+            const wins = kh.windows.filter((w) => w.machine === m.code);
+            return (
+              <tr key={m.code}>
+                <td><b>{m.code}</b><div className="text-[12px] text-muted">{m.name}</div></td>
+                <td><StatusPill map={M_STATUS} value={m.status ?? 'IDLE'} />{m.status_since && <div className="text-[12px] text-muted">từ {df(m.status_since, true)}</div>}{m.status_note && <div className="text-[12px] text-muted">{m.status_note}</div>}</td>
+                <td className="text-[13px]">{m.status === 'DOWN' || m.status === 'MAINT' ? (m.status_eta ? df(m.status_eta, true) : <span className="text-bad">chưa có, tạm tính 1 ngày</span>) : '—'}</td>
+                <td className="text-[12.5px]">{wins.length ? wins.map((w) => <div key={w.from}>{w.kind === 'PM' ? 'Giữ chỗ ' : 'Không xếp việc: '}{w.label}</div>) : <span className="text-muted">Chạy bình thường</span>}</td>
+                <td>{m.id ? <Link className="link text-[13px]" href={`/may/${m.id}`}>Hồ sơ máy</Link> : null}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </section>
+
+      <section className="card overflow-x-auto">
+        <div className="card-h"><h2>Bảo dưỡng trên lịch máy</h2><span className="text-[13px] font-normal text-muted">TP KT/QA đề xuất · TP SX chốt · trong vùng khóa {kh.cfg.frozen_days} ngày: Giám đốc chốt</span></div>
+        {!maint.length && !due.length ? <Empty>Không có bảo dưỡng đến hạn trong 3 tuần tới.</Empty> : (
+          <table className="tbl">
+            <thead><tr><th>Máy</th><th>Việc</th><th>Hạn theo chu kỳ</th><th>MES gợi ý</th><th>Ngày, cách làm</th><th>Thao tác</th></tr></thead>
+            <tbody>
+              {maint.map((w) => {
+                const sg = suggestMaint(kh, view, w.machine_code, w.planned_date ?? kh.now.date, Number(w.est_minutes ?? w.stop_minutes ?? 0), w.level);
+                const canOk = w.sched_status === 'PROPOSED' && w.status === 'OPEN' && w.sched_by !== userId && (w.in_frozen ? isBgd : isSx);
+                return (
+                  <tr key={w.id}>
+                    <td><b>{w.machine_code}</b>{w.unit_code !== w.machine_code && <div className="text-[12px] text-muted">{w.unit_code}</div>}</td>
+                    <td><Link className="link" href={`/may/bao-duong/phieu/${w.id}`}>{w.wo_no}</Link> {w.plan_name ?? w.title}<div className="text-[12px] text-muted">{w.level === 'MAJOR' ? 'Bảo dưỡng lớn' : 'Bảo dưỡng nhỏ'} · dừng {w.est_minutes ?? w.stop_minutes ?? 0} phút{w.status === 'IN_PROGRESS' ? ' · đang làm' : ''}</div></td>
+                    <td className="whitespace-nowrap">{dd(w.planned_date)}</td>
+                    <td className="max-w-[260px] text-[12.5px] text-muted">{sg.text}</td>
+                    <td className="text-[13px]">
+                      {w.sched_status ? <>{wdl(w.planned_date!)} {dd(w.planned_date)} · {MODE[w.sched_mode ?? ''] ?? ''}
+                        <div>{w.sched_status === 'CONFIRMED' ? <Pill tone="ok">Đã chốt · {w.sched_ok_by_name}</Pill> : <Pill tone="warn">Chờ {w.in_frozen ? 'Giám đốc' : 'TP SX'} chốt</Pill>}</div>
+                        <div className="text-[12px] text-muted">Đề xuất: {w.sched_by_name}{w.sched_note ? ` · ${w.sched_note}` : ''}</div></>
+                        : <span className="text-muted">Chưa có ngày{w.sched_note ? ` · ${w.sched_note}` : ''}</span>}
+                    </td>
+                    <td className="min-w-[260px]">
+                      {canOk && (
+                        <div className="flex flex-wrap items-end gap-1.5">
+                          <form action={confirmMaint}>{planQ}<input type="hidden" name="wo" value={w.id} /><input type="hidden" name="ok" value="1" /><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Chốt</SubmitButton></form>
+                          <form action={confirmMaint} className="flex items-end gap-1.5">{planQ}<input type="hidden" name="wo" value={w.id} /><input type="hidden" name="ok" value="0" />
+                            <input name="note" className="inp w-[150px] py-1" placeholder="Lý do trả lại" aria-label="Lý do trả lại" /><SubmitButton className="btn btn-sm" pendingText="…">Trả lại</SubmitButton></form>
+                        </div>
+                      )}
+                      {isKt && w.status === 'OPEN' && proposeForm(w.sched_status ? { ...sg, date: w.planned_date ?? sg.date, mode: w.sched_mode ?? sg.mode } : sg, { wo: w.id })}
+                    </td>
+                  </tr>
+                );
+              })}
+              {due.map((p) => {
+                const sg = suggestMaint(kh, view, p.line_code, p.due_date, Number(p.stop_minutes ?? 0), p.level);
+                return (
+                  <tr key={p.id}>
+                    <td><b>{p.line_code}</b>{p.machine_code !== p.line_code && <div className="text-[12px] text-muted">{p.machine_code}</div>}</td>
+                    <td><Link className="link" href={`/may/bao-duong/ke-hoach/${p.id}`}>{p.name}</Link><div className="text-[12px] text-muted">{p.level === 'MAJOR' ? 'Bảo dưỡng lớn' : 'Bảo dưỡng nhỏ'} · dừng {p.stop_minutes} phút · chưa có phiếu</div></td>
+                    <td className={`whitespace-nowrap ${p.state === 'OVERDUE' ? 'text-bad' : ''}`}>{dd(p.due_date)}{p.state === 'OVERDUE' ? ' · quá hạn' : ''}</td>
+                    <td className="max-w-[260px] text-[12.5px] text-muted">{sg.text}</td>
+                    <td className="text-[13px] text-muted">Chưa có ngày</td>
+                    <td className="min-w-[260px]">{isKt ? proposeForm(sg, { plan: p.id }) : <LockNote>TP KT/QA đề xuất ngày</LockNote>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">
+          Trong ca: phiếu đã chốt thành khối giữ chỗ trên lịch máy (bấm Xếp lại lịch để lịch tránh khối này). Gộp lần đổi máy lớn: làm trong lúc thay khuôn, xả nhựa, không mất thêm giờ máy.
+          Ngoài giờ ca: sau 17:00 hoặc ngày nghỉ, không trừ năng lực. Đổi ngày sau khi chốt thì phải chốt lại.
+        </p>
       </section>
     </div>
   );
