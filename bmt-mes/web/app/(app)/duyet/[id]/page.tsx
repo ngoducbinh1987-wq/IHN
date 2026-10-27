@@ -248,12 +248,20 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
     const { data: run } = plan?.last_run_id
       ? await supabase.schema('plan').from('mrp_runs').select('budget_vnd, missing_price_count').eq('id', plan.last_run_id).maybeSingle()
       : { data: null };
+    const { count: edits } = await supabase.schema('plan').from('plan_chair_edits').select('id', { count: 'exact', head: true }).eq('plan_id', a.doc_id);
     return (
       <div className="grid gap-x-8 md:grid-cols-2">
         <Field label="Kỳ kế hoạch">{plan?.period_label}</Field>
         <Field label="Ngày cần vật tư">{df(plan?.material_need_date)}</Field>
         <Field label="Số SKU / tổng mét">{plan?.line_count} SKU · {nf(plan?.total_m)} m</Field>
         {canSeePrice && <Field label="Ngân sách vật tư">{run ? `${nf(run.budget_vnd)} đ` : '—'}{run?.missing_price_count ? ` (${run.missing_price_count} mã thiếu giá)` : ''}</Field>}
+        {(edits ?? 0) > 0 && <Field label="Chủ tịch chỉnh khi chốt"><Link className="text-brand hover:underline" href={`/ke-hoach/${a.doc_id}#chair-edits`}>{edits} lần sửa dòng</Link></Field>}
+        {a.status === 'PENDING' && a.my_turn && a.step_index === a.step_total && (
+          <div className="md:col-span-2 mt-2 rounded border-l-4 border-brand bg-brand-soft px-3 py-2 text-[14px]">
+            Bước chốt: bạn được sửa sản lượng, thêm, bỏ mã trước khi chốt.{' '}
+            <Link className="font-medium text-brand hover:underline" href={`/ke-hoach/${a.doc_id}`}>Mở kế hoạch để chỉnh</Link>
+          </div>
+        )}
       </div>
     );
   }

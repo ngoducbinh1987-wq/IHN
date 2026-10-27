@@ -61,10 +61,10 @@ insert into mfg.wo_operations (wo_id, op_code, seq, planned_m)
 select (select v from t where k = 'wo'), o.code, o.seq, 2000 from master.operations o where o.code in ('CD1', 'CD2', 'CD5', 'CD6');
 
 -- ================================================================ 0. Cấu hình duyệt kế hoạch tháng
-select pg_temp.ok((select not enabled from wf.approval_steps where doc_type = 'PLAN' and seq = 1)
+select pg_temp.ok((select enabled and role_code = 'BGD' from wf.approval_steps where doc_type = 'PLAN' and seq = 1)
   and (select enabled from wf.approval_steps where doc_type = 'PLAN' and seq = 2)
   and (select submit_role is null from wf.approval_flows where doc_type = 'PLAN'),
-  'Kế hoạch tháng: TP SX lập (không còn bước tự xác nhận), Chủ tịch HĐQT duyệt');
+  'Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT chốt (từ 28/10/2026)');
 
 -- ================================================================ 1. Quyền nhập phiếu
 select pg_temp.as_user('B_VH');
