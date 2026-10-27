@@ -2,18 +2,19 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ExternalLink, Plus } from 'lucide-react';
 import { Empty, Flash, InfoRow, Pill, StatusPill, Toolbar } from '@/components/ui';
-import { MStatus, Meter, SrcPill, StatusForm, SubTabs } from '@/components/machine-ui';
+import { MStatus, Meter, StatusForm, SubTabs } from '@/components/machine-ui';
 import { HistoryTable } from '@/components/machine-history';
 import { SubmitButton } from '@/components/submit-button';
 import {
-  COMP_KIND, DOC_KIND, LEVEL, M_STATUS, OPR_ROLE, PLAN_STATE, RANGE_PARAM, RANGE_UOM, SPEC_GROUPS, SPEED_STATUS, WO_STATUS, WO_TYPE,
+  COMP_KIND, DOC_KIND, LEVEL, M_STATUS, OPR_ROLE, PLAN_STATE, SPEC_GROUPS, SPEED_STATUS, WO_STATUS, WO_TYPE,
   cycleText, hhmm, remainText, usedFraction,
 } from '@/lib/machine';
 import { df, nf, numIn } from '@/lib/format';
+import { MACHINE_OPS } from '@/lib/kh/scheduler';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import {
-  addComponent, addDoc, addRange, addSpeed, approveSpeed, deleteRow, removeOperatorSkill, saveSpecs, setOperatorSkill, signOperatorSkill, updateMachine,
+  addComponent, addDoc, addSpeed, approveSpeed, deleteRow, removeOperatorSkill, saveRange, saveSpecs, setOperatorSkill, signOperatorSkill, updateMachine,
 } from '../actions';
 
 const TABS: [string, string][] = [
@@ -37,7 +38,7 @@ export default async function MachineProfile({ params, searchParams }:
   const cfg = can(me, 'machine', 'config');
 
   const [{ data: family }, { data: reasons }] = await Promise.all([
-    supabase.schema('app').from('v_machines').select('id, code, name, unit_kind, status, critical, seq, line_id, op_code').or(`id.eq.${lineId},line_id.eq.${lineId}`).order('seq'),
+    supabase.schema('app').from('v_machines').select('id, code, name, unit_kind, status, critical, seq, line_id, op_code, machine_type').or(`id.eq.${lineId},line_id.eq.${lineId}`).order('seq'),
     supabase.schema('master').from('reason_codes').select('code, name').eq('kind', 'DOWNTIME').order('name'),
   ]);
   const line = (family ?? []).find((x) => x.id === lineId);
@@ -102,7 +103,7 @@ export default async function MachineProfile({ params, searchParams }:
 
       <SubTabs base={base} items={TABS} active={tab} />
       {tab === 'thong-so' && <SpecsTab id={id} cfg={cfg} back={here} />}
-      {tab === 'toc-do' && <SpeedTab id={id} lineId={lineId} isLine={isLine} opCode={m.op_code ?? line?.op_code} cfg={cfg} canPropose={cfg || can(me, 'machine', 'create')} meId={me.id} canApprove={can(me, 'machine', 'approve')} back={here} />}
+      {tab === 'toc-do' && <SpeedTab lineId={lineId} isLine={isLine} machineType={line?.machine_type ?? m.machine_type} cfg={cfg} canPropose={cfg || can(me, 'machine', 'create')} meId={me.id} canApprove={can(me, 'machine', 'approve')} back={here} />}
       {tab === 'bao-duong' && <MaintTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} />}
       {tab === 'nguoi' && <PeopleTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} canAssign={cfg || me.roles.includes('SX_TP')} canCertify={me.roles.includes('KT_TP') || me.roles.includes('ADMIN')} back={here} />}
       {tab === 'lich-su' && <HistoryTab lineId={lineId} machineId={id} isLine={isLine} />}
@@ -124,17 +125,17 @@ async function SpecsTab({ id, cfg, back }: { id: string; cfg: boolean; back: str
   return (
     <>
       <section className="card mb-4 overflow-x-auto">
-        <div className="card-h">Thông số kỹ thuật<span className="text-[13px] font-normal text-muted">Nguồn: Nhà SX = catalog, biên bản NSX · Hồ sơ BMT = bản vẽ, đo thực tế · Giả định = cần kiểm tra lại</span></div>
+        <div className="card-h">Thông số kỹ thuật</div>
         {cfg ? (
           <form action={saveSpecs}>
             <input type="hidden" name="machine_id" value={id} /><input type="hidden" name="back" value={back} />
             <table className="tbl">
-              <thead><tr><th>Thông số</th><th>Giá trị</th><th>Đơn vị</th><th>Nguồn</th><th>Xóa</th></tr></thead>
+              <thead><tr><th>Thông số</th><th>Giá trị</th><th>Đơn vị</th><th>Xóa</th></tr></thead>
               <tbody>
                 {groups.map((g) => (
                   <GroupRows key={g} g={g} rows={rows.filter((r) => r.grp === g)} />
                 ))}
-                {rows.length === 0 && <tr><td colSpan={5}><Empty>Chưa có thông số. Thêm dòng bên dưới.</Empty></td></tr>}
+                {rows.length === 0 && <tr><td colSpan={4}><Empty>Chưa có thông số. Thêm dòng bên dưới.</Empty></td></tr>}
                 <tr className="bg-brand-soft/40">
                   <td className="min-w-[260px]"><div className="flex gap-2">
                     <select name="new_grp" className="inp w-auto" defaultValue="Chung">{SPEC_GROUPS.map((x) => <option key={x}>{x}</option>)}</select>
@@ -142,7 +143,6 @@ async function SpecsTab({ id, cfg, back }: { id: string; cfg: boolean; back: str
                   </div></td>
                   <td><input name="new_value" className="inp" placeholder="Giá trị" aria-label="Giá trị thông số mới" /></td>
                   <td><input name="new_uom" className="inp w-24" placeholder="V, kW…" aria-label="Đơn vị thông số mới" /></td>
-                  <td><select name="new_source" className="inp w-auto" defaultValue="" aria-label="Nguồn thông số mới"><option value="">—</option><option value="NSX">Nhà SX</option><option value="BMT">Hồ sơ BMT</option><option value="GD">Giả định</option></select></td>
                   <td />
                 </tr>
               </tbody>
@@ -151,12 +151,12 @@ async function SpecsTab({ id, cfg, back }: { id: string; cfg: boolean; back: str
           </form>
         ) : rows.length ? (
           <table className="tbl">
-            <thead><tr><th>Thông số</th><th>Giá trị</th><th>Nguồn</th></tr></thead>
+            <thead><tr><th>Thông số</th><th>Giá trị</th></tr></thead>
             <tbody>
               {groups.map((g) => [
-                <tr key={g}><td colSpan={3} className="bg-sunk text-[13px] font-medium text-muted">{g}</td></tr>,
+                <tr key={g}><td colSpan={2} className="bg-sunk text-[13px] font-medium text-muted">{g}</td></tr>,
                 ...rows.filter((r) => r.grp === g).map((r) => (
-                  <tr key={r.id}><td className="w-[40%] text-ink/80">{r.label}</td><td>{r.value ? `${r.value}${r.uom ? ' ' + r.uom : ''}` : <span className="text-muted">—</span>}</td><td><SrcPill value={r.value ? r.source : null} /></td></tr>
+                  <tr key={r.id}><td className="w-[40%] text-ink/80">{r.label}</td><td>{r.value ? `${r.value}${r.uom ? ' ' + r.uom : ''}` : <span className="text-muted">—</span>}</td></tr>
                 )),
               ])}
             </tbody>
@@ -167,29 +167,28 @@ async function SpecsTab({ id, cfg, back }: { id: string; cfg: boolean; back: str
       <section className="card overflow-x-auto">
         <div className="card-h">Linh kiện, cảm biến, phụ tùng</div>
         <table className="tbl">
-          <thead><tr><th>Loại</th><th>Tên</th><th>Quy cách</th><th className="num">SL</th><th>Vị trí</th><th>Phụ tùng trong kho</th>{cfg && <th />}</tr></thead>
+          <thead><tr><th>Loại</th><th>Tên</th><th>Quy cách</th><th className="num">SL</th><th>Phụ tùng trong kho</th>{cfg && <th />}</tr></thead>
           <tbody>
             {(comps ?? []).map((c) => (
               <tr key={c.id}>
                 <td>{COMP_KIND[c.kind] ?? c.kind}</td><td className="font-medium">{c.name}</td><td className="text-[13px]">{c.spec ?? '—'}</td>
-                <td className="num">{c.qty === null ? '—' : nf(c.qty, 2)}</td><td className="text-[13px]">{c.position ?? '—'}</td>
+                <td className="num">{c.qty === null ? '—' : nf(c.qty, 2)}</td>
                 <td className="text-[13px]">{c.material_id ? <>
                   <span className="mono">{c.material_code}</span> · tồn {nf(c.stock, 2)}{c.min_stock !== null && <> / tối thiểu {nf(c.min_stock, 2)}</>} {c.low_stock && <Pill tone="bad">Dưới tối thiểu</Pill>}
                 </> : <span className="text-muted">Chưa gắn mã kho{c.min_stock !== null ? ` · tối thiểu ${nf(c.min_stock, 2)}` : ''}</span>}</td>
                 {cfg && <td><DeleteBtn table="component" id={c.id} back={back} /></td>}
               </tr>
             ))}
-            {(comps ?? []).length === 0 && <tr><td colSpan={7}><Empty>Chưa khai linh kiện.</Empty></td></tr>}
+            {(comps ?? []).length === 0 && <tr><td colSpan={6}><Empty>Chưa khai linh kiện.</Empty></td></tr>}
           </tbody>
         </table>
         {cfg && (
-          <form action={addComponent} className="grid gap-3 border-t border-line p-4 sm:grid-cols-3 lg:grid-cols-[150px_1fr_1fr_80px_1fr_1fr_100px_auto] lg:items-end">
+          <form action={addComponent} className="grid gap-3 border-t border-line p-4 sm:grid-cols-3 lg:grid-cols-[150px_1fr_1fr_80px_1fr_100px_auto] lg:items-end">
             <input type="hidden" name="machine_id" value={id} /><input type="hidden" name="back" value={back} />
             <label className="lbl">Loại<select name="kind" className="inp">{Object.entries(COMP_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
             <label className="lbl"><span className="req">Tên</span><input name="name" className="inp" required placeholder="Cặp nhiệt loại K" /></label>
             <label className="lbl">Quy cách<input name="spec" className="inp" placeholder="0–800 °C, 4–20 mA…" /></label>
             <label className="lbl">SL<input name="qty" className="inp" inputMode="decimal" /></label>
-            <label className="lbl">Vị trí<input name="position" className="inp" placeholder="1 cái mỗi module" /></label>
             <label className="lbl">Mã kho phụ tùng<select name="material_id" className="inp" defaultValue=""><option value="">—</option>{(mats ?? []).map((x) => <option key={x.id} value={x.id}>{x.code} · {x.name}</option>)}</select></label>
             <label className="lbl">Tồn tối thiểu<input name="min_stock" className="inp" inputMode="decimal" /></label>
             <SubmitButton>Thêm</SubmitButton>
@@ -204,18 +203,15 @@ type Spec = { id: string; label: string; value: string | null; uom: string | nul
 function GroupRows({ g, rows }: { g: string; rows: Spec[] }) {
   return (
     <>
-      <tr><td colSpan={5} className="bg-sunk text-[13px] font-medium text-muted">{g}</td></tr>
+      <tr><td colSpan={4} className="bg-sunk text-[13px] font-medium text-muted">{g}</td></tr>
       {rows.map((r) => (
         <tr key={r.id}>
           <td className="text-ink/80">{r.label}
             <input type="hidden" name="spec_id" value={r.id} />
-            <input type="hidden" name={`ov_${r.id}`} value={r.value ?? ''} /><input type="hidden" name={`ou_${r.id}`} value={r.uom ?? ''} /><input type="hidden" name={`os_${r.id}`} value={r.source ?? ''} />
+            <input type="hidden" name={`ov_${r.id}`} value={r.value ?? ''} /><input type="hidden" name={`ou_${r.id}`} value={r.uom ?? ''} /><input type="hidden" name={`os_${r.id}`} value={r.source ?? ''} /><input type="hidden" name={`s_${r.id}`} value={r.source ?? ''} />
           </td>
           <td><input name={`v_${r.id}`} defaultValue={r.value ?? ''} className="inp" placeholder="Chưa khai" aria-label={r.label} /></td>
           <td><input name={`u_${r.id}`} defaultValue={r.uom ?? ''} className="inp w-24" aria-label={`Đơn vị ${r.label}`} /></td>
-          <td><select name={`s_${r.id}`} defaultValue={r.source ?? ''} className="inp w-auto" aria-label={`Nguồn ${r.label}`}>
-            <option value="">—</option><option value="NSX">Nhà SX</option><option value="BMT">Hồ sơ BMT</option><option value="GD">Giả định</option>
-          </select></td>
           <td><label className="inline-flex items-center gap-1.5 text-[13px] text-bad"><input type="checkbox" name={`del_${r.id}`} />Xóa</label></td>
         </tr>
       ))}
@@ -233,14 +229,22 @@ function DeleteBtn({ table, id, back, label = 'Xóa' }: { table: string; id: str
 }
 
 // ---------------------------------------------------------------- Tốc độ + dải hoạt động
-async function SpeedTab({ id, lineId, isLine, opCode, cfg, canPropose, meId, canApprove, back }:
-  { id: string; lineId: string; isLine: boolean; opCode: string | null; cfg: boolean; canPropose: boolean; meId: string; canApprove: boolean; back: string }) {
+// Dải hoạt động = đường kính sản phẩm ra khỏi máy (kiểm tra kế hoạch so với đường kính trong spec)
+const RANGE_HINT: Record<string, string> = {
+  BUNCHER: 'đường kính ruột sau khi bện', EXTRUDER_SI: 'đường kính lõi sau khi bọc cách điện',
+  EXTRUDER_TP: 'đường kính lõi/cáp sau khi bọc', TWISTER: 'đường kính bó cáp sau khi xoắn',
+};
+
+async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, canApprove, back }:
+  { lineId: string; isLine: boolean; machineType: string | null; cfg: boolean; canPropose: boolean; meId: string; canApprove: boolean; back: string }) {
+  if (!isLine) {
+    return <section className="card"><Empty>Tốc độ và dải hoạt động khai theo dây chuyền. <Link className="link" href={`/may/${lineId}?tab=toc-do`}>Mở dây chuyền</Link>.</Empty></section>;
+  }
   const supabase = await createClient();
-  const [{ data: ranges }, { data: speeds }, { data: ops }, { data: groups }, { data: cores }, { data: products }, { data: line }, { data: plcAll }] = await Promise.all([
-    supabase.schema('app').from('v_machine_ranges').select('*').eq('machine_id', id).order('sort').order('label'),
-    supabase.schema('app').from('v_machine_speeds').select('*').eq('machine_id', lineId).neq('status', 'OBSOLETE').order('op_code').order('core_code', { nullsFirst: true }),
+  const [{ data: ranges }, { data: speeds }, { data: ops }, { data: cores }, { data: products }, { data: line }, { data: plcAll }] = await Promise.all([
+    supabase.schema('app').from('v_machine_ranges').select('id, min_value, max_value').eq('machine_id', lineId).eq('param', 'OD_MM'),
+    supabase.schema('app').from('v_machine_speeds').select('*').eq('machine_id', lineId).neq('status', 'OBSOLETE'),
     supabase.schema('master').from('operations').select('code, name').order('seq'),
-    supabase.schema('master').from('product_groups').select('code, name').order('code'),
     supabase.schema('master').from('core_types').select('code, nominal_mm2').order('nominal_mm2'),
     supabase.schema('master').from('products').select('id, code').eq('active', true).order('code'),
     supabase.schema('master').from('machines').select('code, data_mode').eq('id', lineId).maybeSingle(),
@@ -249,100 +253,85 @@ async function SpeedTab({ id, lineId, isLine, opCode, cfg, canPropose, meId, can
   type PlcRow = { machine_code: string; op_code: string; product_id: string | null; group_code: string | null; core_code: string | null; meters: number; run_min: number; last_at: string | null };
   const plc = ((plcAll ?? []) as PlcRow[]).filter((x) => x.machine_code === line?.code);
   const pcode = new Map((products ?? []).map((p) => [p.id, p.code]));
-  const coreList = [...new Map((cores ?? []).map((c) => [c.code, c])).values()];
+  const mm2 = new Map((cores ?? []).map((c) => [c.code, Number(c.nominal_mm2)]));
+  const coreList = [...mm2.entries()].sort((x, y) => x[1] - y[1]);
+  const opName = new Map((ops ?? []).map((o) => [o.code, o.name]));
+  const myOps = MACHINE_OPS[machineType ?? ''] ?? [];
+  const multiOp = myOps.length > 1;
+  const rg = ranges?.[0];
+  const sizeText = (core: string | null) => core ? `Cỡ ${nf(mm2.get(core) ?? 0, 2)} mm² (${core})` : null;
+  const rows = [...(speeds ?? [])].sort((x, y) => String(x.op_code).localeCompare(String(y.op_code))
+    || Number(Boolean(x.product_id)) - Number(Boolean(y.product_id)) || (mm2.get(x.core_code) ?? 0) - (mm2.get(y.core_code) ?? 0));
   return (
     <>
-      <section className="card mb-4 overflow-x-auto">
-        <div className="card-h">Dải hoạt động{!isLine && <span className="text-[13px] font-normal text-muted">của máy con này</span>}</div>
-        <table className="tbl">
-          <thead><tr><th>Thông số</th><th className="num">Nhỏ nhất</th><th className="num">Lớn nhất</th><th>Giá trị khác</th><th>Đơn vị</th><th>Nguồn</th><th>Dùng khi kiểm tra kế hoạch</th>{cfg && <th />}</tr></thead>
-          <tbody>
-            {(ranges ?? []).map((r) => (
-              <tr key={r.id}>
-                <td>{r.label}</td><td className="num">{r.min_value === null ? '—' : nf(r.min_value, 2)}</td><td className="num">{r.max_value === null ? '—' : nf(r.max_value, 2)}</td>
-                <td>{r.text_value ?? '—'}</td><td>{r.uom ?? ''}</td><td><SrcPill value={r.source} /></td>
-                <td className="text-[13px] text-muted">{r.param === 'SIZE_MM2' ? 'Chặn sản phẩm ngoài dải tiết diện' : r.param === 'SPEED_MPM' ? 'Giới hạn tốc độ tính năng lực' : '—'}</td>
-                {cfg && <td><DeleteBtn table="range" id={r.id} back={back} /></td>}
-              </tr>
-            ))}
-            {(ranges ?? []).length === 0 && <tr><td colSpan={8}><Empty>Chưa khai dải hoạt động.</Empty></td></tr>}
-          </tbody>
-        </table>
-        {cfg && (
-          <form action={addRange} className="grid gap-3 border-t border-line p-4 sm:grid-cols-3 lg:grid-cols-[180px_1fr_110px_110px_1fr_90px_130px_auto] lg:items-end">
-            <input type="hidden" name="machine_id" value={id} /><input type="hidden" name="back" value={back} />
-            <label className="lbl">Loại<select name="param" className="inp">{Object.entries(RANGE_PARAM).map(([k, v]) => <option key={k} value={k}>{v}{RANGE_UOM[k] ? ` (${RANGE_UOM[k]})` : ''}</option>)}</select></label>
-            <label className="lbl">Tên (khi chọn thông số khác)<input name="label" className="inp" placeholder="Khổ băng AL/PET" /></label>
-            <label className="lbl">Nhỏ nhất<input name="min_value" className="inp" inputMode="decimal" /></label>
-            <label className="lbl">Lớn nhất<input name="max_value" className="inp" inputMode="decimal" /></label>
-            <label className="lbl">Giá trị khác<input name="text_value" className="inp" placeholder="PVC / LSZH / PE" /></label>
-            <label className="lbl">Đơn vị<input name="uom" className="inp" placeholder="mm²" /></label>
-            <label className="lbl">Nguồn<select name="source" className="inp" defaultValue=""><option value="">—</option><option value="NSX">Nhà SX</option><option value="BMT">Hồ sơ BMT</option><option value="GD">Giả định</option></select></label>
-            <SubmitButton>Thêm</SubmitButton>
+      <section className="card mb-4">
+        <div className="card-h">Dải hoạt động<span className="text-[13px] font-normal text-muted">{RANGE_HINT[machineType ?? ''] ?? 'đường kính sản phẩm ra khỏi máy'} · kiểm tra kế hoạch chặn mã ngoài dải</span></div>
+        {cfg ? (
+          <form action={saveRange} className="flex flex-wrap items-end gap-3 p-4">
+            <input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="back" value={back} />
+            <label className="lbl w-[130px]">Từ (mm)<input name="min_value" className="inp" inputMode="decimal" defaultValue={numIn(rg?.min_value)} /></label>
+            <label className="lbl w-[130px]">Đến (mm)<input name="max_value" className="inp" inputMode="decimal" defaultValue={numIn(rg?.max_value)} /></label>
+            <SubmitButton>Lưu dải</SubmitButton>
+            <span className="pb-2 text-[12.5px] text-muted">Để trống cả hai là không giới hạn.</span>
           </form>
+        ) : (
+          <div className="p-4 text-[15px]">{rg ? <>Đường kính <b className="tabular-nums">{rg.min_value === null ? '…' : nf(rg.min_value, 2)} – {rg.max_value === null ? '…' : nf(rg.max_value, 2)} mm</b></> : <span className="text-muted">Chưa khai (không giới hạn)</span>}</div>
         )}
       </section>
 
       <section className="card overflow-x-auto">
-        <div className="card-h">Tốc độ sản xuất theo sản phẩm (m/ph)<span className="text-[13px] font-normal text-muted">Kế hoạch chọn: mã SP → nhóm + mã lõi → mã lõi → nhóm → mặc định</span></div>
-        {!isLine ? <Empty>Tốc độ khai theo dây chuyền. <Link className="link" href={`/may/${lineId}?tab=toc-do`}>Mở dây chuyền</Link>.</Empty> : (
-          <>
-            <table className="tbl">
-              <thead><tr><th>Công đoạn</th><th>Áp dụng cho</th><th className="num">Danh định NSX</th><th className="num">Chuẩn lập KH</th><th className="num">Đổi máy (phút/lô)</th><th>Nguồn</th><th>Tình trạng</th><th /></tr></thead>
-              <tbody>
-                {(speeds ?? []).map((s) => (
-                  <tr key={s.id}>
-                    <td>{s.op_name}</td>
-                    <td>{s.label && <div className="font-medium">{s.label}</div>}<div className="text-[12.5px] text-muted">{[s.product_code, s.group_name ?? s.group_code, s.core_code && `lõi ${s.core_code}`].filter(Boolean).join(' · ') || 'Mặc định của máy'}</div></td>
-                    <td className="num">{s.rated_mpm === null ? '—' : nf(s.rated_mpm, 1)}</td>
-                    <td className="num font-medium">{nf(s.std_mpm, 1)}{s.range_max !== null && Number(s.std_mpm) > Number(s.range_max) && <div className="text-[12px] font-normal text-bad">vượt dải {nf(s.range_max)}</div>}</td>
-                    <td className="num">{nf(s.setup_min)}</td>
-                    <td><SrcPill value={s.source} /></td>
-                    <td><StatusPill map={SPEED_STATUS} value={s.status} />
-                      {s.status === 'APPROVED' && <div className="text-[12px] text-muted">{s.approved_by_name}{s.temp_approval ? ' (duyệt tạm)' : ''} · {df(s.approved_at)}</div>}
-                      {s.status === 'PENDING' && s.wait_days >= 1 && <div className="text-[12px] text-warn">Chờ quá 1 ngày · đã báo Giám đốc</div>}</td>
-                    <td><div className="flex gap-1.5">
-                      {s.status === 'PENDING' && canApprove && s.created_by === meId && <span className="text-[12px] text-muted">Chờ người khác duyệt</span>}
-                      {s.status === 'PENDING' && canApprove && s.created_by !== meId && <form action={approveSpeed}><input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={back} /><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt</SubmitButton></form>}
-                      {s.status === 'PENDING' && cfg && <DeleteBtn table="speed" id={s.id} back={back} />}
-                    </div></td>
-                  </tr>
-                ))}
-                {(speeds ?? []).length === 0 && <tr><td colSpan={8}><Empty>Chưa khai tốc độ. Kiểm tra kế hoạch sẽ báo “Chưa có tốc độ chuẩn”.</Empty></td></tr>}
-              </tbody>
-            </table>
-            {canPropose && (
-              <form action={addSpeed} className="grid gap-3 border-t border-line p-4 sm:grid-cols-3 lg:grid-cols-6 lg:items-end">
-                <input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="back" value={back} />
-                <label className="lbl"><span className="req">Công đoạn</span><select name="op_code" className="inp" defaultValue={opCode ?? ''} required>{(ops ?? []).map((o) => <option key={o.code} value={o.code}>{o.code} · {o.name}</option>)}</select></label>
-                <label className="lbl">Nhóm sản phẩm<select name="group_code" className="inp" defaultValue=""><option value="">Mọi nhóm</option>{(groups ?? []).map((g) => <option key={g.code} value={g.code}>{g.code} · {g.name}</option>)}</select></label>
-                <label className="lbl">Mã lõi (cỡ ruột)<select name="core_code" className="inp" defaultValue=""><option value="">Mọi cỡ</option>{coreList.map((c) => <option key={c.code} value={c.code}>{c.code} · {nf(c.nominal_mm2, 2)} mm²</option>)}</select></label>
-                <label className="lbl">Riêng một mã SP<select name="product_id" className="inp" defaultValue=""><option value="">—</option>{(products ?? []).map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}</select></label>
-                <label className="lbl">Tên gọi<input name="label" className="inp" placeholder="Lõi 1,5 mm²" /></label>
-                <label className="lbl">Nguồn<select name="source" className="inp" defaultValue=""><option value="">—</option><option value="NSX">Nhà SX</option><option value="BMT">Hồ sơ BMT</option><option value="GD">Giả định</option></select></label>
-                <label className="lbl">Danh định NSX (m/ph)<input name="rated_mpm" className="inp" inputMode="decimal" /></label>
-                <label className="lbl"><span className="req">Chuẩn lập KH (m/ph)</span><input name="std_mpm" className="inp" inputMode="decimal" required /></label>
-                <label className="lbl">Đổi máy (phút/lô)<input name="setup_min" className="inp" inputMode="decimal" defaultValue="0" /></label>
-                <label className="lbl lg:col-span-2">Ghi chú<input name="note" className="inp" placeholder="Ví dụ: chạy thử với HCR 9710G" /></label>
-                <SubmitButton>Thêm tốc độ</SubmitButton>
-              </form>
-            )}
-          </>
+        <div className="card-h">Tốc độ chuẩn (m/ph)<span className="text-[13px] font-normal text-muted">Lịch máy chọn: riêng mã SP → theo cỡ ruột → mặc định của máy</span></div>
+        <table className="tbl">
+          <thead><tr>{multiOp && <th>Công đoạn</th>}<th>Áp dụng cho</th><th className="num">Chuẩn (m/ph)</th><th className="num">Đổi máy (phút/lô)</th><th>Tình trạng</th><th /></tr></thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr key={s.id}>
+                {multiOp && <td>{opName.get(s.op_code) ?? s.op_code}</td>}
+                <td>{s.product_code ?? sizeText(s.core_code) ?? (s.group_name ?? s.group_code) ?? 'Mặc định của máy'}
+                  {s.product_code && s.core_code && <span className="text-[12.5px] text-muted"> · {sizeText(s.core_code)}</span>}</td>
+                <td className="num font-medium">{nf(s.std_mpm, 1)}</td>
+                <td className="num">{nf(s.setup_min)}</td>
+                <td><StatusPill map={SPEED_STATUS} value={s.status} />
+                  <div className="text-[12px] text-muted">
+                    {s.status === 'APPROVED' ? `${s.approved_by_name ?? ''}${s.temp_approval ? ' (duyệt tạm)' : ''} · ${df(s.approved_at)}`
+                      : s.created_by === meId ? 'Chờ người khác duyệt' : s.wait_days >= 1 ? 'Chờ quá 1 ngày · đã báo Giám đốc' : ''}
+                  </div></td>
+                <td><div className="flex justify-end gap-1.5">
+                  {s.status === 'PENDING' && canApprove && s.created_by !== meId && <form action={approveSpeed}><input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={back} /><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt</SubmitButton></form>}
+                  {s.status === 'PENDING' && cfg && <DeleteBtn table="speed" id={s.id} back={back} />}
+                </div></td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={multiOp ? 6 : 5}><Empty>Chưa khai tốc độ. Lịch máy tạm dùng tốc độ mặc định của công đoạn (Tham số xếp lịch).</Empty></td></tr>}
+          </tbody>
+        </table>
+        {canPropose && myOps.length > 0 && (
+          <form action={addSpeed} className="grid gap-3 border-t border-line p-4 sm:grid-cols-3 lg:grid-cols-[repeat(5,minmax(0,1fr))_auto] lg:items-end">
+            <input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="back" value={back} />
+            {multiOp
+              ? <label className="lbl"><span className="req">Công đoạn</span><select name="op_code" className="inp" required>{myOps.map((c) => <option key={c} value={c}>{opName.get(c) ?? c}</option>)}</select></label>
+              : <input type="hidden" name="op_code" value={myOps[0]} />}
+            <label className="lbl">Cỡ ruột<select name="core_code" className="inp" defaultValue=""><option value="">Mọi cỡ</option>{coreList.map(([c, v]) => <option key={c} value={c}>{nf(v, 2)} mm² ({c})</option>)}</select></label>
+            <label className="lbl">Riêng một mã SP<select name="product_id" className="inp" defaultValue=""><option value="">Không</option>{(products ?? []).map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}</select></label>
+            <label className="lbl"><span className="req">Chuẩn (m/ph)</span><input name="std_mpm" className="inp" inputMode="decimal" required /></label>
+            <label className="lbl">Đổi máy (phút/lô)<input name="setup_min" className="inp" inputMode="decimal" defaultValue="0" /></label>
+            <SubmitButton>Thêm tốc độ</SubmitButton>
+          </form>
         )}
       </section>
 
-      {isLine && (
+      {(plc.length > 0 || line?.data_mode !== 'MANUAL') && (
         <section className="card mt-4 overflow-x-auto">
           <div className="card-h">Tốc độ thực tế đo từ PLC (30 ngày)<span className="text-[13px] font-normal text-muted">
-            {line?.data_mode === 'PLC' ? 'Máy đang chế độ Tự động: lịch máy dùng số này (cần ≥ 120 phút chạy cùng mã hoặc cùng cỡ ruột)' : 'Máy đang chế độ Nhập tay/Song song: lịch máy dùng bảng tự nhập ở trên, số này để so sánh'}</span></div>
+            {line?.data_mode === 'PLC' ? 'Máy chạy chế độ Tự động: lịch máy dùng số này (cần ≥ 120 phút chạy cùng mã hoặc cùng cỡ ruột)' : 'Để so sánh với tốc độ chuẩn ở trên'}</span></div>
           <table className="tbl">
-            <thead><tr><th>Công đoạn</th><th>Sản phẩm</th><th>Nhóm · lõi</th><th className="num">Mét</th><th className="num">Phút chạy</th><th className="num">m/ph thực tế</th><th>Lần cuối</th></tr></thead>
+            <thead><tr><th>Sản phẩm / cỡ ruột</th><th className="num">Mét</th><th className="num">Phút chạy</th><th className="num">m/ph thực tế</th><th>Lần cuối</th></tr></thead>
             <tbody>
               {plc.map((x, i) => (
-                <tr key={i}><td>{x.op_code}</td><td>{(x.product_id && pcode.get(x.product_id)) ?? '—'}</td><td>{[x.group_code, x.core_code && `lõi ${x.core_code}`].filter(Boolean).join(' · ') || '—'}</td>
+                <tr key={i}><td>{(x.product_id && pcode.get(x.product_id)) ?? sizeText(x.core_code) ?? '—'}{multiOp && <span className="text-[12.5px] text-muted"> · {opName.get(x.op_code) ?? x.op_code}</span>}</td>
                   <td className="num">{nf(x.meters)}</td><td className="num">{nf(x.run_min)}</td><td className="num font-medium">{nf(Number(x.run_min) > 0 ? Number(x.meters) / Number(x.run_min) : 0, 1)}</td><td>{df(x.last_at)}</td></tr>
               ))}
-              {plc.length === 0 && <tr><td colSpan={7}><Empty>Chưa có dữ liệu PLC gắn với lệnh sản xuất trong 30 ngày.</Empty></td></tr>}
+              {plc.length === 0 && <tr><td colSpan={5}><Empty>Chưa có dữ liệu PLC gắn với lệnh sản xuất trong 30 ngày.</Empty></td></tr>}
             </tbody>
           </table>
         </section>
@@ -523,7 +512,9 @@ function InfoTab({ m, cfg, back }: { m: Record<string, any>; cfg: boolean; back:
       <label className="lbl">Vị trí trong xưởng<input name="location" className="inp" defaultValue={m.location ?? ''} placeholder="Trục A–B, đầu trục 12" /></label>
       <label className="lbl">PLC<input name="plc_model" className="inp" defaultValue={m.plc_model ?? ''} /></label>
       <label className="lbl">Công suất định mức (kW)<input name="rated_kw" className="inp" inputMode="decimal" defaultValue={numIn(m.rated_kw)} /></label>
-      <label className="lbl">Thứ tự<input name="seq" className="inp" inputMode="numeric" defaultValue={m.seq ?? 0} /></label>
+      {m.line_id
+        ? <label className="lbl">Thứ tự trên dây chuyền<input name="seq" className="inp" inputMode="numeric" defaultValue={m.seq ?? 0} /></label>
+        : <input type="hidden" name="seq" value={m.seq ?? 0} />}
       <label className="lbl sm:col-span-2">Ghi chú<textarea name="note" className="inp" rows={2} defaultValue={m.note ?? ''} /></label>
       {m.line_id && <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" name="critical" defaultChecked={m.critical} />Máy quan trọng (hỏng là dừng cả dây chuyền)</label>}
       {!m.line_id && <input type="hidden" name="critical" value="" />}

@@ -53,7 +53,7 @@ update master.machine_specs set value = '380 V, 3 pha', source = 'BMT' where mac
 insert into master.machine_specs (machine_id, grp, label, value, uom, source) values (pg_temp.v('oven'), 'Đấu nối', 'Cút nước vào', 'DN25', null, 'GD');
 insert into master.machine_components (machine_id, kind, name, spec, qty) values (pg_temp.v('oven'), 'SENSOR', 'Cặp nhiệt loại K', '0–800 °C', 12);
 insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom) values
-  (pg_temp.v('line'), 'SIZE_MM2', 'Tiết diện ruột', 0.75, 4, 'mm²'), (pg_temp.v('line'), 'SPEED_MPM', 'Tốc độ dây', 10, 120, 'm/ph');
+  (pg_temp.v('line'), 'OD_MM', 'Đường kính', 1.5, 4.2, 'mm'), (pg_temp.v('line'), 'SPEED_MPM', 'Tốc độ dây', 10, 120, 'm/ph');
 select app.set_operator_skill(pg_temp.v('line'), 'NV1', 'MAIN', 'Thử');
 select pg_temp.ok((select count(*) from app.machine_history(null, pg_temp.v('oven')) where kind = 'CHANGE') >= 1, 'Sửa thông số ghi vào lịch sử vận hành');
 reset role;
@@ -268,10 +268,10 @@ select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_
 select pg_temp.ok((select (j -> 'issues')::text like '%Thay nước máng%' from _cap) is false, 'Phiếu đang mở thì không báo quá hạn nữa');
 drop table _cap;
 insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom)
-select id, 'SIZE_MM2', 'Tiết diện ruột', 0.75, 4, 'mm²' from master.machines where op_code = 'CD2' and id <> pg_temp.v('line');
+select id, 'OD_MM', 'Đường kính', 1.5, 4.2, 'mm' from master.machines where op_code = 'CD2' and id <> pg_temp.v('line');
 create temp table _cap as select app.check_capacity(null, current_date, current_date + 27, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('p6'), 'qty_m', 1000))) as j;
-select pg_temp.ok((select (j -> 'issues')::text like '%ngoài dải%' from _cap), 'Sản phẩm ngoài dải tiết diện của máy bị chặn');
+select pg_temp.ok((select (j -> 'issues')::text like '%ngoài dải%' from _cap), 'Sản phẩm có đường kính lõi ngoài dải của máy bị chặn');
 drop table _cap;
 create temp table _cap as select app.check_capacity(null, current_date, current_date + 27, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('pvc'), 'qty_m', 5000))) as j;

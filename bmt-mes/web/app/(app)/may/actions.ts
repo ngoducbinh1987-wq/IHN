@@ -121,18 +121,31 @@ export async function deleteRow(form: FormData) {
   done(form, 'Đã xóa');
 }
 
-export async function addRange(form: FormData) {
+// Dải hoạt động: một khoảng đường kính (mm) cho mỗi dây chuyền; để trống cả hai thì bỏ dải
+export async function saveRange(form: FormData) {
   const supabase = await createClient();
-  const param = txt(form, 'param') || 'OTHER';
-  const label = txt(form, 'label') || null;
+  const machineId = txt(form, 'machine_id');
   const min = num(form, 'min_value'), max = num(form, 'max_value');
-  if (min !== null && max !== null && min > max) back(form, 'err', 'Giá trị nhỏ nhất lớn hơn giá trị lớn nhất');
-  const { error } = await supabase.schema('master').from('machine_ranges').insert({
-    machine_id: txt(form, 'machine_id'), param, label: label ?? ({ SIZE_MM2: 'Tiết diện ruột', OD_MM: 'Đường kính ngoài', SPEED_MPM: 'Tốc độ dây', CORES: 'Số lõi', TEMP_C: 'Nhiệt độ' } as Record<string, string>)[param] ?? 'Thông số',
-    min_value: min, max_value: max, text_value: opt(form, 'text_value'), uom: opt(form, 'uom'), source: opt(form, 'source'),
-  });
-  if (error) back(form, 'err', error.code === '23505' ? 'Thông số này đã có trong dải hoạt động' : friendly(error.message));
-  done(form, 'Đã thêm dải hoạt động');
+  if ((min !== null && min <= 0) || (max !== null && max <= 0)) back(form, 'err', 'Đường kính phải lớn hơn 0');
+  if (min !== null && max !== null && min > max) back(form, 'err', 'Đường kính "từ" lớn hơn "đến"');
+  const { data: cur, error: e0 } = await supabase.schema('master').from('machine_ranges').select('id').eq('machine_id', machineId).eq('param', 'OD_MM');
+  if (e0) back(form, 'err', friendly(e0.message));
+  const id = cur?.[0]?.id as string | undefined;
+  if (min === null && max === null) {
+    if (id) {
+      const { data, error } = await supabase.schema('master').from('machine_ranges').delete().eq('id', id).select('id');
+      if (error) back(form, 'err', friendly(error.message));
+      if (!data?.length) back(form, 'err', 'Bạn chưa có quyền sửa dải hoạt động');
+    }
+    done(form, 'Đã bỏ dải hoạt động');
+  }
+  const row = { min_value: min, max_value: max, uom: 'mm' };
+  const res = id
+    ? await supabase.schema('master').from('machine_ranges').update(row).eq('id', id).select('id')
+    : await supabase.schema('master').from('machine_ranges').insert({ ...row, machine_id: machineId, param: 'OD_MM', label: 'Đường kính' }).select('id');
+  if (res.error) back(form, 'err', friendly(res.error.message));
+  if (!res.data?.length) back(form, 'err', 'Bạn chưa có quyền sửa dải hoạt động');
+  done(form, 'Đã lưu dải hoạt động');
 }
 
 export async function addSpeed(form: FormData) {
