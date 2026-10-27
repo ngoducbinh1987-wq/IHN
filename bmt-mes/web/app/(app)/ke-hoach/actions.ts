@@ -63,6 +63,35 @@ export async function deleteLine(form: FormData) {
   back(planId, 'ok', 'Đã xóa dòng');
 }
 
+// Chủ tịch HĐQT ở bước chốt: sửa/thêm/bỏ dòng; database kiểm bước, người chốt, lý do và tự chạy lại MRP
+export async function chairSaveLine(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const lineId = String(form.get('line_id') ?? '') || null;
+  const qty = parseNum(form.get('qty_m'));
+  const lots = parseNum(form.get('run_lots'));
+  const mpp = parseNum(form.get('m_per_pack'));
+  if (qty === null || Number.isNaN(qty) || qty <= 0) back(planId, 'err', 'Sản lượng (m) phải lớn hơn 0 (bỏ mã thì bấm Bỏ mã)');
+  if (lots === null || Number.isNaN(lots) || lots < 1) back(planId, 'err', 'Số lô chạy phải ≥ 1');
+  if (mpp === null || Number.isNaN(mpp) || mpp <= 0) back(planId, 'err', 'Chọn quy cách m/kiện');
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('plan_chair_save_line', {
+    p_plan: planId, p_line: lineId, p_product: lineId ? null : String(form.get('product_id')), p_qty: qty, p_lots: Math.round(lots!),
+    p_pack_type: String(form.get('pack_type')), p_m_per_pack: mpp, p_brand: String(form.get('brand')), p_reason: String(form.get('reason') ?? ''),
+  });
+  if (error) back(planId, 'err', error.message);
+  revalidatePath(`/ke-hoach/${planId}`);
+  back(planId, 'ok', `Đã ${lineId ? 'sửa' : 'thêm'} dòng, MRP đã tính lại. Xong thì bấm “Chốt kế hoạch”.`);
+}
+
+export async function chairRemoveLine(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('plan_chair_remove_line', { p_line: String(form.get('line_id')), p_reason: String(form.get('reason') ?? '') });
+  if (error) back(planId, 'err', error.message);
+  revalidatePath(`/ke-hoach/${planId}`);
+  back(planId, 'ok', 'Đã bỏ mã khỏi kế hoạch, MRP đã tính lại.');
+}
+
 export async function runMrp(form: FormData) {
   const planId = String(form.get('plan_id'));
   const supabase = await createClient();
@@ -77,7 +106,7 @@ export async function submitPlan(form: FormData) {
   const { error } = await submitForApproval('PLAN', planId, String(form.get('plan_no')), String(form.get('summary')));
   if (error) back(planId, 'err', error.message);
   revalidatePath('/', 'layout');
-  back(planId, 'ok', 'Đã gửi duyệt. TP Sản xuất đã nhận thông báo.');
+  back(planId, 'ok', 'Đã gửi duyệt. Giám đốc đã nhận thông báo, duyệt xong chuyển Chủ tịch HĐQT chốt.');
 }
 
 export async function createPr(form: FormData) {

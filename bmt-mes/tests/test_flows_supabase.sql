@@ -41,9 +41,11 @@ select p.id, u.role from core.profiles p join (values ('U_KTNV','KT_NV'),('U_QC'
 
 create temp table t (k text primary key, v uuid);
 grant all on t to authenticated;
--- Bước "Chủ tịch HĐQT" giao cho người dùng thử U_CT
+-- Bước "Chủ tịch HĐQT" giao cho người dùng thử U_CT; bước Giám đốc của kế hoạch tháng giao U_BGD
 update wf.approval_steps set assignee_ids = array[(select id from core.profiles where employee_code = 'U_CT')]
  where (doc_type = 'PLAN' and seq = 2) or (doc_type = 'PO' and seq = 3);
+update wf.approval_steps set assignee_ids = array[(select id from core.profiles where employee_code = 'U_BGD')]
+ where doc_type = 'PLAN' and seq = 1;
 -- Chạy trên dữ liệu thật: tạm ngưng tài khoản thật để kết quả chỉ phụ thuộc người dùng thử (rollback ở cuối)
 update core.profiles set status = 'INACTIVE' where coalesce(employee_code, '') not like 'U\_%';
 
@@ -121,13 +123,15 @@ select pp.id, p.id, (select v from t where k = 'spec_sfr'), 1000, 1, 500, 'Bobin
  where pp.plan_no = 'KH-SFR' and p.code = 'SFR-2P-1';
 select pg_temp.fails($$select plan.run_mrp((select id from plan.production_plans where plan_no = 'KH-SFR'))$$, 'Spec chưa phát hành', 'MRP chính thức chặn spec chưa phát hành');
 select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k='run1'))$$, 'được phê duyệt', 'Chưa duyệt kế hoạch thì không sinh PR');
--- Quy trình final 27/10/2026: TP SX lập kế hoạch tháng, Chủ tịch HĐQT duyệt (không còn bước Quản lý SX tự xác nhận)
+-- Quy trình 28/10/2026: TP SX lập kế hoạch tháng, chạy MRP → Giám đốc duyệt → Chủ tịch HĐQT chốt
 select pg_temp.as_user('U_SXTP');
 insert into t select 'req_plan', wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'KH-2611-01'), 'KH-2611-01');
-select pg_temp.as_user('U_BGD');
-select pg_temp.fails($$select wf.act((select v from t where k='req_plan'), 'APPROVE')$$, 'cần vai trò', 'Bước Chủ tịch HĐQT: Giám đốc không duyệt thay');
+select pg_temp.as_user('U_CT');
+select pg_temp.fails($$select wf.act((select v from t where k='req_plan'), 'APPROVE')$$, 'cần vai trò', 'Bước Giám đốc: Chủ tịch không duyệt trước Giám đốc');
+select pg_temp.as_user('U_BGD');  select wf.act((select v from t where k='req_plan'), 'APPROVE');
+select pg_temp.fails($$select wf.act((select v from t where k='req_plan'), 'APPROVE')$$, 'cần vai trò', 'Bước Chủ tịch HĐQT: Giám đốc không chốt thay');
 select pg_temp.as_user('U_CT');   select wf.act((select v from t where k='req_plan'), 'APPROVE');
-select pg_temp.ok((select status from plan.production_plans where plan_no = 'KH-2611-01') = 'APPROVED', 'Kế hoạch tháng: TP SX lập → Chủ tịch HĐQT phê duyệt');
+select pg_temp.ok((select status from plan.production_plans where plan_no = 'KH-2611-01') = 'APPROVED', 'Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT chốt');
 select pg_temp.as_user('U_SXKH');
 insert into t select 'pr1', plan.create_pr_from_mrp((select v from t where k='run1'));
 select pg_temp.ok((select count(*) from purchase.pr_lines where pr_id = (select v from t where k='pr1')) > 5, 'Sinh PR từ MRP sau khi BGĐ duyệt kế hoạch');

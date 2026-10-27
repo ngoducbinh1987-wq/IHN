@@ -132,7 +132,7 @@ if (!(await page.textContent('main aside')).includes('Đã phát hành')) fail('
 ok('Spec PFR-2C-1P5 Đã phát hành sau 2 cấp duyệt (Quản lý SX → Giám đốc)');
 await ctx.close();
 
-// 6. Kế hoạch: tạo, thêm dòng, chạy MRP; Giám đốc gửi duyệt; Quản lý SX xác nhận → Chủ tịch HĐQT phê duyệt; sinh PR
+// 6. Kế hoạch: tạo, thêm dòng, chạy MRP; TP SX gửi duyệt → Giám đốc duyệt → Chủ tịch HĐQT chỉnh, chốt; sinh PR
 [ctx, page] = await ctxFor();
 await login(page, 'sx.kh@bmt.test');
 await page.goto(`${BASE}/ke-hoach/moi`);
@@ -210,8 +210,31 @@ await login(page, 'sx.tp@bmt.test');
 await page.goto(planUrl);
 await clickNav(page, 'button:has-text("Gửi duyệt kế hoạch")');
 await expectOk(page, 'TP SX gửi duyệt kế hoạch tháng');
+if (!(await flash(page)).includes('Giám đốc')) fail('Gửi duyệt kế hoạch tháng phải báo chuyển Giám đốc duyệt');
 await ctx.close();
-await approveAs('ct@bmt.test', planNo, 'Chủ tịch HĐQT');
+await approveAs('bgd@bmt.test', planNo, 'Giám đốc');
+// Bước Chủ tịch chốt: sửa dòng có lý do (MRP tự chạy lại), không bỏ được mã cuối cùng, rồi Chốt kế hoạch ngay trên trang kế hoạch
+[ctx, page] = await ctxFor();
+await login(page, 'ct@bmt.test');
+await page.goto(planUrl);
+if (!(await page.locator('#chair-turn').count())) fail('Chủ tịch ở bước chốt phải thấy khung chỉnh và nút Chốt kế hoạch');
+await clickNav(page, 'a[title="Sửa dòng"]');
+if (!(await page.locator('select[name=product_id]').isDisabled())) fail('Chủ tịch không đổi mã của dòng có sẵn');
+await page.fill('input[name=reason]', 'Khách đặt nhãn HEIZKA');
+await clickNav(page, 'button:has-text("Bỏ mã")');
+if (!(await flash(page)).includes('ít nhất một mã')) fail(`Bỏ mã cuối cùng phải bị chặn: ${await flash(page)}`);
+await clickNav(page, 'a[title="Sửa dòng"]');
+await page.selectOption('select[name=brand]', 'HEIZKA');
+await page.fill('input[name=reason]', 'Khách đặt nhãn HEIZKA');
+await clickNav(page, 'form:has(input[name=reason]) button:has-text("Lưu")');
+await expectOk(page, 'Chủ tịch sửa dòng ở bước chốt');
+if (!(await page.textContent('#chair-edits')).includes('Khách đặt nhãn HEIZKA') || await page.locator('#mrp-stale').count()) {
+  fail('Sửa của Chủ tịch phải ghi lịch sử, MRP đã chạy lại');
+}
+await clickNav(page, '#chair-turn button:has-text("Chốt kế hoạch")');
+await expectOk(page, 'Chủ tịch chốt kế hoạch tháng');
+await ctx.close();
+ok('Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch sửa (lý do, lịch sử, MRP chạy lại) và chốt');
 {
   const [c, p] = await ctxFor();
   await login(p, 'bgd@bmt.test');
@@ -440,8 +463,10 @@ await ctx.close();
 await login(page, 'admin@bmt.test', 'Admin@12345');
 await page.goto(`${BASE}/quan-tri/quy-trinh?f=PLAN`);
 const flowText = await page.textContent('main');
-if (!flowText.includes('TP SX lập kế hoạch tháng') || !flowText.includes('Chủ tịch HĐQT phê duyệt')) fail('Trang cài đặt phải hiện luồng TP SX lập → Chủ tịch HĐQT phê duyệt');
-// Quy trình final: bước Quản lý SX xác nhận (seq 1) đã tắt; chỉnh bước Chủ tịch HĐQT (seq 2)
+if (!flowText.includes('TP SX lập kế hoạch tháng') || !flowText.includes('Giám đốc duyệt kế hoạch tháng') || !flowText.includes('Chủ tịch HĐQT chốt kế hoạch tháng')) {
+  fail('Trang cài đặt phải hiện luồng TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT chốt');
+}
+// Quy trình 28/10/2026: bước 1 Giám đốc duyệt, bước 2 Chủ tịch HĐQT chốt; chỉnh bước Chủ tịch HĐQT (seq 2)
 const step1 = page.locator('form:has(input[name=seq][value="2"])');
 await step1.locator('input[name=sla_hours]').fill('8');
 await step1.locator('input[name=warn_hours]').fill('2');

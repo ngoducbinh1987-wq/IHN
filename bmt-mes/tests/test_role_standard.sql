@@ -48,6 +48,7 @@ select p.id, u.role from core.profiles p join (values ('R_ADMIN','ADMIN'),('R_BG
   ('R_SXTP','THU_KHO'),('R_SXKH','SX_KH'),('R_MUANV','MUA_NV'),('R_MUATP','MUA_TP'),('R_KTKHO','KT_KHO'),('R_KTT','KTT'),('R_KHO5','KHO_NV'),
   ('R_KHO5','VAN_HANH'),('R_VH','VAN_HANH'),('R_QC','QC')) u(code, role) on u.code = p.employee_code;
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('R_CT')] where (doc_type = 'PLAN' and seq = 2) or (doc_type = 'PO' and seq = 3);
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('R_BGD')] where doc_type = 'PLAN' and seq = 1;
 
 -- Spec PFR-2C-1P5 phát hành (nếu chưa) để có lệnh SX
 do $$ begin
@@ -265,10 +266,12 @@ insert into t select 'run', plan.run_mrp((select id from plan.production_plans w
 select pg_temp.as_user('R_MUANV');
 select pg_temp.fails($$select wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'R-KH-1'), 'R-KH-1')$$, 'quyền', 'NV mua hàng không gửi duyệt kế hoạch tháng');
 select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k = 'run'))$$, 'được phê duyệt', 'NV mua hàng có quyền sinh PR (chờ kế hoạch được duyệt)');
--- Quy trình final 27/10/2026: TP SX (Kế hoạch SX) lập kế hoạch tháng, Chủ tịch HĐQT duyệt
+-- Quy trình 28/10/2026: TP SX (Kế hoạch SX) lập kế hoạch tháng → Giám đốc duyệt → Chủ tịch HĐQT chốt
 select pg_temp.as_user('R_SXKH');
 insert into t select 'plan_req', wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'R-KH-1'), 'R-KH-1');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'plan_req')) = 'Chủ tịch HĐQT phê duyệt', 'Kế hoạch tháng: TP SX lập → Chủ tịch HĐQT phê duyệt');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'plan_req')) = 'Giám đốc duyệt kế hoạch tháng | Chủ tịch HĐQT chốt kế hoạch tháng',
+  'Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT chốt');
+select pg_temp.as_user('R_BGD');  select wf.act((select v from t where k = 'plan_req'), 'APPROVE');
 select pg_temp.as_user('R_CT');   select wf.act((select v from t where k = 'plan_req'), 'APPROVE');
 select pg_temp.as_user('R_MUANV');
 insert into t select 'pr_mrp', plan.create_pr_from_mrp((select v from t where k = 'run'));
