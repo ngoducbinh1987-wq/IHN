@@ -1,4 +1,4 @@
--- BMT MES · 3400 · Quy trình final 27/10/2026 – Đợt 3
+-- BMT MES · 3500 · Quy trình final 27/10/2026 – Đợt 3
 --  1. Phiếu xuất NVL theo lô: Kế toán SX in phiếu (MES gợi ý ống/bao theo FEFO), thủ kho xuất, NV lấy NVL ký nhận trên giấy,
 --     Kế toán SX nhập số thực xuất vào MES (app.paper_issue); NVL thừa cuối ngày nhập lại kho theo phiếu (app.paper_return)
 --  2. Báo cáo ca do Kế toán SX nhập từ tờ báo cáo ca giấy: sản lượng MES tự cộng từ phiếu hoàn thành, NVL để lại máy chạy tiếp

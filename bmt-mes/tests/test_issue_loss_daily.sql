@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026003400 (quy trình final – Đợt 3): phiếu xuất NVL theo lô và NVL thừa do Kế toán SX nhập từ phiếu giấy,
+-- Kiểm thử migration 20261026003500 (quy trình final – Đợt 3): phiếu xuất NVL theo lô và NVL thừa do Kế toán SX nhập từ phiếu giấy,
 -- báo cáo ca do Kế toán SX nhập (NVL để lại máy, phế cả ca), kg/km ruột thật từ đồng hồ line đùn, hao hụt theo công đoạn,
 -- báo cáo ngày + cảnh báo đỏ + giải trình.
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
