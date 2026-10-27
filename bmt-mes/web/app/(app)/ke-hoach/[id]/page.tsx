@@ -135,11 +135,11 @@ export default async function PlanDetail({ params, searchParams }:
       <section className="card mb-4 overflow-x-auto">
         <div className="card-h">Dòng kế hoạch · {nf(plan.total_m)} m · {nf(plan.total_packs)} kiện</div>
         <table className="tbl">
-          <thead><tr><th>SKU</th><th>Quy cách</th><th>Spec</th><th className="num">Sản lượng (m)</th><th className="num">Số lô</th><th>Đóng gói</th><th className="num">m/kiện</th><th className="num">Số kiện</th><th className="num">kg/kiện</th><th>TH</th>{lineEdit && <th />}</tr></thead>
+          <thead><tr><th>SKU</th><th>Quy cách</th><th>Spec</th><th className="num">Sản lượng (m)</th><th>Đóng gói</th><th className="num">m/kiện</th><th className="num">Số kiện</th><th className="num">kg/kiện</th><th>TH</th>{lineEdit && <th />}</tr></thead>
           <tbody>
             {(lines ?? []).map((l) => lineEdit && sp.sua === l.id ? (
               <tr key={l.id} className="bg-brand-soft/40">
-                <td colSpan={11} className="p-0">
+                <td colSpan={10} className="p-0">
                   <LineForm planId={id} line={l} products={products ?? []} packs={packs} chair={chairTurn} />
                 </td>
               </tr>
@@ -147,7 +147,7 @@ export default async function PlanDetail({ params, searchParams }:
               <tr key={l.id}>
                 <td className="mono font-medium">{l.product_code}</td><td className="min-w-[200px]">{l.description}</td>
                 <td><StatusPill map={SPEC_STATUS} value={l.spec_status} /></td>
-                <td className="num">{nf(l.qty_m)}</td><td className="num">{l.run_lots}</td><td>{l.pack_type}</td>
+                <td className="num">{nf(l.qty_m)}</td><td>{l.pack_type}</td>
                 <td className="num">{nf(l.m_per_pack)}</td>
                 <td className="num whitespace-nowrap">{nf(l.packs)}
                   {Number(l.odd_m) > 0 && <div className="text-[12px] text-muted">{nf(l.full_packs)} chẵn + 1 lẻ {nf(l.odd_m)} m</div>}</td>
@@ -161,7 +161,7 @@ export default async function PlanDetail({ params, searchParams }:
                 )}
               </tr>
             ))}
-            {(lines ?? []).length === 0 && <tr><td colSpan={11}><Empty>Chưa có dòng nào.</Empty></td></tr>}
+            {(lines ?? []).length === 0 && <tr><td colSpan={10}><Empty>Chưa có dòng nào.</Empty></td></tr>}
           </tbody>
         </table>
         {lineEdit && !sp.sua && <LineForm planId={id} products={products ?? []} packs={packs} chair={chairTurn} />}
@@ -180,7 +180,7 @@ export default async function PlanDetail({ params, searchParams }:
                   <td><span className="mono">{e.product_code}</span></td>
                   <td className="whitespace-nowrap">{e.action === 'ADD' ? <>Thêm <b>{nf(e.new_data?.qty_m)} m</b></>
                     : e.action === 'REMOVE' ? <>Bỏ mã ({nf(e.old_data?.qty_m)} m)</>
-                    : <>{nf(e.old_data?.qty_m)} → <b>{nf(e.new_data?.qty_m)} m</b>{e.old_data?.run_lots !== e.new_data?.run_lots && <> · lô {e.old_data?.run_lots} → {e.new_data?.run_lots}</>}
+                    : <>{nf(e.old_data?.qty_m)} → <b>{nf(e.new_data?.qty_m)} m</b>
                       {(e.old_data?.pack_type !== e.new_data?.pack_type || Number(e.old_data?.m_per_pack) !== Number(e.new_data?.m_per_pack)) && <> · {e.new_data?.pack_type} {nf(e.new_data?.m_per_pack)}</>}
                       {e.old_data?.brand !== e.new_data?.brand && <> · {e.new_data?.brand}</>}</>}</td>
                   <td className="min-w-[180px]">{e.reason}</td>
@@ -316,7 +316,6 @@ function LineForm({ planId, line, products, packs, chair = false }: { planId: st
         </select>
       </label>
       <label className="lbl">Sản lượng (m)<input className="inp inp-y text-right" name="qty_m" inputMode="decimal" required defaultValue={line ? String(line.qty_m).replace('.', ',') : undefined} autoFocus={Boolean(line)} /></label>
-      <label className="lbl">Số lô<input className="inp inp-y text-right" name="run_lots" defaultValue={line?.run_lots ?? 1} inputMode="numeric" required /></label>
       <PackFields options={packs} packType={line?.pack_type} mPerPack={line?.m_per_pack} />
       <label className="lbl">Thương hiệu<select className="inp inp-y" name="brand" defaultValue={line?.brand}><option>KAVIX</option><option>HEIZKA</option></select></label>
       {chair && (

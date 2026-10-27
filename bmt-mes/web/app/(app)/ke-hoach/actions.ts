@@ -22,10 +22,8 @@ export async function saveLine(form: FormData) {
   const planId = String(form.get('plan_id'));
   const productId = String(form.get('product_id'));
   const qty = parseNum(form.get('qty_m'));
-  const lots = parseNum(form.get('run_lots'));
   const mpp = parseNum(form.get('m_per_pack'));
   if (qty === null || Number.isNaN(qty) || qty < 0) back(planId, 'err', 'Sản lượng (m) phải là số ≥ 0');
-  if (lots === null || Number.isNaN(lots) || lots < 1) back(planId, 'err', 'Số lô chạy phải ≥ 1');
   if (mpp === null || Number.isNaN(mpp) || mpp <= 0) back(planId, 'err', 'Chọn quy cách m/kiện');
 
   const supabase = await createClient();
@@ -34,7 +32,7 @@ export async function saveLine(form: FormData) {
   const { data: prod } = await supabase.schema('master').from('products').select('code, current_spec_id').eq('id', productId).single();
   if (!prod?.current_spec_id) back(planId, 'err', 'Sản phẩm chưa có spec');
   const row = {
-    plan_id: planId, product_id: productId, spec_id: prod!.current_spec_id, qty_m: qty, run_lots: Math.round(lots!),
+    plan_id: planId, product_id: productId, spec_id: prod!.current_spec_id, qty_m: qty, run_lots: 1,
     m_per_pack: mpp, pack_type: String(form.get('pack_type')), brand: String(form.get('brand')),
     single_color: String(form.get('single_color') ?? '').trim() || null, wo_note: String(form.get('wo_note') ?? '').trim() || null,
   };
@@ -63,14 +61,12 @@ export async function chairSaveLine(form: FormData) {
   const planId = String(form.get('plan_id'));
   const lineId = String(form.get('line_id') ?? '') || null;
   const qty = parseNum(form.get('qty_m'));
-  const lots = parseNum(form.get('run_lots'));
   const mpp = parseNum(form.get('m_per_pack'));
   if (qty === null || Number.isNaN(qty) || qty <= 0) back(planId, 'err', 'Sản lượng (m) phải lớn hơn 0 (bỏ mã thì bấm Bỏ mã)');
-  if (lots === null || Number.isNaN(lots) || lots < 1) back(planId, 'err', 'Số lô chạy phải ≥ 1');
   if (mpp === null || Number.isNaN(mpp) || mpp <= 0) back(planId, 'err', 'Chọn quy cách m/kiện');
   const supabase = await createClient();
   const { error } = await supabase.schema('app').rpc('plan_chair_save_line', {
-    p_plan: planId, p_line: lineId, p_product: lineId ? null : String(form.get('product_id')), p_qty: qty, p_lots: Math.round(lots!),
+    p_plan: planId, p_line: lineId, p_product: lineId ? null : String(form.get('product_id')), p_qty: qty, p_lots: 1,
     p_pack_type: String(form.get('pack_type')), p_m_per_pack: mpp, p_brand: String(form.get('brand')), p_reason: String(form.get('reason') ?? ''),
   });
   if (error) back(planId, 'err', error.message);
