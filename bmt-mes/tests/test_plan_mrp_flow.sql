@@ -98,9 +98,11 @@ select pg_temp.ok((select qty_m = 3500 from plan.plan_lines where plan_id = (sel
 
 -- ================================================================ 4. Điều chỉnh kết quả MRP
 insert into t select 'line', pg_temp.mrp_line((select v from t where k = 'run2'));
-select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), 999, null, null, 'thử')$$, 'Chỉ TP Mua', 'NV mua không sửa được MRP');
+select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), 999, null, null, 'thử')$$, 'TP Mua hàng', 'NV mua không sửa được MRP');
 select pg_temp.as_user('T_SXTP');
-select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), 999, null, null, 'thử')$$, 'Chỉ TP Mua', 'TP Sản xuất không sửa được MRP');
+-- 27/10/2026: người lập kế hoạch (TP SX) sửa được MRP khi kế hoạch còn nháp (migration 4400); gửi số cũ → chỉ báo "Không có thay đổi"
+select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), (select suggest_qty from plan.mrp_lines where id = (select v from t where k = 'line')), null, null, 'thử')$$,
+  'Không có thay đổi', 'TP Sản xuất (người lập kế hoạch) qua kiểm quyền sửa MRP khi kế hoạch nháp');
 select pg_temp.as_user('T_MUATP');
 select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), 999, null, null, '  ')$$, 'lý do', 'Bắt buộc nhập lý do');
 create temp table o as select suggest_qty, latest_order_date from plan.mrp_lines where id = (select v from t where k = 'line');
@@ -131,7 +133,7 @@ insert into t select 'req', wf.submit('PLAN', (select v from t where k = 'plan')
 select pg_temp.ok((select count(*) = 1 from wf.notifications where user_id in (pg_temp.uid('T_SXTP'), pg_temp.uid('T_SXTP2')) and link = '/duyet/' || (select v from t where k = 'req')),
   'Chỉ người được giao (SX_TP2) nhận thông báo bước Duyệt');
 select pg_temp.as_user('T_MUATP');
-select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), 5, null, null, 'thử')$$, 'PENDING_APPROVAL', 'Kế hoạch đang chờ duyệt: khóa kết quả MRP');
+select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), 5, null, null, 'thử')$$, 'Chỉ người đang duyệt', 'Kế hoạch đang chờ duyệt: chỉ người đang duyệt sửa kết quả MRP');
 -- Đổi cấu hình khi hồ sơ đang chạy: hồ sơ giữ cấu hình cũ
 select pg_temp.as_user('T_ADMIN');
 select app.save_flow_step('PLAN', 1::smallint, 'Duyệt kế hoạch', 'SX_TP', array[pg_temp.uid('T_SXTP')], 8, 2, true);

@@ -13,6 +13,9 @@ import { approve, comment, reject } from './actions';
 
 export const metadata = { title: 'Chi tiết quy trình' };
 
+// Chứng từ người đang duyệt sửa được trên trang chứng từ (database: wf.review_request); thêm loại mới khi có màn hình sửa
+const EDITABLE_BY_REVIEWER = ['PLAN', 'PR', 'PLAN_ADJ'];
+
 const ACTION: Record<string, [string, 'ok' | 'bad' | 'info']> = {
   APPROVE: ['Chuyển giai đoạn', 'ok'], REJECT: ['Trả lại', 'bad'], COMMENT: ['Trao đổi', 'info'],
 };
@@ -92,6 +95,9 @@ export default async function ApprovalDetail({ params, searchParams }:
                   </details>
                 </div>
                 <span className="text-[12.5px] text-muted">Bạn đang giữ bước này</span>
+                {a.doc_link && EDITABLE_BY_REVIEWER.includes(a.doc_type) && !a.i_submitted && (
+                  <Link href={a.doc_link} className="btn btn-sm btn-soft" id="review-edit-link">Sửa nội dung trước khi duyệt</Link>
+                )}
               </div>
             )}
             {a.status === 'PENDING' && !a.my_turn && (

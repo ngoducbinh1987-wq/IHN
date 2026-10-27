@@ -10,7 +10,7 @@ import type { Approval } from '@/lib/approvals';
 import { DOC_STATUS, SPEC_STATUS, df, nf } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { adjustMrp, createAdj, createPr, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
+import { adjustMrp, createAdj, createPr, deleteLine, removeLineReview, runMrp, saveLine, saveLineReview, submitPlan } from '../actions';
 
 const ADJ_STATUS: Record<string, [string, 'ok' | 'warn' | 'bad' | 'mute' | 'info']> = {
   DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ Chủ tịch duyệt', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
@@ -47,12 +47,17 @@ export default async function PlanDetail({ params, searchParams }:
       ? supabase.schema('purchase').from('purchase_requests').select('id, pr_no').eq('mrp_run_id', plan.last_run_id).neq('status', 'CANCELLED')
       : Promise.resolve({ data: [] as { id: string; pr_no: string }[] }),
   ]);
-  const [{ data: levels }, { data: adjs }] = await Promise.all([
+  const pending = plan.status === 'PENDING_APPROVAL';
+  const [{ data: levels }, { data: adjs }, { data: reviewEdit }, { data: reviewEdits }] = await Promise.all([
     plan.last_run_id
       ? supabase.schema('app').from('v_mrp_products').select('*').eq('run_id', plan.last_run_id).order('id')
       : Promise.resolve({ data: [] as Record<string, never>[] }),
     supabase.schema('app').from('v_plan_adjustments').select('*').eq('plan_id', id).neq('status', 'CANCELLED').order('created_at', { ascending: false }),
+    // Người đang giữ bước duyệt được sửa dòng kế hoạch và đề nghị mua (database kiểm lại: app.can_review_edit / plan.chair_request)
+    pending ? supabase.schema('app').rpc('can_review_edit', { p_doc_type: 'PLAN', p_doc_id: id }) : Promise.resolve({ data: false }),
+    supabase.schema('app').from('v_plan_chair_edits').select('*').eq('plan_id', id).order('edited_at', { ascending: false }).limit(50),
   ]);
+  const reviewer = pending && reviewEdit === true;
   const canAdj = plan.status === 'APPROVED' && (can(me, 'plan', 'create') || me.roles.includes('SX_TP'));
   const stages: Stage[] = req?.steps ?? [{ seq: 0, label: flowHead?.submit_label ?? 'Lập kế hoạch', state: 'current' }, ...(flow ?? []).map((s) => ({ seq: s.seq, label: s.level_label, state: 'todo' as const }))];
   const draft = plan.status === 'DRAFT';
@@ -62,12 +67,16 @@ export default async function PlanDetail({ params, searchParams }:
     && (!(flowHead?.submit_user_ids?.length) || flowHead.submit_user_ids.includes(me.id));
   const canMakePr = can(me, 'plan', 'create') || can(me, 'purchase', 'create');
   const editable = draft && can(me, 'plan', 'edit');
+  const lineEdit = editable || reviewer;
   const stale = Boolean(plan.mrp_stale);
   const pr = prs?.[0];
-  // Điều chỉnh MRP: chỉ TP Mua hàng / TP Kỹ thuật-QA; khóa khi chờ duyệt, đã đóng, MRP cũ hoặc đã sinh PR (database kiểm tra lại)
-  const canAdjust = me.roles.includes('MUA_TP') || me.roles.includes('KT_TP');
-  const mrpLock = !['DRAFT', 'APPROVED'].includes(plan.status) ? 'kế hoạch đang chờ duyệt hoặc đã đóng'
+  // Điều chỉnh MRP (database kiểm lại ở app.adjust_mrp_line):
+  //  nháp: người lập kế hoạch (plan:create), TP Mua, TP KT/QA; chờ duyệt: người đang giữ bước duyệt; đã duyệt: TP Mua, TP KT/QA
+  const buyerOrTech = me.roles.includes('MUA_TP') || me.roles.includes('KT_TP');
+  const canAdjust = draft ? can(me, 'plan', 'create') || buyerOrTech : pending ? reviewer : plan.status === 'APPROVED' && buyerOrTech;
+  const mrpLock = !['DRAFT', 'PENDING_APPROVAL', 'APPROVED'].includes(plan.status) ? 'kế hoạch đã đóng'
     : stale ? 'dòng kế hoạch đã thay đổi, cần chạy lại MRP' : pr ? `đã sinh ${pr.pr_no}` : null;
+  const canRunMrp = pending ? reviewer : can(me, 'plan', 'create') && plan.status !== 'CLOSED';
   const adjustable = canAdjust && !mrpLock;
   const packs = packOpts ?? [];
   const showPrice = me.can_see_price;
@@ -78,7 +87,7 @@ export default async function PlanDetail({ params, searchParams }:
       <Toolbar title={<span>{plan.plan_no} – {plan.period_label}</span>}
         actions={<>
           {req && <Link className="btn btn-soft" href={`/duyet/${req.id}`}>Xem quy trình duyệt</Link>}
-          {can(me, 'plan', 'create') && (lines?.length ?? 0) > 0 && plan.status !== 'CLOSED' && (
+          {canRunMrp && (lines?.length ?? 0) > 0 && (
             <form action={runMrp}><input type="hidden" name="plan_id" value={id} /><SubmitButton className="btn btn-soft">Chạy MRP</SubmitButton></form>
           )}
           <Link className="btn btn-soft" href={`/in/ke-hoach/${id}`} target="_blank"><Printer size={16} />In</Link>
@@ -100,6 +109,13 @@ export default async function PlanDetail({ params, searchParams }:
         <AdminTools docType="PLAN" docId={id} docNo={plan.plan_no} requestId={req?.id} pending={req?.status === 'PENDING'} canReopen={plan.status !== 'DRAFT'}
           back={`/ke-hoach/${id}`} after="/ke-hoach" />
       )}
+      {reviewer && (
+        <div role="note" id="review-edit" className="mb-4 rounded border-l-4 border-brand bg-brand-soft px-4 py-2.5 text-[14px]">
+          <b>Bạn đang duyệt kế hoạch này</b> nên được sửa trước khi duyệt: sửa sản lượng, thêm hoặc bỏ mã (MES tự chạy lại MRP, giữ số đã chỉnh của vật tư không đổi nhu cầu)
+          và sửa đề nghị mua bằng nút <Pencil size={13} className="inline" />. Mỗi lần sửa ghi lý do vào lịch sử duyệt và báo người lập.
+          {req && <> Sửa xong bấm duyệt ở <Link className="link" href={`/duyet/${req.id}`}>trang quy trình duyệt</Link>.</>}
+        </div>
+      )}
       {stale && (
         <div role="alert" id="mrp-stale" className="mb-4 rounded border-l-4 border-warn bg-warn-soft px-4 py-2.5 text-[14px]">
           Dòng kế hoạch đã thay đổi sau lần chạy MRP gần nhất. <b>Bấm “Chạy MRP”</b> để tính lại nhu cầu vật tư trước khi gửi duyệt hoặc sinh đề xuất mua.
@@ -114,12 +130,12 @@ export default async function PlanDetail({ params, searchParams }:
       <section className="card mb-4 overflow-x-auto">
         <div className="card-h">Dòng kế hoạch · {nf(plan.total_m)} m · {nf(plan.total_packs)} kiện</div>
         <table className="tbl">
-          <thead><tr><th>SKU</th><th>Quy cách</th><th>Spec</th><th className="num">Sản lượng (m)</th><th className="num">Số lô</th><th>Đóng gói</th><th className="num">m/kiện</th><th className="num">Số kiện</th><th className="num">kg/kiện</th><th>TH</th>{editable && <th />}</tr></thead>
+          <thead><tr><th>SKU</th><th>Quy cách</th><th>Spec</th><th className="num">Sản lượng (m)</th><th className="num">Số lô</th><th>Đóng gói</th><th className="num">m/kiện</th><th className="num">Số kiện</th><th className="num">kg/kiện</th><th>TH</th>{lineEdit && <th />}</tr></thead>
           <tbody>
-            {(lines ?? []).map((l) => editable && sp.sua === l.id ? (
+            {(lines ?? []).map((l) => lineEdit && sp.sua === l.id ? (
               <tr key={l.id} className="bg-brand-soft/40">
                 <td colSpan={11} className="p-0">
-                  <LineForm planId={id} line={l} products={products ?? []} packs={packs} />
+                  <LineForm planId={id} line={l} products={products ?? []} packs={packs} review={reviewer} />
                 </td>
               </tr>
             ) : (
@@ -132,10 +148,10 @@ export default async function PlanDetail({ params, searchParams }:
                   {Number(l.odd_m) > 0 && <div className="text-[12px] text-muted">{nf(l.full_packs)} chẵn + 1 lẻ {nf(l.odd_m)} m</div>}</td>
                 <td className={`num ${Number(l.kg_per_pack) > 100 ? 'font-medium text-bad' : ''}`}>{nf(l.kg_per_pack, 1)}</td>
                 <td>{l.brand}</td>
-                {editable && (
+                {lineEdit && (
                   <td><div className="flex gap-1.5">
                     <Link className="btn btn-soft px-2.5" href={`/ke-hoach/${id}?sua=${l.id}`} title="Sửa dòng" aria-label={`Sửa dòng ${l.product_code}`}><Pencil size={16} /></Link>
-                    <form action={deleteLine}><input type="hidden" name="plan_id" value={id} /><input type="hidden" name="line_id" value={l.id} /><SubmitButton className="btn btn-bad" pendingText="…">Xóa</SubmitButton></form>
+                    {editable && <form action={deleteLine}><input type="hidden" name="plan_id" value={id} /><input type="hidden" name="line_id" value={l.id} /><SubmitButton className="btn btn-bad" pendingText="…">Xóa</SubmitButton></form>}
                   </div></td>
                 )}
               </tr>
@@ -143,7 +159,7 @@ export default async function PlanDetail({ params, searchParams }:
             {(lines ?? []).length === 0 && <tr><td colSpan={11}><Empty>Chưa có dòng nào.</Empty></td></tr>}
           </tbody>
         </table>
-        {editable && !sp.sua && <LineForm planId={id} products={products ?? []} packs={packs} />}
+        {lineEdit && !sp.sua && <LineForm planId={id} products={products ?? []} packs={packs} review={reviewer} />}
         {editable && plan.mode === 'OFFICIAL' && <p className="px-4 pb-3 text-[12px] text-muted">Kế hoạch chính thức chỉ chạy MRP khi mọi mã đã phát hành spec. Mã dây đơn (SIF/PVC) thường dùng Cuộn PE 100/200 m/kiện; cáp dùng Bobin gỗ 500 hoặc 305 m/kiện.</p>}
       </section>
 
@@ -229,6 +245,23 @@ export default async function PlanDetail({ params, searchParams }:
         </section>
       )}
 
+      {reviewEdits && reviewEdits.length > 0 && (
+        <section className="card mt-4 overflow-x-auto">
+          <div className="card-h">Lịch sử sửa dòng kế hoạch khi duyệt</div>
+          <table className="tbl">
+            <thead><tr><th>Thời điểm</th><th>Người sửa</th><th>Mã</th><th>Thay đổi</th><th>Lý do</th></tr></thead>
+            <tbody>{reviewEdits.map((e) => (
+              <tr key={e.id}>
+                <td className="whitespace-nowrap">{df(e.edited_at, true)}</td><td>{e.edited_by_name}</td><td className="mono">{e.product_code}</td>
+                <td className="whitespace-nowrap">{e.action === 'ADD' ? <>Thêm <b>{nf(e.new_data?.qty_m)} m</b></> : e.action === 'REMOVE' ? <>Bỏ ({nf(e.old_data?.qty_m)} m)</>
+                  : <>{nf(e.old_data?.qty_m)} → <b>{nf(e.new_data?.qty_m)} m</b>{e.old_data?.m_per_pack !== e.new_data?.m_per_pack ? ` · ${e.old_data?.m_per_pack} → ${e.new_data?.m_per_pack} m/kiện` : ''}</>}</td>
+                <td className="min-w-[160px]">{e.reason}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </section>
+      )}
+
       {edits && edits.length > 0 && (
         <section className="card mt-4 overflow-x-auto">
           <div className="card-h">Lịch sử điều chỉnh MRP</div>
@@ -258,13 +291,14 @@ type Prod = { id: string; code: string; description: string | null; spec_status:
 type Line = { id: string; product_id: string; qty_m: number; run_lots: number; pack_type: string; m_per_pack: number; brand: string };
 
 // Form thêm dòng và sửa dòng dùng chung (cùng danh mục đóng gói)
-function LineForm({ planId, line, products, packs }: { planId: string; line?: Line; products: Prod[]; packs: PackOption[] }) {
+// review: người đang duyệt sửa (bắt buộc lý do, MES chạy lại MRP); không đổi mã của dòng có sẵn
+function LineForm({ planId, line, products, packs, review = false }: { planId: string; line?: Line; products: Prod[]; packs: PackOption[]; review?: boolean }) {
   return (
-    <form action={saveLine} className="grid gap-3 border-t border-line bg-sunk/40 p-4 md:grid-cols-[2fr_1fr_0.7fr_1fr_0.8fr_0.8fr_auto] md:items-end">
+    <form action={review ? saveLineReview : saveLine} className={`grid gap-3 border-t border-line bg-sunk/40 p-4 md:items-end ${review ? 'md:grid-cols-[2fr_1fr_0.7fr_1fr_0.8fr_0.8fr_1.6fr_auto]' : 'md:grid-cols-[2fr_1fr_0.7fr_1fr_0.8fr_0.8fr_auto]'}`}>
       <input type="hidden" name="plan_id" value={planId} />
       {line && <input type="hidden" name="line_id" value={line.id} />}
       <label className="lbl">Sản phẩm
-        <select className="inp inp-y" name="product_id" required defaultValue={line?.product_id}>
+        <select className="inp inp-y" name="product_id" required defaultValue={line?.product_id} disabled={review && Boolean(line)}>
           {products.map((p) => (
             <option key={p.id} value={p.id}>{p.code} · {p.description}{p.spec_status !== 'RELEASED' ? ' (spec chưa phát hành)' : ''}</option>
           ))}
@@ -274,8 +308,11 @@ function LineForm({ planId, line, products, packs }: { planId: string; line?: Li
       <label className="lbl">Số lô<input className="inp inp-y text-right" name="run_lots" defaultValue={line?.run_lots ?? 1} inputMode="numeric" required /></label>
       <PackFields options={packs} packType={line?.pack_type} mPerPack={line?.m_per_pack} />
       <label className="lbl">Thương hiệu<select className="inp inp-y" name="brand" defaultValue={line?.brand}><option>KAVIX</option><option>HEIZKA</option></select></label>
+      {review && <label className="lbl">Lý do sửa <span className="text-bad">*</span><input className="inp inp-y" name="reason" required placeholder="Bắt buộc, ghi vào lịch sử duyệt" /></label>}
       {line ? (
-        <div className="flex gap-2"><SubmitButton>Lưu</SubmitButton><Link className="btn" href={`/ke-hoach/${planId}`}>Hủy</Link></div>
+        <div className="flex gap-2"><SubmitButton>Lưu</SubmitButton>
+          {review && <SubmitButton className="btn btn-bad-o" formAction={removeLineReview} pendingText="…">Bỏ mã</SubmitButton>}
+          <Link className="btn" href={`/ke-hoach/${planId}`}>Hủy</Link></div>
       ) : <SubmitButton>Thêm dòng</SubmitButton>}
     </form>
   );

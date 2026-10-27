@@ -35,7 +35,12 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
   ]);
   const impact = (impactRows ?? []) as Impact[];
   const draft = a.status === 'DRAFT';
-  const canEdit = draft && (can(me, 'plan', 'create') || me.roles.includes('SX_TP'));
+  // Người lập sửa khi nháp; Chủ tịch (người đang duyệt) sửa khi chờ duyệt, ghi lịch sử duyệt
+  const { data: reviewEdit } = a.status === 'PENDING_APPROVAL'
+    ? await supabase.schema('app').rpc('can_review_edit', { p_doc_type: 'PLAN_ADJ', p_doc_id: id })
+    : { data: false };
+  const reviewer = reviewEdit === true;
+  const canEdit = (draft && (can(me, 'plan', 'create') || me.roles.includes('SX_TP'))) || reviewer;
   const rows: Partial<Line>[] = [...(lines ?? []), ...Array.from({ length: canEdit ? Math.max(3, 6 - (lines?.length ?? 0)) : 0 }, () => ({}))];
 
   return (
@@ -74,11 +79,18 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
           </table>
           <datalist id="released">{(products ?? []).map((p) => <option key={p.code} value={p.code}>{p.description}</option>)}</datalist>
           <p className="mt-2 text-[12.5px] text-muted">Thêm mã: chọn "Thêm mã", nhập mã (spec đã phát hành), số mét, hạn giao. Đổi sản lượng: chọn dòng, nhập số mét mới. Đổi hạn: chọn dòng, nhập hạn mới hoặc đánh dấu gấp. Bỏ mã: chỉ khi lô chưa phát lệnh sản xuất (đang chạy thì giảm số mét).</p></div>
-          <div className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
-            <SubmitButton className="btn" formAction={saveAdj}>Lưu nháp</SubmitButton>
-            <SubmitButton formAction={submitAdj}>Lưu và gửi Chủ tịch HĐQT duyệt</SubmitButton>
-            <SubmitButton className="btn btn-bad-o ml-auto" formAction={cancelAdj}>Hủy phiếu</SubmitButton>
-          </div>
+          {reviewer ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
+              <SubmitButton formAction={saveAdj}>Lưu thay đổi</SubmitButton>
+              <span className="text-[12.5px] text-muted">Bạn đang duyệt phiếu này: sửa xong ghi vào lịch sử duyệt, báo người lập; duyệt ở {a.approval_id ? <Link className="link" href={`/duyet/${a.approval_id}`}>trang quy trình duyệt</Link> : 'trang quy trình duyệt'}.</span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
+              <SubmitButton className="btn" formAction={saveAdj}>Lưu nháp</SubmitButton>
+              <SubmitButton formAction={submitAdj}>Lưu và gửi Chủ tịch HĐQT duyệt</SubmitButton>
+              <SubmitButton className="btn btn-bad-o ml-auto" formAction={cancelAdj}>Hủy phiếu</SubmitButton>
+            </div>
+          )}
         </form>
       ) : (
         <section className="card mb-4 overflow-x-auto">

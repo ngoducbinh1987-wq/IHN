@@ -63,13 +63,47 @@ export async function deleteLine(form: FormData) {
   back(planId, 'ok', 'Đã xóa dòng');
 }
 
+// Chạy MRP qua app.plan_run_mrp: giữ số đã chỉnh của vật tư không đổi nhu cầu; kế hoạch chờ duyệt thì chỉ người đang duyệt
 export async function runMrp(form: FormData) {
   const planId = String(form.get('plan_id'));
   const supabase = await createClient();
-  const { error } = await supabase.schema('plan').rpc('run_mrp', { p_plan: planId });
+  const { error } = await supabase.schema('app').rpc('plan_run_mrp', { p_plan: planId });
   if (error) back(planId, 'err', error.message);
   revalidatePath(`/ke-hoach/${planId}`);
   back(planId, 'ok', 'Đã chạy MRP');
+}
+
+// Người đang duyệt sửa / thêm dòng kế hoạch (bắt buộc lý do); MES chạy lại MRP và ghi lịch sử duyệt
+export async function saveLineReview(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const lineId = String(form.get('line_id') ?? '') || null;
+  const qty = parseNum(form.get('qty_m'));
+  const lots = parseNum(form.get('run_lots'));
+  const mpp = parseNum(form.get('m_per_pack'));
+  const reason = String(form.get('reason') ?? '').trim();
+  if (qty === null || Number.isNaN(qty) || qty <= 0) back(planId, 'err', 'Sản lượng (m) phải lớn hơn 0 (bỏ mã thì bấm Bỏ mã)');
+  if (lots === null || Number.isNaN(lots) || lots < 1) back(planId, 'err', 'Số lô chạy phải ≥ 1');
+  if (mpp === null || Number.isNaN(mpp) || mpp <= 0) back(planId, 'err', 'Chọn quy cách m/kiện');
+  if (!reason) back(planId, 'err', 'Nhập lý do sửa');
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('plan_chair_save_line', {
+    p_plan: planId, p_line: lineId, p_product: lineId ? null : String(form.get('product_id') ?? '') || null, p_qty: qty, p_lots: Math.round(lots!),
+    p_pack_type: String(form.get('pack_type')), p_m_per_pack: mpp, p_brand: String(form.get('brand')), p_reason: reason,
+  });
+  if (error) back(planId, 'err', error.message);
+  revalidatePath(`/ke-hoach/${planId}`);
+  back(planId, 'ok', `Đã ${lineId ? 'sửa' : 'thêm'} dòng, MES đã chạy lại MRP và ghi vào lịch sử duyệt.`);
+}
+
+export async function removeLineReview(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const reason = String(form.get('reason') ?? '').trim();
+  if (!reason) back(planId, 'err', 'Nhập lý do bỏ mã');
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('plan_chair_remove_line', { p_line: String(form.get('line_id')), p_reason: reason });
+  if (error) back(planId, 'err', error.message);
+  revalidatePath(`/ke-hoach/${planId}`);
+  back(planId, 'ok', 'Đã bỏ mã khỏi kế hoạch, MES đã chạy lại MRP và ghi vào lịch sử duyệt.');
 }
 
 export async function submitPlan(form: FormData) {
