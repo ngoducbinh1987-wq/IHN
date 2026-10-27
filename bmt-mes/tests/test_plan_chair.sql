@@ -53,12 +53,12 @@ $$;
 set client_min_messages = notice;
 
 -- Người dùng thử: Chủ tịch, Giám đốc (cùng vai trò Ban giám đốc), TP SX, TP Mua, Quản trị
-with u(code) as (values ('H_CT'),('H_GD'),('H_SXTP'),('H_MUATP'),('H_ADM')),
+with u(code) as (values ('H_CT'),('H_GD'),('H_SXTP'),('H_MUATP'),('H_ADM'),('H_KTTP')),
 ins as (insert into auth.users (id, email) select gen_random_uuid(), lower(code) || '@bmt.test' from u returning id, email)
 insert into core.profiles (id, employee_code, full_name, status)
 select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
-select p.id, u.role from core.profiles p join (values ('H_CT','BGD'),('H_GD','BGD'),('H_SXTP','SX_TP'),('H_MUATP','MUA_TP'),('H_ADM','ADMIN')) u(code, role)
+select p.id, u.role from core.profiles p join (values ('H_CT','BGD'),('H_GD','BGD'),('H_SXTP','SX_TP'),('H_MUATP','MUA_TP'),('H_ADM','ADMIN'),('H_KTTP','KT_TP')) u(code, role)
   on u.code = p.employee_code;
 update core.profiles set status = 'LOCKED' where (employee_code is null or employee_code !~ '^H_') and status = 'ACTIVE';
 
@@ -140,9 +140,11 @@ select pg_temp.ok((select count(*) from plan.mrp_runs where plan_id = (select v 
 select pg_temp.ok((select summary like 'Thử 4200: 2 SKU, 17.000 m%' from wf.approval_requests where id = (select v from t where k = 'req')),
   'Tóm tắt hồ sơ duyệt cập nhật theo số mới');
 -- Thêm mã: chưa phát hành spec thì chặn; mã đã có thì chặn; mã đã phát hành thì thêm được
--- Mã chưa phát hành spec: SFR-2P-1 (dữ liệu thật đã phát hành thì tạm đưa spec về nháp trong giao dịch thử)
-update master.product_specs set status = 'DRAFT' where id = (select current_spec_id from master.products where code = 'SFR-2P-1') and status = 'RELEASED';
-insert into t select 'draft_prod', id from master.products where code = 'SFR-2P-1';
+-- Mã chưa phát hành spec: TP KT/QA tạo mã thử mới (spec nháp sao từ PFR-2C-1P5)
+select pg_temp.as_user('H_KTTP');
+insert into t select 'draft_spec', app.create_spec('ZZT-42-1P5', null, 'Mã thử 4200', (select current_spec_id from master.products where code = 'PFR-2C-1P5'));
+insert into t select 'draft_prod', product_id from master.product_specs where id = (select v from t where k = 'draft_spec');
+select pg_temp.as_user('H_CT');
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select v from t where k = 'draft_prod'), 3000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Thêm')$$,
   'chưa phát hành spec', 'Thêm mã chưa phát hành spec vào kế hoạch chính thức: chặn');
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select id from master.products where code = 'SIF-1C-1P5'), 3000, 1, 'Cuộn PE', 200, 'KAVIX', 'Thêm')$$,
