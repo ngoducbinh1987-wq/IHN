@@ -47,12 +47,13 @@ insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('E_CT','BGD'),('E_GD','BGD'),('E_SXTP','SX_TP'),('E_MUATP','MUA_TP'),
   ('E_MUANV','MUA_NV'),('E_VH','VAN_HANH')) u(code, role) on u.code = p.employee_code;
 update core.profiles set status = 'LOCKED' where (employee_code is null or employee_code !~ '^E_') and status = 'ACTIVE';
--- Kế hoạch: TP SX lập → Giám đốc duyệt → Chủ tịch chốt; đề xuất mua: Giám đốc duyệt; điều chỉnh kế hoạch: Chủ tịch duyệt
+-- Kế hoạch: TP SX lập → Giám đốc duyệt → Chủ tịch chốt; đề xuất mua: Giám đốc duyệt; hiệu chỉnh kế hoạch: Giám đốc → Chủ tịch
 update wf.approval_steps set enabled = true, assignee_ids = array[pg_temp.uid('E_GD')] where doc_type = 'PLAN' and seq = 1;
 update wf.approval_steps set enabled = true, assignee_ids = array[pg_temp.uid('E_CT')] where doc_type = 'PLAN' and seq = 2;
 update wf.approval_steps set enabled = false where doc_type = 'PLAN' and seq > 2;
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_GD')] where doc_type = 'PR' and seq = 1;
-update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_CT')] where doc_type = 'PLAN_ADJ' and seq = 1;
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_GD')] where doc_type = 'PLAN_ADJ' and seq = 1;
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_CT')] where doc_type = 'PLAN_ADJ' and seq = 2;
 update wf.approval_flows set submit_role = null, submit_user_ids = '{}' where doc_type in ('PLAN', 'PR', 'PLAN_ADJ');
 
 do $$ begin
@@ -161,7 +162,7 @@ select pg_temp.ok(pg_temp.edits(pg_temp.v('pr_req')) = 3, 'Lịch sử duyệt P
 select pg_temp.ok(wf.act(pg_temp.v('pr_req'), 'APPROVE', null) = 'APPROVED', 'Giám đốc duyệt PR sau khi sửa phần đầu (mã kiểm cập nhật theo lần sửa)');
 select pg_temp.fails($$select app.save_pr_line(pg_temp.v('pr'), 'CU-024', 90, null)$$, 'nháp hoặc đang chờ duyệt', 'Đề xuất đã duyệt không sửa được');
 
--- ================================================================ 5. Phiếu điều chỉnh kế hoạch: Chủ tịch sửa khi duyệt
+-- ================================================================ 5. Đề xuất hiệu chỉnh kế hoạch: Giám đốc, Chủ tịch sửa khi duyệt
 select pg_temp.as_user('E_SXTP');
 insert into t select 'adj', app.adj_create(pg_temp.v('plan'), 'Khách tăng đơn');
 select app.adj_save(pg_temp.v('adj'), 'Khách tăng đơn', jsonb_build_array(jsonb_build_object('kind', 'QTY', 'plan_line_id', pg_temp.v('l15'), 'qty_m', 12000)));
@@ -169,9 +170,15 @@ insert into t select 'adj_req', app.adj_submit(pg_temp.v('adj'));
 select pg_temp.fails($$select app.adj_save(pg_temp.v('adj'), 'x', jsonb_build_array(jsonb_build_object('kind', 'QTY', 'plan_line_id', pg_temp.v('l15'), 'qty_m', 13000)))$$,
   'Người lập không sửa', 'Người lập không sửa phiếu điều chỉnh đang chờ duyệt');
 select pg_temp.as_user('E_CT');
+select pg_temp.fails($$select app.adj_save(pg_temp.v('adj'), 'x', jsonb_build_array(jsonb_build_object('kind', 'QTY', 'plan_line_id', pg_temp.v('l15'), 'qty_m', 9000)))$$,
+  'Chỉ người đang duyệt', 'Chủ tịch chưa đến lượt (bước Giám đốc) thì chưa sửa');
+select pg_temp.as_user('E_GD');
+select app.adj_save(pg_temp.v('adj'), 'Khách tăng đơn (Giám đốc chỉnh)', jsonb_build_array(jsonb_build_object('kind', 'QTY', 'plan_line_id', pg_temp.v('l15'), 'qty_m', 11500)));
+select pg_temp.ok(wf.act(pg_temp.v('adj_req'), 'APPROVE', null) = 'PENDING', 'Giám đốc sửa đề xuất hiệu chỉnh rồi duyệt bước 1, chuyển Chủ tịch');
+select pg_temp.as_user('E_CT');
 select app.adj_save(pg_temp.v('adj'), 'Khách tăng đơn (Chủ tịch chỉnh)', jsonb_build_array(jsonb_build_object('kind', 'QTY', 'plan_line_id', pg_temp.v('l15'), 'qty_m', 11000)));
-select pg_temp.ok(pg_temp.edits(pg_temp.v('adj_req')) = 1, 'Chủ tịch sửa phiếu điều chỉnh khi duyệt, ghi lịch sử');
-select pg_temp.ok(wf.act(pg_temp.v('adj_req'), 'APPROVE', null) = 'APPROVED', 'Chủ tịch duyệt phiếu đã sửa');
+select pg_temp.ok(pg_temp.edits(pg_temp.v('adj_req')) = 2, 'Giám đốc và Chủ tịch sửa đề xuất hiệu chỉnh khi duyệt, ghi lịch sử');
+select pg_temp.ok(wf.act(pg_temp.v('adj_req'), 'APPROVE', null) = 'APPROVED', 'Chủ tịch duyệt đề xuất đã sửa');
 select pg_temp.ok((select qty_m = 11000 from plan.plan_lines where id = pg_temp.v('l15')), 'Kế hoạch áp số Chủ tịch đã sửa (11.000 m, không phải 12.000 m)');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;
