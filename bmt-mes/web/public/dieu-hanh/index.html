@@ -670,6 +670,8 @@ a.tbtn { text-decoration: none; color: inherit; }
 
   /* ================= Máy giai đoạn 1 theo mô hình R02 (số liệu vận hành mô phỏng) ================= */
   var M = [
+    { id: 'SIL-MIX', step: 'Trộn silicone', kind: 'mx', unit: 'kg/h', qunit: 'kg', state: 'run', wo: 'LSX-2610-001', prod: 'SIL-9710G + DCBP-50 + hạt màu đỏ · cấp SIL-01', target: 32, max: 50, plan: 240, kw: 18.5, reel: 'Mẻ 12 kg · mẻ 14/20',
+      zones: [['Trục cán trước', 28], ['Trục cán sau', 26], ['Phòng lạnh', 19]], lim: [40, 40, 25], extra: [['Khe cán', '1,2 mm'], ['Công suất máy', '10–50 kg silicone/giờ'], ['Công đoạn MES', 'CD0 · trộn silicone']] },
     { id: 'TW630-01', step: 'Bện ruột dẫn', kind: 'bun', state: 'run', wo: 'LSX-2610-005', prod: 'Ruột đồng 30 × 0,25 mm, bước 35 mm', target: 110, max: 126, plan: 90000, kw: 7.5, reel: 'Bobin 630 · BB-630-0430',
       zones: [], extra: [['Tốc độ quay', '1.800 vòng/phút'], ['Giá xả', 'đối chiếu bản GA 50 đầu']] },
     { id: 'SIL-01', step: 'Bọc cách điện silicone', kind: 'si', state: 'run', wo: 'LSX-2610-001', prod: 'Lõi silicone 1,5 mm² · đỏ', target: 80, max: 120, plan: 60000, kw: 135, od: 2.85, tol: 0.05, reel: 'Bobin 630 · BB-630-0417',
@@ -684,7 +686,8 @@ a.tbtn { text-decoration: none; color: inherit; }
   var byId = {};
   M.forEach(function (m) {
     byId[m.id] = m;
-    m.done = Math.min(m.plan * 0.93, m.target * 60 * hrsDay * rnd(0.74, 0.86));
+    m.pm = m.unit === 'kg/h' ? 1 / 60 : 1; // tốc độ theo giờ (máy trộn) đổi ra mỗi phút
+    m.done = Math.min(m.plan * 0.93, m.target * 60 * m.pm * hrsDay * rnd(0.74, 0.86));
     m.speed = m.target * rnd(0.97, 1.01);
     m.odNow = m.od || 0; m.odOff = 0;
     m.temps = m.zones.map(function (z) { return z[1]; });
@@ -696,7 +699,7 @@ a.tbtn { text-decoration: none; color: inherit; }
 
   /* ================= Cảm biến, tiện ích, đèn (mô phỏng) ================= */
   var SENS = [
-    { id: 'ENV-COLD', asset: 'COLDROOM', name: 'Phòng lạnh silicone', x: 1.85, y: 5.3, t: 18.6, h: 52, tMax: 25, hMax: 65, note: 'Bảo quản silicone HCR, ngưỡng cần xác nhận' },
+    { id: 'ENV-COLD', asset: 'COLDROOM', name: 'Phòng lạnh silicone', x: 1.85, y: 7.4, t: 18.6, h: 52, tMax: 25, hMax: 65, note: 'Bảo quản silicone HCR, ngưỡng cần xác nhận' },
     { id: 'ENV-SIL', name: 'Khu đùn silicone', x: 56, y: 4.6, t: 33.4, h: 61, tMax: 38, hMax: 80 },
     { id: 'ENV-EXT', name: 'Khu đùn PVC / LSZH', x: 34.8, y: 13.2, t: 32.1, h: 63, tMax: 38, hMax: 80 },
     { id: 'ENV-RAW', asset: 'RAW', name: 'Kho nguyên liệu', x: 35.5, y: 32.2, t: 28.6, h: 70, tMax: 35, hMax: 80 },
@@ -747,10 +750,11 @@ a.tbtn { text-decoration: none; color: inherit; }
       }, 30); });
     }
     var IN_APP = location.pathname.indexOf('/dieu-hanh') === 0, BASE = IN_APP ? '/dieu-hanh/model/' : 'model/';
-    function bin(f) { return fetch(BASE + f).then(function (r) { if (!r.ok) throw new Error(f); return r.arrayBuffer(); }); }
+    var BUST = '?v=' + Date.now(); // luôn lấy mô hình mới nhất sau mỗi lần cập nhật
+    function bin(f) { return fetch(BASE + f + BUST).then(function (r) { if (!r.ok) throw new Error(f); return r.arrayBuffer(); }); }
     function b64(t) { var bin = atob(t.trim()), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
-    function txt(f) { return fetch(BASE + f).then(function (r) { if (!r.ok) throw new Error(f); return r.text(); }); }
-    return fetch(BASE + 'meta.json').then(function (r) { if (!r.ok) throw new Error('meta'); return r.json(); }).then(function (meta) {
+    function txt(f) { return fetch(BASE + f + BUST).then(function (r) { if (!r.ok) throw new Error(f); return r.text(); }); }
+    return fetch(BASE + 'meta.json' + BUST, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('meta'); return r.json(); }).then(function (meta) {
       if (meta.vertex_bin) return Promise.all([bin(meta.vertex_bin), bin(meta.cad_bin)]).then(function (x) {
         var cadAll = new Float32Array(x[1]);
         return { meta: meta.meta, vert: new Float32Array(x[0]), count: meta.vertex_count,
@@ -863,7 +867,7 @@ a.tbtn { text-decoration: none; color: inherit; }
     ASSETS.forEach(function (a, i) {
       var b = a.bounds_xy_m, cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2;
       if (a.kind === 'machine') LBL.push({ a: a, el: mkLabel(byId[a.id] ? 'm' : 'p2'), p: [cx, cy, 3.4], type: 'm' });
-      else if (['CHILLER', 'COOLING', 'AIR', 'MDB', 'MIXER'].indexOf(a.id) >= 0) LBL.push({ a: a, el: mkLabel('ut'), p: [cx, cy, 3.4], type: 'u' });
+      else if (['CHILLER', 'COOLING', 'AIR', 'MDB'].indexOf(a.id) >= 0) LBL.push({ a: a, el: mkLabel('ut'), p: [cx, cy, 3.4], type: 'u' });
       else if (a.kind === 'zone' && a.id !== 'OFFICE') LBL.push({ a: a, el: mkLabel('zone'), p: [cx, cy, 0.1], type: 'z' });
     });
     SENS.forEach(function (s) { LBL.push({ s: s, el: mkLabel('sensor'), p: [s.x, s.y, s.asset === 'COLDROOM' ? 2.6 : 3.0], type: 's' }); });
@@ -1003,7 +1007,7 @@ a.tbtn { text-decoration: none; color: inherit; }
         m.speed += (tgt * rnd(0.97, 1.015) - m.speed) * 0.5; m.runSec += 1; m.perfSum += clamp(m.speed / m.target, 0, 1.05);
       } else { m.speed *= 0.4; if (m.speed < 0.3) m.speed = 0; }
       m.planSec += 1;
-      var inc = m.speed / 60; m.done += inc; if (m.fin) curHour.v += inc;
+      var inc = m.speed * m.pm / 60; m.done += inc; if (m.fin) curHour.v += inc;
       m.hist.push(m.speed); if (m.hist.length > 60) m.hist.shift();
       if (m.od) m.odNow = m.od + m.odOff + rnd(-0.012, 0.012) * (m.od > 4 ? 2 : 1);
       m.temps = m.zones.map(function (z, i) { return z[1] + (m.hot === i ? m.hotBy : 0) + rnd(-0.6, 0.6); });
@@ -1026,7 +1030,6 @@ a.tbtn { text-decoration: none; color: inherit; }
     var blink = Math.floor(now.getTime() / 600) % 2 === 0;
     M.forEach(function (m) { E.setState(m.id, m.state === 'stop' && !reduce && !blink ? 0 : CODE[m.state]); });
     E.setState('CHILLER', UT.CHILLER.on ? 1 : 4); E.setState('COOLING', UT.COOLING.on ? 1 : 4); E.setState('AIR', UT.AIR.on ? 1 : 4);
-    E.setState('MIXER', UT.MIXER.on ? 1 : 2);
     var cold = bySens['COLDROOM']; E.setState('COLDROOM', cold.alarm ? (blink || reduce ? 2 : 0) : 0);
     LAMPS.forEach(function (L, i) { E.setLamp(i, L.on); });
     E.touch();
@@ -1068,13 +1071,13 @@ a.tbtn { text-decoration: none; color: inherit; }
       var opts = { si: [['E-205', 'Nhiệt độ lò lưu hóa M5–8 mất kiểm soát, line đã dừng'], ['E-201', 'Đứt dây tại máng làm mát, line đã dừng']],
         tp: [['E-305', 'Quá dòng động cơ trục vít, line đã dừng'], ['E-311', 'Hết cuộn thu, chưa thay bobin']],
         bun: [['E-410', 'Đứt sợi đồng tại giá xả, máy đã dừng']], tw: [['E-520', 'Mất lực căng dây, máy đã dừng']],
-        pk: [['E-610', 'Đứt dây tại tay dancer, máy cuốn đã dừng']] }[m.kind];
+        pk: [['E-610', 'Đứt dây tại tay dancer, máy cuốn đã dừng']], mx: [['E-710', 'Quá dòng động cơ trục cán, máy trộn đã dừng']] }[m.kind];
       var o = opts[Math.floor(Math.random() * opts.length)]; stopMachine(m, o[0], o[1]);
     } else if (r < 0.45) {
       commLoss(m);
-    } else if (r < 0.65 && (m.kind === 'tw' || m.kind === 'bun' || m.kind === 'pk')) {
-      var gw = m.kind === 'pk' ? 'Thay bobin gỗ' : 'Thay bobin thu';
-      m.state = 'idle'; m.idleWhy = gw; m.idleUntil = Date.now() + 45e3; m.idleAl = addAlarm('info', m.id, 'I-' + (m.kind === 'tw' ? 520 : m.kind === 'pk' ? 620 : 420), 'Dừng có kế hoạch: ' + gw.toLowerCase());
+    } else if (r < 0.65 && (m.kind === 'tw' || m.kind === 'bun' || m.kind === 'pk' || m.kind === 'mx')) {
+      var gw = m.kind === 'pk' ? 'Thay bobin gỗ' : m.kind === 'mx' ? 'Đổi mẻ trộn' : 'Thay bobin thu';
+      m.state = 'idle'; m.idleWhy = gw; m.idleUntil = Date.now() + 45e3; m.idleAl = addAlarm('info', m.id, 'I-' + (m.kind === 'tw' ? 520 : m.kind === 'pk' ? 620 : m.kind === 'mx' ? 720 : 420), 'Dừng có kế hoạch: ' + gw.toLowerCase());
     } else if (m.zones.length && m.hot == null) {
       var zi = Math.floor(Math.random() * m.zones.length); m.hot = zi; m.hotBy = m.kind === 'si' && zi > 3 ? 32 : 18; m.hotUntil = Date.now() + 40e3;
       m.hotAl = addAlarm('warn', m.id, 'W-' + (m.kind === 'si' ? 230 : 330), 'Nhiệt độ ' + m.zones[zi][0] + ' cao hơn đặt ' + m.hotBy + ' °C');
@@ -1085,7 +1088,8 @@ a.tbtn { text-decoration: none; color: inherit; }
   var ST = { run: 'Đang chạy', idle: 'Chờ', stop: 'Dừng do lỗi', off: 'Mất kết nối' };
   function mname(m) { var a = asset(m.id); return a ? a.name.replace(' • ', ' · ') : m.id; }
   function stChip(m) { return '<span class="st ' + m.state + '"><span class="dot"></span>' + (m.state === 'idle' && m.idleWhy ? 'Chờ · ' + esc(m.idleWhy.toLowerCase()) : ST[m.state]) + '</span>'; }
-  function eta(m) { var rem = m.plan - m.done; if (rem <= 0) return 'Đã xong'; if (m.state !== 'run' || m.speed < 1) return '—'; return hm(new Date(Date.now() + rem / m.speed * 60e3)); }
+  function eta(m) { var rem = m.plan - m.done; if (rem <= 0) return 'Đã xong'; if (m.state !== 'run' || m.speed < 1) return '—'; return hm(new Date(Date.now() + rem / (m.speed * m.pm) * 60e3)); }
+  function U(m) { return m.unit || 'm/ph'; }
 
   function renderAll(now) {
     $('#clk').textContent = hms(now);
@@ -1115,7 +1119,7 @@ a.tbtn { text-decoration: none; color: inherit; }
         var al = m.state === 'stop';
         L.el.className = 'lbl m' + (al ? ' alarm' : '') + (m.id === selId ? ' sel' : '');
         L.el.innerHTML = '<span class="dot ' + m.state + '"></span><b>' + m.id + '</b>' + (al ? '<span>' + esc(m.alarm ? m.alarm.code : 'Dừng') + ' · ' + dur((now - m.stopAt) / 1000) + '</span>'
-          : m.state === 'run' ? '<span class="v">' + fmt(m.speed, 0) + '</span><span class="muted">m/ph</span>' : m.state === 'off' ? '<span class="muted">Mất kết nối · số liệu lúc ' + hms(m.lastTs) + '</span>' : '<span class="muted">' + esc(m.idleWhy || ST[m.state]) + '</span>');
+          : m.state === 'run' ? '<span class="v">' + fmt(m.speed, 0) + '</span><span class="muted">' + U(m) + '</span>' : m.state === 'off' ? '<span class="muted">Mất kết nối · số liệu lúc ' + hms(m.lastTs) + '</span>' : '<span class="muted">' + esc(m.idleWhy || ST[m.state]) + '</span>');
       } else if (L.type === 'u') {
         var id = L.a.id, txt = id === 'CHILLER' ? 'Chiller · ' + fmt(UT.CHILLER.sup, 1) + '/' + fmt(UT.CHILLER.ret, 1) + ' °C' : id === 'COOLING' ? 'Tháp giải nhiệt · ' + fmt(UT.COOLING.sup, 1) + '/' + fmt(UT.COOLING.ret, 1) + ' °C'
           : id === 'AIR' ? 'Khí nén · ' + fmt(UT.AIR.bar, 1) + ' bar' : id === 'MDB' ? 'Tủ điện tổng · ' + fmt(UT.kw || 0) + ' kW' : 'Máy trộn silicone · ' + (UT.MIXER.on ? fmt(UT.MIXER.kgh, 0) + ' kg/giờ' : 'nghỉ');
@@ -1133,7 +1137,7 @@ a.tbtn { text-decoration: none; color: inherit; }
   function renderMstrip(now) {
     var box = $('#mstrip');
     if (!box.children.length) {
-      box.innerHTML = M.map(function (m) { return '<button type="button" class="mt" data-mt="' + m.id + '"><span class="id"><span class="dot" data-f="dot"></span>' + m.id + '</span><span class="stt" data-f="st"></span><span class="sp"><span data-f="sp"></span><small>m/ph</small></span><span class="pc" data-f="pc"></span><span class="ln" data-f="ln"></span></button>'; }).join('');
+      box.innerHTML = M.map(function (m) { return '<button type="button" class="mt" data-mt="' + m.id + '"><span class="id"><span class="dot" data-f="dot"></span>' + m.id + '</span><span class="stt" data-f="st"></span><span class="sp"><span data-f="sp"></span><small>' + U(m) + '</small></span><span class="pc" data-f="pc"></span><span class="ln" data-f="ln"></span></button>'; }).join('');
       $$('#mstrip .mt').forEach(function (b) { b.addEventListener('click', function () { selectAsset(b.dataset.mt, true); }); });
     }
     var COL = { run: 'var(--s-run)', idle: 'var(--s-idle)', stop: 'var(--s-stop)', off: 'var(--s-off)' };
@@ -1144,8 +1148,8 @@ a.tbtn { text-decoration: none; color: inherit; }
       b.querySelector('[data-f="st"]').textContent = m.state === 'stop' ? 'Dừng ' + dur((now - m.stopAt) / 1000) : m.state === 'off' ? 'Mất kết nối' : m.state === 'idle' ? 'Chờ · ' + (m.idleWhy || '').toLowerCase() : 'Đang chạy';
       b.querySelector('[data-f="sp"]').textContent = fmt(m.speed, 0);
       b.querySelector('[data-f="pc"]').textContent = fmt(clamp(m.done / m.plan, 0, 1) * 100, 0) + '% kế hoạch';
-      var key = m.od ? 'OD ' + fmt(m.odNow, 2) + ' mm' : m.kind === 'bun' ? '1.800 vòng/ph' : m.kind === 'pk' ? 'bobin gỗ 500 m' : 'bước xoắn 60 mm';
-      var hot = m.kind === 'si' ? ' · lò ' + fmt(Math.max.apply(null, m.temps.slice(4)), 0) + ' °C' : m.kind === 'tp' ? ' · đầu đùn ' + fmt(m.temps[m.temps.length - 1], 0) + ' °C' : '';
+      var key = m.od ? 'OD ' + fmt(m.odNow, 2) + ' mm' : m.kind === 'bun' ? '1.800 vòng/ph' : m.kind === 'pk' ? 'bobin gỗ 500 m' : m.kind === 'mx' ? 'mẻ 12 kg' : 'bước xoắn 60 mm';
+      var hot = m.kind === 'mx' ? ' · trục ' + fmt(m.temps[0], 0) + ' °C' : m.kind === 'si' ? ' · lò ' + fmt(Math.max.apply(null, m.temps.slice(4)), 0) + ' °C' : m.kind === 'tp' ? ' · đầu đùn ' + fmt(m.temps[m.temps.length - 1], 0) + ' °C' : '';
       var ln = b.querySelector('[data-f="ln"]'); ln.textContent = m.step + ' · ' + key + hot + ' · ' + fmt(m.kwNow, 0) + ' kW · ' + hms(m.lastTs); ln.title = ln.textContent;
       b.title = m.id + ' · ' + m.prod;
     });
@@ -1167,7 +1171,7 @@ a.tbtn { text-decoration: none; color: inherit; }
       var bar = tr.querySelector('[data-f="bar"]'); bar.style.width = (p * 100).toFixed(1) + '%';
       bar.style.setProperty('--bfill', m.state === 'stop' ? 'var(--bad-fill)' : m.state === 'idle' ? 'var(--warn-fill)' : 'var(--brand)');
       tr.querySelector('[data-f="pct"]').textContent = fmt(p * 100, 0) + '%';
-      tr.querySelector('[data-f="spd"]').textContent = m.state === 'run' ? fmt(m.speed, 0) + ' m/ph' : '—';
+      tr.querySelector('[data-f="spd"]').textContent = m.state === 'run' ? fmt(m.speed, 0) + ' ' + U(m) : '—';
       tr.querySelector('[data-f="eta"]').textContent = eta(m);
       tr.querySelector('[data-f="st"]').innerHTML = stChip(m);
       var ts = tr.querySelector('[data-f="ts"]'); ts.textContent = hms(m.lastTs); ts.style.color = m.commLost ? 'var(--bad)' : '';
@@ -1202,8 +1206,8 @@ a.tbtn { text-decoration: none; color: inherit; }
       if (m.commLost) h += '<div class="sec-t" style="color:var(--warn)">C-901 · Mất kết nối PLC từ ' + hms(m.lastTs) + ', số liệu dưới đây là giá trị cuối cùng nhận được</div>';
       if (m.state === 'stop' && m.alarm) h += '<div class="sec-t" style="color:var(--bad)">' + esc(m.alarm.code) + ' · ' + esc(m.alarm.msg) + ' · dừng ' + dur((Date.now() - m.stopAt) / 1000) + (m.alarm.acked ? ' · đã xác nhận, đang xử lý' : '') + '</div>';
       h += '<div class="md-grid">';
-      h += '<div class="md-cell"><div class="l">Tốc độ</div><div class="v">' + fmt(m.speed, 0) + '<small>m/ph</small></div><div class="s">Định mức ' + m.target + ' · tối đa ' + m.max + '</div></div>';
-      h += '<div class="md-cell"><div class="l">Đã chạy / kế hoạch</div><div class="v">' + fmt(p * 100, 0) + '<small>%</small></div><div class="s">' + fmt(m.done) + ' / ' + fmt(m.plan) + ' m</div></div>';
+      h += '<div class="md-cell"><div class="l">Tốc độ</div><div class="v">' + fmt(m.speed, 0) + '<small>' + U(m) + '</small></div><div class="s">Định mức ' + m.target + ' · tối đa ' + m.max + '</div></div>';
+      h += '<div class="md-cell"><div class="l">Đã chạy / kế hoạch</div><div class="v">' + fmt(p * 100, 0) + '<small>%</small></div><div class="s">' + fmt(m.done) + ' / ' + fmt(m.plan) + ' ' + (m.qunit || 'm') + '</div></div>';
       h += '<div class="md-cell"><div class="l">Công suất</div><div class="v">' + fmt(m.kwNow, 1) + '<small>kW</small></div><div class="s">Định mức ' + fmt(m.kw, 1) + ' kW</div></div>';
       h += '<div class="md-cell"><div class="l">Dự kiến xong lệnh</div><div class="v">' + eta(m) + '</div><div class="s">' + esc(m.reel) + '</div></div></div>';
       h += '<div class="sec-t">Tốc độ 60 giây gần nhất</div>' + spark(m.hist, m.max, col);
@@ -1247,6 +1251,7 @@ a.tbtn { text-decoration: none; color: inherit; }
     'E-305': ['Giảm tốc trục vít, kiểm tra nhiệt xi lanh và lưới lọc', 'Bảo trì'],
     'E-311': ['Thay bobin thu, kiểm tra cảm biến đầy cuộn', 'Vận hành máy'],
     'E-520': ['Kiểm tra cơ cấu căng dây và phanh bobin xả', 'Bảo trì'],
+    'E-710': ['Tách trục, lấy silicone kẹt, kiểm tra khe cán và nước làm mát trục', 'Bảo trì'],
     'E-610': ['Nối lại dây, kiểm tra lực căng tay dancer và phanh giá xả, cắt đoạn lỗi trên bobin', 'Vận hành máy'],
     'W-120': ['Chỉnh tốc độ capstan hoặc áp đùn, đánh dấu đoạn lệch để QC cắt', 'Vận hành máy'],
     'W-230': ['Kiểm tra bộ điều khiển nhiệt vùng', 'Vận hành máy'],

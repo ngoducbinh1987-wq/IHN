@@ -6,9 +6,13 @@ mã đối tượng (thứ tự trong meta.assets, bắt đầu 1), giai đoạn
 số 1–10 theo X mỗi 7,5 m (ô 3,75 m đánh số 1–18), chữ A–F theo Y (A = 0, B = 7,5, C = 14,5, D = 21,5, E = 28,5, F = 36).
 
 - MIXER: thay khối minh họa cũ bằng máy cán trộn 2 trục theo ảnh (tủ trắng, khung xanh navy, 2 trục cán, giàn trên có thanh an toàn
-  vàng, tay quay, hộp nút dừng khẩn), đặt trong phòng lạnh phía trục A; dời kiện nguyên liệu silicone sang nửa phía trong.
+  vàng, tay quay, hộp nút dừng khẩn), đặt trong phòng lạnh phía trục A, trục cán vuông góc chiều dài phòng, cách đều 3 tường
+  (tường tây X = 0,1, tường đông X = 3,6, tường phía trục A Y = 2,3); dời kiện nguyên liệu silicone sang nửa phía trong.
+  Máy trộn là máy (kind machine) để Trung tâm điều hành hiện thông số chạy giả lập.
 - PACK-01: máy cuốn 2 trục lô (tủ xanh, 2 trục lắp bobin gỗ, tay dancer, hộp điều khiển trắng) + giá xả pay-off (khung xanh,
-  trục khí nén, phanh, con lăn dẫn trên), bộ đếm mét; đặt ô 17–18, trục D–E, thẳng hàng máy xoắn cantilever.
+  trục khí nén, phanh, con lăn dẫn trên), bộ đếm mét, kệ bobin gỗ trống; đặt cạnh máy xoắn TW800-02, ngay trên TW630-03
+  (X 37,4–44,6, Y 21,5–24,8, theo khoanh đỏ của anh Bình 28/10/2026).
+Chạy lại từ mô hình gốc R02:  git show e31def2:bmt-mes/web/public/dieu-hanh/model/<tệp> rồi chạy script.
 """
 import json
 import math
@@ -110,6 +114,14 @@ class Mesh:
         for a, b in zip(pts, pts[1:]):
             self.cyl(a, b, r, col, seg=8, caps=False)
 
+    def xform(self, fp, fn):
+        """Biến đổi mọi đỉnh: fp(x, y, z) → vị trí mới, fn(nx, ny, nz) → pháp tuyến mới."""
+        self.v = [(*fp(*q[0:3]), *fn(*q[3:6]), *q[6:9]) for q in self.v]
+
+    def bbox(self):
+        a = np.array([q[0:3] for q in self.v])
+        return a.min(0), a.max(0)
+
     def outline(self, x0, y0, x1, y1, w, col, z=0.004):
         self.box(x0, y0, 0, x1, y0 + w, z, col)
         self.box(x0, y1 - w, 0, x1, y1, z, col)
@@ -165,7 +177,14 @@ def mixer():
         zt = 1.05 if ya < 3 else 0.95
         m.box(xa, ya, zt, xa + 0.18, ya + 0.20, zt + 0.10, YELLOW)
         m.cyl((xa + 0.09, ya + 0.10, zt + 0.10), (xa + 0.09, ya + 0.10, zt + 0.14), 0.04, RED, seg=16)
-    return m, [x0 - 0.05, y0 - 0.05, x1 + 0.05, y1 + 0.05]
+    # Xoay 90°: trục cán theo X (vuông góc chiều dài phòng), mặt thao tác quay vào trong phòng (+Y);
+    # thân máy 2,35 × 1,40 m cách đều tường tây, tường đông và tường phía trục A
+    inner_x0, inner_x1, inner_y0 = 0.10, 3.60, 2.30
+    gap = ((inner_x1 - inner_x0) - (y1 - y0)) / 2
+    nx1, ny0 = inner_x1 - gap, inner_y0 + gap
+    m.xform(lambda x, y, z: (nx1 - (y - y0), ny0 + (x - x0), z), lambda a, b, c: (-b, a, c))
+    lo, hi = m.bbox()
+    return m, [float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1])]
 
 
 # --------------------------------------------------------------------------- Máy đóng gói + giá xả (ô 17–18, trục D–E)
@@ -244,18 +263,25 @@ def packer():
         m.cyl((sx, 24.72, 0.52), (sx, 25.45, 0.52), 0.035, STEEL, seg=12)
     m.reel((spins[1], 25.03, 0.52), 'y', 0.38, 0.25, 0.15, WOOD, WOOD_D, r_wound=0.30)
     m.reel((spins[0], 25.00, 0.52), 'y', 0.32, 0.21, 0.13, WOOD, WOOD_D)
-    # Kệ bobin gỗ trống sau lưng máy cuốn
-    m.box(wx - 0.55, 22.45, 0.0, wx + 1.05, 23.30, 0.10, WOOD_D)
-    for xx in (wx - 0.15, wx + 0.65):
-        m.reel((xx, 22.88, 0.42), 'y', 0.32, 0.18, 0.13, WOOD, WOOD_D)
+    # Kệ bobin gỗ trống cạnh máy cuốn
+    m.box(wx + 1.42, 23.50, 0.0, wx + 2.22, 24.70, 0.10, WOOD_D)
+    for yy in (23.82, 24.38):
+        m.reel((wx + 1.82, yy, 0.42), 'y', 0.32, 0.18, 0.13, WOOD, WOOD_D)
     # ---- Đường đi của dây: bobin cấp → con lăn trên → bộ đếm mét → tay dancer → bobin gỗ
     m.path([(px, CY, 1.26), (px + 0.50, CY, 2.03), (cx, CY, 1.42), (wx - 0.57, 24.72, 1.06),
             (wx + 0.67, 24.72, 1.06), (spins[1], 25.03, 0.82)], 0.016, (0.86, 0.30, 0.22))
-    m.outline(60.80, 22.35, 66.70, 26.80, 0.05, NAVY)
-    # Lật theo trục dây (Y = 25) để mặt trước máy cuốn, bobin gỗ, bảng điều khiển quay ra lối đi phía trục D
-    for i, q in enumerate(m.v):
-        q = list(q); q[1] = 2 * CY - q[1]; q[4] = -q[4]; m.v[i] = tuple(q)
-    return m, [60.80, 23.20, 66.70, 27.65]
+    m.outline(60.75, 23.25, 67.60, 26.75, 0.05, NAVY)
+    # Lật theo trục dây (Y = 25) để mặt trước máy cuốn, bobin gỗ, bảng điều khiển quay ra lối đi (−Y, phía TW630)
+    m.xform(lambda x, y, z: (x, 2 * CY - y, z), lambda a, b, c: (a, -b, c))
+    # Đưa vào ô khoanh đỏ cạnh TW800-02, trên TW630-03 (thu nhỏ đều nếu cần cho vừa ô)
+    T = (37.40, 21.50, 44.60, 24.80)
+    lo, hi = m.bbox()
+    k = min(1.0, (T[2] - T[0]) / (hi[0] - lo[0]), (T[3] - T[1]) / (hi[1] - lo[1]))
+    c0 = ((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2)
+    c1 = ((T[0] + T[2]) / 2, (T[1] + T[3]) / 2)
+    m.xform(lambda x, y, z: (c1[0] + (x - c0[0]) * k, c1[1] + (y - c0[1]) * k, z * k), lambda a, b, c: (a, b, c))
+    lo, hi = m.bbox()
+    return m, [float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1])]
 
 
 def to_arr(mesh, aid, phase):
@@ -285,15 +311,24 @@ def main():
     sa = next(a for a in A if a['id'] == 'SILICONE-STOCK')
     sa['bounds_xy_m'] = [0.4, 6.1, 3.3, 7.6]
     mm, mb = mixer()
-    v = np.concatenate([v, to_arr(mm, mid, 0)])
+    v = np.concatenate([v, to_arr(mm, mid, 1)])
     ma = next(a for a in A if a['id'] == 'MIXER')
     ma.update({
-        'name': 'Máy trộn silicone 2 trục cán (SIL-MIX)', 'bounds_xy_m': [round(x, 3) for x in mb],
-        'note': 'Máy cán trộn 2 trục dựng theo ảnh chủ đầu tư (28/10/2026): công suất 10–50 kg silicone/giờ, đặt trong phòng lạnh phía trục A. '
+        'name': 'Máy trộn silicone 2 trục cán (SIL-MIX)', 'bounds_xy_m': [round(x, 3) for x in mb], 'kind': 'machine', 'phase': 1,
+        'note': 'Máy cán trộn 2 trục dựng theo ảnh chủ đầu tư (28/10/2026): công suất 10–50 kg silicone/giờ, đặt trong phòng lạnh phía trục A, '
+                'trục cán vuông góc chiều dài phòng, cách đều 3 tường. '
                 'Silicone phải qua máy trộn trước khi ra máy đùn. Kích thước tham chiếu, chờ bản GA của hãng.',
         'components': ['MIXER/cabinet_left', 'MIXER/control', 'MIXER/rolls', 'MIXER/gantry', 'MIXER/cabinet_right', 'MIXER/estop'],
         'display_scale': 1.0, 'mes_code': 'SIL-MIX', 'capacity_kg_h': [10, 50],
     })
+    # Mã đối tượng 3D trùng mã máy trên MES (nhãn, danh sách máy chạy hiện SIL-MIX)
+    ma['id'] = 'SIL-MIX'
+    for a in A:
+        for key in ('contents', 'serves'):
+            if key in a:
+                a[key] = ['SIL-MIX' if c == 'MIXER' else c for c in a[key]]
+        if 'components' in a:
+            a['components'] = [c.replace('MIXER/', 'SIL-MIX/') for c in a['components']]
 
     # 2. Máy đóng gói: chèn trước nhóm đèn (đèn phải đứng cuối danh sách), dời mã đối tượng phía sau
     pos = next(i for i, a in enumerate(A) if a['kind'] == 'lighting')
@@ -304,7 +339,7 @@ def main():
         'id': 'PACK-01', 'name': 'Máy đóng gói 2 trục + giá xả • bobin gỗ 500/305 m', 'phase': 1,
         'bounds_xy_m': [round(x, 3) for x in pb], 'source_block': '', 'source_handle': '', 'kind': 'machine',
         'note': 'Dựng theo ảnh chủ đầu tư (28/10/2026): máy cuốn 2 trục lô bobin gỗ + giá xả (pay-off), tốc độ cuốn 50–200 m/phút; '
-                'ô 17–18, trục D–E, thẳng hàng máy xoắn cantilever. Hình hiển thị 150%, kích thước chờ bản GA.',
+                'đặt cạnh máy xoắn TW800-02, ngay trên TW630-03. Hình hiển thị 150%, kích thước chờ bản GA.',
         'components': ['PACK-01/payoff', 'PACK-01/guide_roller', 'PACK-01/meter_counter', 'PACK-01/winder', 'PACK-01/dancer',
                        'PACK-01/spindles', 'PACK-01/reels', 'PACK-01/cable_path', 'PACK-01/footprint'],
         'display_scale': 1.5, 'scale_scope': 'functional_module', 'mes_code': 'PACK-01', 'speed_m_min': [50, 200],
@@ -312,7 +347,7 @@ def main():
     v = np.concatenate([v, to_arr(pm, new_id, 1)])
     assert len(A) < 64, 'Shader chỉ nhận 64 mã trạng thái'
 
-    meta['revision'] = 'R03'
+    meta['revision'] = 'R04'
     meta['date'] = '2026-10-28'
     meta_all['vertex_count'] = int(len(v))
     v.astype(np.float32).tofile(VERT)
