@@ -257,6 +257,34 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
       </div>
     );
   }
+  if (a.doc_type === 'PLAN_ADJ') {
+    const [{ data: adj }, { data: lines }, { data: imp }] = await Promise.all([
+      supabase.schema('app').from('v_plan_adjustments').select('*').eq('id', a.doc_id).maybeSingle(),
+      supabase.schema('app').from('v_plan_adjustment_lines').select('*').eq('adj_id', a.doc_id).order('line_no'),
+      supabase.schema('app').rpc('adj_impact', { p_adj: a.doc_id }),
+    ]);
+    const KIND: Record<string, string> = { ADD: 'Thêm mã / lô', QTY: 'Đổi sản lượng', DUE: 'Đổi hạn, ưu tiên', REMOVE: 'Bỏ mã' };
+    const d = (x: string | null) => (x ? `${x.slice(8, 10)}/${x.slice(5, 7)}` : '—');
+    const short = ((imp ?? []) as { material_code: string; projected_after: number; uom: string }[]).filter((x) => Number(x.projected_after) < 0);
+    return (
+      <div className="flex flex-col gap-3">
+        <Field label="Kế hoạch">{adj?.plan_no}</Field>
+        <Field label="Lý do">{adj?.reason}</Field>
+        <div className="overflow-x-auto rounded border border-line">
+          <table className="tbl">
+            <thead><tr><th>Loại</th><th>Mã</th><th className="num">Số mét</th><th>Hạn giao</th><th>Ghi chú</th></tr></thead>
+            <tbody>{(lines ?? []).map((l) => (
+              <tr key={l.id}><td>{KIND[l.kind] ?? l.kind}</td><td className="mono font-medium">{l.product_code}</td>
+                <td className="num">{l.kind === 'ADD' ? nf(l.qty_m) : l.kind === 'QTY' ? `${nf(l.old_qty_m)} → ${nf(l.qty_m)}` : l.kind === 'REMOVE' ? `${nf(l.old_qty_m)} → 0` : nf(l.old_qty_m)}</td>
+                <td>{l.kind === 'DUE' ? `${d(l.old_due_date)} → ${l.due_date ? d(l.due_date) : 'giữ'}${l.priority === 0 ? ' · gấp' : ''}` : l.kind === 'ADD' ? d(l.due_date) : d(l.old_due_date)}</td>
+                <td>{l.note ?? ''}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <Field label="Vật tư">{short.length ? <span className="text-bad">Thiếu sau điều chỉnh: {short.map((x) => `${x.material_code} ${nf(-x.projected_after, 1)} ${x.uom}`).join(', ')} (đề xuất mua bổ sung sau khi duyệt)</span> : 'Đủ theo lần dự trù gần nhất'}</Field>
+      </div>
+    );
+  }
   return <Field label="Nội dung">{a.summary ?? '—'}</Field>;
 }
 

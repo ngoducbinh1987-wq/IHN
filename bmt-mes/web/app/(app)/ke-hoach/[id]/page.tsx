@@ -10,8 +10,11 @@ import type { Approval } from '@/lib/approvals';
 import { DOC_STATUS, SPEC_STATUS, df, nf } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { adjustMrp, createPr, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
+import { adjustMrp, createAdj, createPr, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
 
+const ADJ_STATUS: Record<string, [string, 'ok' | 'warn' | 'bad' | 'mute' | 'info']> = {
+  DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ Chủ tịch duyệt', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
+};
 const MRP_TONE: Record<string, 'ok' | 'warn' | 'bad' | 'mute' | 'info'> = {
   'Không cần mua': 'mute', 'Cập nhật giá': 'warn', 'Thiếu lead time': 'warn', 'Trễ': 'bad', 'Đặt hàng': 'info',
 };
@@ -44,6 +47,13 @@ export default async function PlanDetail({ params, searchParams }:
       ? supabase.schema('purchase').from('purchase_requests').select('id, pr_no').eq('mrp_run_id', plan.last_run_id).neq('status', 'CANCELLED')
       : Promise.resolve({ data: [] as { id: string; pr_no: string }[] }),
   ]);
+  const [{ data: levels }, { data: adjs }] = await Promise.all([
+    plan.last_run_id
+      ? supabase.schema('app').from('v_mrp_products').select('*').eq('run_id', plan.last_run_id).order('id')
+      : Promise.resolve({ data: [] as Record<string, never>[] }),
+    supabase.schema('app').from('v_plan_adjustments').select('*').eq('plan_id', id).neq('status', 'CANCELLED').order('created_at', { ascending: false }),
+  ]);
+  const canAdj = plan.status === 'APPROVED' && (can(me, 'plan', 'create') || me.roles.includes('SX_TP'));
   const stages: Stage[] = req?.steps ?? [{ seq: 0, label: flowHead?.submit_label ?? 'Lập kế hoạch', state: 'current' }, ...(flow ?? []).map((s) => ({ seq: s.seq, label: s.level_label, state: 'todo' as const }))];
   const draft = plan.status === 'DRAFT';
   // Gửi duyệt: đúng người/vai trò được cấu hình ở bước lập; không cấu hình thì người có quyền lập kế hoạch
@@ -149,21 +159,22 @@ export default async function PlanDetail({ params, searchParams }:
         )}
         {mrp && mrp.length > 0 ? (
           <table className="tbl">
-            <thead><tr><th>Mã VT</th><th>Vật tư</th><th>ĐVT</th><th className="num">Lý thuyết</th><th className="num">Tổng cấp SX</th><th className="num">Tồn KD</th><th className="num">Chờ QC</th><th className="num">Hàng về</th><th className="num">Thiếu ròng</th><th className="num">Bội số</th><th className="num">Đề nghị mua</th>{showPrice && <th className="num">Thành tiền</th>}<th>Ngày cần</th><th>Ghi chú</th><th>TT</th>{adjustable && <th />}</tr></thead>
+            <thead><tr><th>Mã VT</th><th>Vật tư</th><th>ĐVT</th><th className="num">Lý thuyết</th><th className="num">Tổng cấp SX</th><th className="num">Tồn KD</th><th className="num">Chờ QC</th><th className="num">Hàng về</th><th className="num">Đã đề xuất</th><th className="num">Thiếu ròng</th><th className="num">Bội số</th><th className="num">Đề nghị mua</th><th className="num">Tồn dự kiến sau SX</th>{showPrice && <th className="num">Thành tiền</th>}<th>Ngày cần</th><th>Ghi chú</th><th>TT</th>{adjustable && <th />}</tr></thead>
             <tbody>
               {mrp.map((m) => adjustable && sp.mrp === m.id ? (
                 <tr key={m.id} className="bg-brand-soft/40">
-                  <td colSpan={showPrice ? 16 : 15} className="p-0"><MrpForm planId={id} m={m} /></td>
+                  <td colSpan={showPrice ? 18 : 17} className="p-0"><MrpForm planId={id} m={m} /></td>
                 </tr>
               ) : (
                 <tr key={m.id}>
                   <td className="mono font-medium">{m.material_code}</td><td className="min-w-[160px]">{m.material_name}</td><td>{m.uom}</td>
                   <td className="num">{nf(m.theoretical, 2)}</td><td className="num font-medium">{nf(m.total_issue, 2)}</td>
-                  <td className="num">{nf(m.available, 1)}</td><td className="num text-muted">{nf(m.in_quality, 1)}</td><td className="num">{nf(m.incoming, 1)}</td>
+                  <td className="num">{nf(m.available, 1)}</td><td className="num text-muted">{nf(m.in_quality, 1)}</td><td className="num">{nf(m.incoming, 1)}</td><td className="num">{nf(m.requested, 1)}</td>
                   <td className={`num ${Number(m.net_short) > 0 ? 'text-bad' : 'text-muted'}`}>{nf(m.net_short, 2)}</td>
                   <td className="num">{nf(m.pack_multiple)}</td>
                   <td className="num font-medium">{nf(m.suggest_qty)}
                     {m.orig_suggest_qty !== null && <div className="text-[12px] font-normal text-warn" title={`Sửa bởi ${m.adjusted_by_name ?? ''} lúc ${df(m.adjusted_at, true)}`}>đã sửa · gốc {nf(m.orig_suggest_qty)}</div>}</td>
+                  <td className={`num ${m.projected_after !== null && Number(m.projected_after) < 0 ? 'text-bad' : ''}`}>{nf(m.projected_after, 1)}</td>
                   {showPrice && <td className="num">{m.amount === null ? '—' : nf(m.amount)}</td>}
                   <td className="whitespace-nowrap">{df(m.eff_need_date)}
                     {m.need_date && <div className="text-[12px] text-warn">gốc {df(m.latest_order_date)}</div>}</td>
@@ -176,6 +187,47 @@ export default async function PlanDetail({ params, searchParams }:
           </table>
         ) : <Empty>Chưa chạy MRP. Thêm dòng kế hoạch rồi bấm “Chạy MRP”.</Empty>}
       </section>
+
+      {levels && levels.length > 0 && (
+        <section className="card mt-4 overflow-x-auto">
+          <div className="card-h"><span>Dự trù nhiều tầng: thành phẩm → bán thành phẩm → NVL</span><span className="text-[12.5px] font-normal text-muted">mét cáp còn phải làm ở từng công đoạn sau khi trừ tồn</span></div>
+          <table className="tbl">
+            <thead><tr><th>Mã</th><th className="num">Kế hoạch</th><th className="num">TP sẵn có</th><th className="num">Đóng gói</th><th className="num">Cáp CV có</th><th className="num">Bọc vỏ</th><th className="num">Cáp xoắn có</th><th className="num">Xoắn, băng</th><th className="num">Lõi có (quy cáp)</th><th className="num">Bọc cách điện</th><th className="num">Ruột có (quy cáp)</th><th className="num">Bện</th></tr></thead>
+            <tbody>{levels.map((x) => (
+              <tr key={x.id}><td><b>{x.product_code}</b>{x.cores ? <span className="text-[12px] text-muted"> · {x.cores} lõi</span> : null}</td><td className="num">{nf(x.qty_m)}</td>
+                <td className="num text-brand">{Number(x.fg_m) ? `−${nf(x.fg_m)}` : '—'}</td><td className="num font-medium">{nf(x.q6)}</td>
+                <td className="num text-brand">{Number(x.cv_m) ? `−${nf(x.cv_m)}` : '—'}</td><td className="num font-medium">{nf(x.q5)}</td>
+                <td className="num text-brand">{Number(x.bl_m) ? `−${nf(x.bl_m)}` : '—'}</td><td className="num font-medium">{nf(x.q34)}</td>
+                <td className="num text-brand">{Number(x.lb_m) ? `−${nf(x.lb_m)}` : '—'}</td><td className="num font-medium">{nf(x.q2)}</td>
+                <td className="num text-brand">{Number(x.cb_m) ? `−${nf(x.cb_m)}` : '—'}</td><td className="num font-medium">{nf(x.q1)}</td></tr>
+            ))}</tbody>
+          </table>
+          <p className="px-4 py-3 text-[12.5px] text-muted">TP sẵn có: đạt QC, chưa giữ cho đơn, cùng nhãn. BTP: đạt hoặc đang chờ QC trong kho BTP; lõi, ruột quy ra mét cáp ÷ số lõi. Vật tư BOM tính theo mét của công đoạn tiêu thụ; thiếu ròng đã trừ tồn đạt QC, hàng đang về kịp và đề xuất mua chưa lên PO.</p>
+        </section>
+      )}
+
+      {(plan.status === 'APPROVED' || (adjs ?? []).length > 0) && (
+        <section className="card mt-4" id="dieu-chinh">
+          <div className="card-h"><span>Phiếu điều chỉnh kế hoạch tháng</span><span className="text-[12.5px] font-normal text-muted">thêm, bớt mã, đổi sản lượng, đổi hạn giao, lô ngoài kế hoạch: TP SX lập, Chủ tịch HĐQT duyệt</span></div>
+          {(adjs ?? []).length > 0 && (
+            <div className="overflow-x-auto"><table className="tbl">
+              <thead><tr><th>Phiếu</th><th>Lý do</th><th className="num">Dòng</th><th>Người lập</th><th>Trạng thái</th></tr></thead>
+              <tbody>{(adjs ?? []).map((a) => (
+                <tr key={a.id}><td className="mono"><Link className="link" href={`/ke-hoach/dieu-chinh/${a.id}`}>{a.adj_no}</Link></td><td>{a.reason}</td><td className="num">{a.line_count}</td>
+                  <td>{a.created_by_name}<div className="text-[12px] text-muted">{df(a.created_at, true)}</div></td>
+                  <td><Pill tone={ADJ_STATUS[a.status]?.[1] ?? 'mute'}>{ADJ_STATUS[a.status]?.[0] ?? a.status}</Pill>{a.applied_at && <div className="text-[12px] text-muted">áp {df(a.applied_at, true)}</div>}</td></tr>
+              ))}</tbody>
+            </table></div>
+          )}
+          {canAdj && (
+            <form action={createAdj} className="flex flex-wrap items-end gap-3 px-4 py-3">
+              <input type="hidden" name="plan_id" value={id} />
+              <label className="lbl min-w-[280px] flex-1"><span className="req">Lý do điều chỉnh</span><input className="inp" name="reason" required placeholder="VD: khách ABC đặt thêm 3.000 m, khách XYZ lùi hạn" /></label>
+              <SubmitButton className="btn">Lập phiếu điều chỉnh</SubmitButton>
+            </form>
+          )}
+        </section>
+      )}
 
       {edits && edits.length > 0 && (
         <section className="card mt-4 overflow-x-auto">

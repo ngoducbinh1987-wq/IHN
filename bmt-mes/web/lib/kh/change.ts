@@ -9,7 +9,7 @@ export type ProductRow = {
   core_code?: string | null;
 };
 export type ChangeInput = { product_code: string; qty: number; due: string; so: string; prio: 0 | 1; br: boolean };
-export type Step = { role: string; label: string; done_by?: string; done_name?: string; done_at?: string; result?: string; comment?: string };
+export type Step = { role: string; label: string; done_by?: string; done_name?: string; done_at?: string; result?: string; comment?: string; user_ids?: string[] };
 
 export const LEVEL: Record<string, { tone: 'ok' | 'warn' | 'bad'; label: string }> = {
   A: { tone: 'ok', label: 'Mức A · Quản lý SX tự áp dụng' },
@@ -18,10 +18,12 @@ export const LEVEL: Record<string, { tone: 'ok' | 'warn' | 'bad'; label: string 
 };
 
 export function stepsFor(level: 'A' | 'B' | 'C'): Step[] {
+  // Quy trình final: lô ngoài kế hoạch tháng phải được Chủ tịch HĐQT duyệt; Giám đốc duyệt phần chen lịch (database tự lập bước)
   const first = { role: 'SX_TP', label: 'Quản lý SX lập đề nghị, chạy mô phỏng' };
-  if (level === 'A') return [first];
-  if (level === 'B') return [first, { role: 'BGD', label: 'Giám đốc duyệt, chốt ngày giao với kinh doanh' }];
-  return [first, { role: 'KT_TP', label: 'TP Kỹ thuật/QA cho ý kiến: đổi mã, mẫu đầu mã, thông số' }, { role: 'BGD', label: 'Giám đốc duyệt chen vào vùng khóa' }];
+  const chair = { role: 'BGD', label: 'Chủ tịch HĐQT duyệt lô ngoài kế hoạch tháng' };
+  if (level === 'A') return [first, chair];
+  if (level === 'B') return [first, chair, { role: 'BGD', label: 'Giám đốc duyệt, chốt ngày giao với kinh doanh' }];
+  return [first, { role: 'KT_TP', label: 'TP Kỹ thuật/QA cho ý kiến: đổi mã, mẫu đầu mã, thông số' }, chair, { role: 'BGD', label: 'Giám đốc duyệt chen vào vùng khóa' }];
 }
 
 export function simulate(kh: Kh, product: ProductRow, input: ChangeInput) {

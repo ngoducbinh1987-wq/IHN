@@ -61,6 +61,8 @@ type LineRow = {
   sheath_color: string | null; single_color: string | null; core_colors: string[] | null; route: string[] | null; size_mm2: number;
   so_no: string | null; spec_status: string; plan_no: string; plan_status: string; sched_start: string | null;
   product_id: string | null; core_code: string | null;
+  committed_date?: string | null; committed_note?: string | null; committed_by_name?: string | null;
+  lot_approved_at?: string | null; lot_approved_by_name?: string | null; eta_date?: string | null; adjustment_id?: string | null;
 };
 export type OrderMeta = {
   group: string; size: number; cores: string[]; sheath: string | null; sil: boolean; shield: boolean; route: Op[];
@@ -77,8 +79,8 @@ export function orderFrom(r: Omit<LineRow, 'plan_id' | 'plan_no' | 'plan_status'
     id: r.id ?? '', label, product_code: r.product_code, product_name: r.product_name ?? '', group: r.group_code,
     size: Number(r.size_mm2) || 0, cores, sheath: route.includes('CD5') ? (r.sheath_color || 'Chưa rõ màu') : null,
     sil: (r.insulation ?? '').toUpperCase().startsWith('SIL'), shield: Boolean(r.shield), route,
-    qty: Number(r.qty_m) || 0, due: r.due_date ?? null, prio: Number(r.priority ?? 1),
-    source: r.so_no ?? (r.change_request_id ? 'Đơn phát sinh' : 'Kế hoạch tháng'),
+    qty: Number(r.qty_m) || 0, due: r.due_date ?? null, commit: r.committed_date ?? null, prio: Number(r.priority ?? 1),
+    source: r.so_no ?? (r.change_request_id ? 'Đơn phát sinh' : r.adjustment_id ? 'Phiếu điều chỉnh' : 'Kế hoạch tháng'),
     product_id: r.product_id ?? null, core: r.core_code ?? null,
   };
 }
@@ -199,8 +201,10 @@ export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?
   const todayIdx = dayIndex(cal, kh.now.date);
   const boundaryDay = opt.split ? Math.max(0, todayIdx + 1) : Math.max(0, todayIdx + kh.cfg.frozen_days);
   const prev: PrevSchedule | null = kh.sch && kh.version ? { S: kh.version.params.S, SPD: kh.version.params.SPD, slots: kh.sch.slots } : null;
+  // Lô TP SX đã duyệt lịch: giữ chỗ trên lịch máy khi xếp lại
+  const keep = new Set(kh.lines.filter((l) => l.lot_approved_at).map((l) => l.id));
   const sch = schedule(orders, { cfg: kh.cfg, cal, machines: kh.machines, operators: kh.operators }, {
-    from: prev, boundary: prev ? boundaryDay * cal.SPD * cal.S : 0, split: opt.split, credit: opt.credit,
+    from: prev, boundary: prev ? boundaryDay * cal.SPD * cal.S : 0, split: opt.split, credit: opt.credit, keep,
   });
   return { cal, sch, fin: finishInfo(sch, cal, orders), boundaryDay };
 }

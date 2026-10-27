@@ -177,4 +177,15 @@ for (const s of gp.slots) if (s.op === 'CD2' && s.machine === 'EXT-SI-01') {
   if (Math.abs(s.rate - want) > 1e-9) bad(`PLC slot ${s.key} tốc độ ${s.rate} ≠ ${want}`);
 }
 console.log('PLC lý do mẫu:', gp.slots.find((s) => s.machine === 'EXT-SI-01' && s.reason.includes('PLC'))?.reason);
+// Giữ chỗ lô đã duyệt lịch: xếp lại có thêm đơn gấp, lô giữ chỗ không đổi máy/giờ sau mốc; việc khác không chồng lên khối giữ chỗ
+const lastLine = [...orders].sort((a, b) => (fin.get(b.id)!.end - fin.get(a.id)!.end))[0].id;
+const urgK = { ...mk(9, 'CFR-2C-1P5', 'CFR', 1.5, ['Đỏ', 'Đen'], 'Đỏ', 20000, '2026-11-10'), prio: 0 };
+const rk = schedule([...orders, urgK], ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: B, keep: new Set([lastLine]) });
+check(rk, [...orders, urgK], 'giữ chỗ');
+const sig = (sl: typeof r.slots) => sl.filter((x) => x.lineId === lastLine && x.start >= B).map((x) => x.key + x.machine + x.start.toFixed(2)).sort().join();
+if (!sig(r.slots) || sig(r.slots) !== sig(rk.slots)) bad('lô giữ chỗ bị dời khi xếp lại');
+const rn = schedule([...orders, urgK], ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: B });
+if (sig(rn.slots) === sig(r.slots)) console.log('(lưu ý: không giữ chỗ thì lô cuối cũng không đổi giờ trong bộ dữ liệu này)');
+console.log('Giữ chỗ', orders.find((o) => o.id === lastLine)?.label, ': đơn gấp xong', finishInfo(rk, cal, [...orders, urgK]).get(urgK.id)?.finDate,
+  '(không giữ chỗ:', finishInfo(rn, cal, [...orders, urgK]).get(urgK.id)?.finDate + ')');
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

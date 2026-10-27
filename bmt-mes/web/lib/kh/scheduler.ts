@@ -45,6 +45,7 @@ export type Order = {
   route: Op[];
   qty: number;
   due: string | null;    // yyyy-mm-dd
+  commit?: string | null; // ngày TP SX chốt (xếp lịch theo ngày này nếu có)
   prio: number;          // 0 gấp, 1 thường
   source: string;
   product_id?: string | null; // để chọn tốc độ khai báo riêng theo mã sản phẩm
@@ -250,6 +251,7 @@ export type ScheduleOpts = {
   boundary?: number;                 // phút xếp lịch: trước mốc giữ nguyên lịch cũ
   split?: boolean;                   // tách việc đang chạy qua mốc (đơn gấp chen vùng khóa)
   credit?: Map<string, number>;      // mét chưa làm được ở ca đã qua (theo báo cáo ca) cộng lại vào việc
+  keep?: Set<string>;                // lô TP SX đã duyệt lịch: giữ nguyên chỗ trên lịch máy (cả sau mốc)
 };
 
 export function schedule(
@@ -262,10 +264,12 @@ export function schedule(
   const tasks = buildTasks(orders, cfg);
   const byKey = new Map(tasks.map((t) => [t.key, t]));
   const orderById = new Map(orders.map((o) => [o.id, o]));
-  const machines = ctx.machines.map((m) => ({ ...m, free: 0, last: null as Prev, slots: [] as Slot[] }));
+  const machines = ctx.machines.map((m) => ({ ...m, free: 0, last: null as Prev, slots: [] as Slot[], blocks: [] as [number, number][] }));
   const cap = Math.max(1, Number(cfg.machines_per_operator) || 1);
-  const workers = ctx.operators.filter((w) => w.skills.length).map((w) => ({ ...w, lanes: Array(cap).fill(0) as number[] }));
+  const workers = ctx.operators.filter((w) => w.skills.length)
+    .map((w) => ({ ...w, lanes: Array(cap).fill(0) as number[], blocks: Array.from({ length: cap }, () => [] as [number, number][]) }));
   const B = opt.boundary ?? 0;
+  const keep = opt.keep ?? new Set<string>();
 
   if (opt.from) {
     const k = (S * SPD) / (opt.from.S * opt.from.SPD); // giữ vị trí theo ngày khi đổi ca hoặc tỷ lệ xếp lịch
@@ -274,7 +278,16 @@ export function schedule(
       const m = machines.find((x) => x.code === sl.machine);
       if (!t || !m) continue;
       const start = sl.start * k, rs = sl.runStart * k, end = sl.end * k, rate = sl.rate / k;
-      if (start >= B) continue;
+      if (start >= B) {
+        // Lô đã duyệt lịch: giữ chỗ (khối cố định trên máy và người), việc khác xếp vào khoảng trống trước/sau khối
+        if (!keep.has(sl.lineId)) continue;
+        const ns = { ...sl, start, runStart: rs, end, rate, reason: sl.reason.startsWith('Giữ chỗ') ? sl.reason : `Giữ chỗ (TP SX đã duyệt lịch lô) · ${sl.reason}` };
+        t.m -= sl.meters;
+        m.slots.push(ns); m.blocks.push([start, end]);
+        const w = workers.find((x) => x.code === sl.operator);
+        if (w) { const li = Math.min(sl.lane || 0, cap - 1); w.blocks[li].push([start, end]); ns.lane = li; }
+        continue;
+      }
       let ns: Slot;
       if (opt.split && end > B) {
         if (rs >= B) continue;
@@ -296,7 +309,8 @@ export function schedule(
   for (const t of tasks) { if (t.m > 1) { t.run = t.m / t.rate; pending.add(t.id); } else t.m = 0; }
   for (const m of machines) {
     m.slots.sort((a, b) => a.start - b.start);
-    const l = m.slots[m.slots.length - 1];
+    const before = m.slots.filter((x) => x.start < B);
+    const l = before[before.length - 1];
     m.free = Math.max(B, l ? l.end : 0);
     m.last = l ? { order: orderById.get(l.lineId)!, op: l.op, color: l.color } : null;
     if (m.last && !m.last.order) m.last = null;
@@ -335,7 +349,7 @@ export function schedule(
     for (const w of workers) if (w.skills.includes(code)) w.lanes.forEach((f, li) => { if (!best || f < best.f) best = { w, li, f }; });
     return best as { w: (typeof workers)[number]; li: number; f: number } | null;
   };
-  const due = (o: Order) => o.due ?? '9999-12-31';
+  const due = (o: Order) => o.commit ?? o.due ?? '9999-12-31';
   const byPrio = (a: Order, b: Order) => a.prio - b.prio || due(a).localeCompare(due(b));
   type Cand = { t: Task; r: number; sp: Speed; run: number };
   // Chọn việc cho một máy trong các việc bắt đầu được gần như cùng lúc:
@@ -343,7 +357,7 @@ export function schedule(
   // được chạy trước nếu ít phút đổi máy hơn (gom cùng cỡ ruột, cùng màu, cùng mã); 3) bằng nhau: màu sáng trước, hạn sớm trước.
   const pick = (pool: Cand[], last: Prev): { x: Cand; lead: Cand; su: number } => {
     const lead = [...pool].sort((a, b) => byPrio(a.t.order, b.t.order) || colorRank(a.t.color) - colorRank(b.t.color) || a.t.id - b.t.id)[0];
-    const leadDue = lead.t.order.due;
+    const leadDue = lead.t.order.commit ?? lead.t.order.due;
     const limit = G > 0 && leadDue ? addDays(leadDue, G) : leadDue ?? '9999-12-31';
     const ok = G > 0 ? pool.filter((c) => c.t.order.prio === lead.t.order.prio && due(c.t.order) <= limit) : [lead];
     const scored = ok.map((c) => ({ c, su: changeover(cfg, last, c.t)[0] }));
@@ -381,12 +395,19 @@ export function schedule(
     const { m, t, ln, sp, run, lead } = best;
     const [su, why] = changeover(cfg, m.last, t);
     const prevOp = t.k > 0 ? t.order.route[t.k - 1] : null;
-    const st0 = best.st;
+    // Tránh khối giữ chỗ của lô đã duyệt (máy và người): dời đến sau khối nếu chồng lên
+    let st0 = best.st;
+    for (let moved = true, g = 0; moved && g < 100; g++) {
+      moved = false;
+      const e0 = st0 + su + run;
+      for (const b of [...m.blocks, ...ln.w.blocks[ln.li]]) if (st0 < b[1] && e0 > b[0]) { st0 = b[1]; moved = true; }
+    }
     let reason: string;
     if (prevOp && st0 === best.r && best.r > m.free && best.r >= ln.f) reason = `Chờ ${OP_NAME[prevOp].toLowerCase()} của lệnh này chạy trước ít nhất 1 ca (gối đầu)`;
     else if (st0 === ln.f && ln.f > m.free) reason = `Chờ người: ${ln.w.code} đang đứng máy khác, xong việc mới sang máy này`;
     else reason = m.last ? 'Máy làm xong việc trước thì chạy tiếp' : 'Máy và người đều sẵn, chạy ngay';
     const dmy = (d: string | null) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'chưa có';
+    if (st0 > best.st) reason += ' · Dời sau khối giữ chỗ của lô TP SX đã duyệt lịch';
     if (lead !== t) reason += ` · Gom lô: chạy liền ${what(t)} để giảm đổi máy (hạn ${dmy(t.order.due)}, trong khung ${G} ngày so với ${lead.order.label} hạn ${dmy(lead.order.due)})`;
     else if (m.last && su === 0 && m.last.order.id !== t.order.id) reason += ` · Cùng ${what(t)} với việc trước, không đổi máy`;
     const v1 = Math.round(sp.v * 10) / 10;

@@ -102,7 +102,7 @@ export async function createChange(form: FormData) {
   });
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
-  go(q, 'ok', sim.level === 'A' ? 'Đã lập đề nghị mức A. Bấm Áp dụng để đưa vào lịch.' : `Đã gửi đề nghị mức ${sim.level}. Người duyệt đã nhận thông báo.`);
+  go(q, 'ok', `Đã gửi đề nghị mức ${sim.level}: Chủ tịch HĐQT duyệt lô ngoài kế hoạch${sim.level === 'A' ? '' : ', sau đó Giám đốc duyệt chen lịch'}. Người duyệt đã nhận thông báo.`);
 }
 
 async function step(form: FormData, action: 'approve' | 'return') {
@@ -141,4 +141,53 @@ export async function applyChange(form: FormData) {
   revalidatePath('/lich-may');
   revalidatePath('/lenh-ngay');
   go(q, 'ok', `Đã áp dụng lịch mới · ${moved(kh, r)} lệnh đổi ngày xong${req.payload?.br ? ' · lệnh ngày đã phát trong vùng khóa cần phát lại bản mới' : ''}`);
+}
+
+// TP SX chốt ngày hoàn thành của lô. Sớm hơn ngày MES dự kiến: mô phỏng xếp lại với ngày chốt, báo không kịp
+// hoặc liệt kê lô bị lùi và bắt buộc tích xác nhận (ghi vào ghi chú gửi Giám đốc).
+export async function commitLot(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const q = `plan=${planId}&tab=thang`;
+  const me = await requireMe();
+  if (!hasRole(me.roles, ['SX_TP', 'SX_KH', 'ADMIN'])) go(q, 'err', 'Chỉ TP SX chốt ngày hoàn thành của lô');
+  const lineId = String(form.get('line_id'));
+  const date = String(form.get('date') ?? '');
+  let note = String(form.get('note') ?? '').trim();
+  const db = await createClient();
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) go(q, 'err', 'Chọn ngày chốt');
+  if (date) {
+    const kh = await loadKh(db, { plan: planId, roles: me.roles });
+    const o = kh.orders.find((x) => x.id === lineId);
+    const eta = kh.fin.get(lineId)?.finDate ?? null;
+    if (o && kh.version && eta && date < eta) {
+      const orders = kh.orders.map((x) => (x.id === lineId ? { ...x, commit: date } : x));
+      const r = rebuild(kh, orders);
+      const now = r.fin.get(lineId);
+      if (!now?.placed || !now.finDate || now.finDate > date) {
+        go(q, 'err', `${o.label} ${o.product_code}: không đủ máy để xong ${date.split('-').reverse().slice(0, 2).join('/')}; ưu tiên lô này thì xong sớm nhất ${now?.finDate ? now.finDate.split('-').reverse().slice(0, 2).join('/') : 'không xếp được'}. Chọn ngày muộn hơn hoặc Giám đốc bật thêm ca.`);
+      }
+      const pushed = kh.orders.filter((x) => x.id !== lineId && kh.fin.get(x.id)?.finDate && (r.fin.get(x.id)?.finDate ?? '9999') > kh.fin.get(x.id)!.finDate!)
+        .map((x) => `${x.label} ${x.product_code} ${kh.fin.get(x.id)!.finDate!.slice(8, 10)}/${kh.fin.get(x.id)!.finDate!.slice(5, 7)} → ${r.fin.get(x.id)?.finDate ? `${r.fin.get(x.id)!.finDate!.slice(8, 10)}/${r.fin.get(x.id)!.finDate!.slice(5, 7)}` : 'chưa xếp'}`);
+      if (pushed.length && form.get('accept') !== '1') {
+        go(q, 'err', `Chốt ${o.label} sớm hơn dự kiến làm lùi: ${pushed.join('; ')}. Tích "Đồng ý lùi các lô này" rồi chốt lại.`);
+      }
+      note = [note, pushed.length ? `Lùi: ${pushed.join('; ')}` : 'Không lô nào bị lùi'].filter(Boolean).join(' · ');
+    }
+  }
+  const { error } = await db.schema('app').rpc('kh_commit_lot', { p_line: lineId, p_date: date || null, p_note: note || null });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  go(q, 'ok', date ? `Đã chốt ngày hoàn thành. Bấm Xếp lại lịch để lịch theo ngày chốt rồi duyệt lịch lô.` : 'Đã bỏ ngày chốt');
+}
+
+// TP SX duyệt lịch lô (giữ chỗ trên lịch máy) hoặc bỏ giữ chỗ
+export async function approveLot(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const q = `plan=${planId}&tab=thang`;
+  const db = await createClient();
+  const ok = form.get('approve') === '1';
+  const { error } = await db.schema('app').rpc('kh_approve_lot', { p_line: String(form.get('line_id')), p_approve: ok });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  go(q, 'ok', ok ? 'Đã duyệt lịch lô: giữ chỗ trên lịch máy, xếp lại lịch không dời lô này. MES phát lệnh SX từng ngày theo lịch.' : 'Đã bỏ giữ chỗ lịch lô');
 }

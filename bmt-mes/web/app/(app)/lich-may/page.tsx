@@ -13,7 +13,7 @@ import { DOC_STATUS, df, nf } from '@/lib/format';
 import { adminDeleteDoc } from '../quan-tri/doc-actions';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { applyChange, changeStep, createChange, rebuildSchedule, returnChange, setLine, setStart } from './actions';
+import { applyChange, approveLot, changeStep, commitLot, createChange, rebuildSchedule, returnChange, setLine, setStart } from './actions';
 
 export const metadata = { title: 'Lịch máy' };
 
@@ -128,6 +128,8 @@ const fmtT = (kh: Kh, t: number) => {
 function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
   const { cal } = kh;
   const isBgd = hasRole(me, ROLE.params);
+  const isTp = hasRole(me, ['SX_TP', 'SX_KH', 'ADMIN']) && kh.fromPlan && kh.planStatus === 'APPROVED';
+  const lineOf = new Map(kh.lines.map((l) => [l.id, l]));
   // Cửa sổ tính tải: từ ngày gốc đến cuối tháng (còn dưới 10 ngày làm việc thì đến cuối tháng sau)
   const start = cal.days[Math.max(0, Math.min(kh.todayIdx, cal.days.length - 1))] ?? cal.base;
   const eom = (d: string) => { const x = new Date(d.slice(0, 7) + '-01T00:00:00Z'); x.setUTCMonth(x.getUTCMonth() + 1); x.setUTCDate(0); return x.toISOString().slice(0, 10); };
@@ -189,12 +191,13 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
         </Alert>
       )}
       <section className="card">
-        <div className="card-h"><h2>Dòng kế hoạch: hạn giao, ưu tiên, dự kiến xong</h2>
-          {isBgd ? <span className="text-[13px] font-normal text-muted">Giám đốc đặt hạn giao và mức ưu tiên</span> : <LockNote>Giám đốc đặt hạn giao</LockNote>}</div>
+        <div className="card-h"><h2>Lịch theo lô: hạn giao, ngày dự kiến, ngày chốt, giữ chỗ</h2>
+          <span className="text-[13px] font-normal text-muted">Giám đốc đặt hạn giao lần đầu, đánh dấu gấp · TP SX chốt ngày, duyệt lịch lô</span></div>
         <div className="overflow-x-auto"><table className="tbl">
-          <thead><tr><th>Dòng</th><th>Sản phẩm</th><th>Công đoạn</th><th className="num">Số mét</th><th>Nguồn</th><th>Hạn giao · ưu tiên</th><th className="num">Dự kiến xong</th><th>Tình trạng</th></tr></thead>
+          <thead><tr><th>Dòng</th><th>Sản phẩm</th><th>Công đoạn</th><th className="num">Số mét</th><th>Nguồn</th><th>Hạn giao · ưu tiên</th><th className="num">Dự kiến xong (MES)</th><th>Tình trạng</th><th>Ngày chốt (TP SX)</th><th>Lịch lô</th></tr></thead>
           <tbody>{kh.orders.map((o) => {
             const f = view.fin.get(o.id);
+            const ln = lineOf.get(o.id);
             return (
               <tr key={o.id}>
                 <td className="mono">{o.label}{o.prio === 0 && <> <Pill tone="bad">Gấp</Pill></>}</td>
@@ -211,11 +214,34 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
                 ) : <>{o.due ? dd(o.due) : <span className="text-muted">Chưa có</span>}{o.prio === 0 ? ' · Gấp' : ''}</>}</td>
                 <td className="num">{f?.finDate ? dd(f.finDate) : '—'}</td>
                 <td>{f ? <FinishPill {...f} due={o.due} /> : '—'}</td>
+                <td className="min-w-[220px]">
+                  {ln?.committed_date && <div className="text-[13px]"><b>{dd(ln.committed_date)}</b>{f?.finDate && f.finDate > ln.committed_date ? <> <Pill tone="bad">lịch xong {dd(f.finDate)}</Pill></> : null}
+                    {ln.committed_note && <div className="text-[12px] text-muted">{ln.committed_note}</div>}</div>}
+                  {isTp && (
+                    <details>
+                      <summary className="cursor-pointer text-[12.5px] text-brand">{ln?.committed_date ? 'Chốt lại' : 'Chốt ngày'}</summary>
+                      <form action={commitLot} className="mt-1 flex flex-col gap-1">
+                        <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} />
+                        <input type="date" name="date" defaultValue={ln?.committed_date ?? f?.finDate ?? ''} className="inp py-1" aria-label={`Ngày chốt ${o.label}`} />
+                        <input name="note" className="inp py-1" placeholder="Ghi chú (bắt buộc nếu sớm hơn dự kiến hoặc sau hạn giao)" aria-label={`Ghi chú chốt ${o.label}`} />
+                        <label className="flex items-center gap-1.5 text-[12px]"><input type="checkbox" name="accept" value="1" />Đồng ý lùi các lô MES báo</label>
+                        <SubmitButton className="btn btn-sm" pendingText="…">Chốt</SubmitButton>
+                      </form>
+                    </details>
+                  )}
+                  {!ln?.committed_date && !isTp && <span className="text-[12.5px] text-muted">Chưa chốt</span>}
+                </td>
+                <td>{ln?.lot_approved_at ? <>
+                    <Pill tone="ok">Đã duyệt · giữ chỗ</Pill><div className="text-[12px] text-muted">{ln.lot_approved_by_name}</div>
+                    {isTp && <form action={approveLot}><input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} /><input type="hidden" name="approve" value="0" /><SubmitButton className="btn btn-sm mt-1" pendingText="…">Bỏ giữ chỗ</SubmitButton></form>}
+                  </> : isTp && ln?.committed_date ? (
+                    <form action={approveLot}><input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} /><input type="hidden" name="approve" value="1" /><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt lịch lô</SubmitButton></form>
+                  ) : <span className="text-[12.5px] text-muted">{ln?.committed_date ? 'Chờ TP SX duyệt' : '—'}</span>}</td>
               </tr>
             );
           })}</tbody>
         </table></div>
-        <p className="px-4 py-3 text-[12.5px] text-muted">Dự kiến xong = công đoạn cuối xong + 1 ca kiểm tra, đóng gói. CD3+4: xoắn và quấn AL/PET chạy liền dây trên máy xoắn. Đổi hạn giao xong bấm “Xếp lại lịch”.</p>
+        <p className="px-4 py-3 text-[12.5px] text-muted">Dự kiến xong = công đoạn cuối xong + 1 ca kiểm tra, đóng gói (MES xếp 90 % thời gian ca). TP SX chốt ngày hoàn thành: sớm hơn dự kiến thì MES mô phỏng, báo không đủ máy hoặc chỉ ra lô bị lùi. Chốt xong bấm “Xếp lại lịch” (lịch xếp theo ngày chốt) rồi “Duyệt lịch lô”: lô đã duyệt được giữ chỗ trên lịch máy, xếp lại không dời. Đổi hạn giao, sản lượng của kế hoạch đã duyệt: lập phiếu điều chỉnh (Chủ tịch HĐQT duyệt) ở trang Kế hoạch.</p>
       </section>
       {isBgd && !kh.version && kh.fromPlan && (
         <section className="card">
@@ -542,9 +568,9 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
         <div className="overflow-x-auto border-t border-line"><table className="tbl">
           <thead><tr><th>Mức</th><th>Khi nào</th><th>Ai duyệt</th><th>Hỏi ý kiến / báo</th></tr></thead>
           <tbody>
-            <tr><td><Pill tone="ok">A</Pill></td><td>Không chạm vùng khóa, không lệnh nào thành trễ, đơn mới kịp hạn</td><td>Quản lý SX tự áp dụng</td><td>Báo Giám đốc</td></tr>
-            <tr><td><Pill tone="warn">B</Pill></td><td>Không chạm vùng khóa nhưng có lệnh khác thành trễ, hoặc đơn mới không kịp hạn</td><td>Giám đốc duyệt, chốt ngày giao với kinh doanh</td><td>Báo Chủ tịch HĐQT các SO bị lùi</td></tr>
-            <tr><td><Pill tone="bad">C</Pill></td><td>Đơn gấp chen vào vùng khóa (tách lệnh đang chạy, đổi lệnh đã phát)</td><td>Giám đốc duyệt</td><td>Hỏi TP Kỹ thuật/QA; báo kế toán (phiếu lĩnh bổ sung), TP mua hàng, Chủ tịch nếu trễ SO</td></tr>
+            <tr><td><Pill tone="ok">A</Pill></td><td>Không chạm vùng khóa, không lệnh nào thành trễ, đơn mới kịp hạn</td><td>Chủ tịch HĐQT duyệt lô ngoài kế hoạch</td><td>Báo Giám đốc</td></tr>
+            <tr><td><Pill tone="warn">B</Pill></td><td>Không chạm vùng khóa nhưng có lệnh khác thành trễ, hoặc đơn mới không kịp hạn</td><td>Chủ tịch HĐQT duyệt lô, rồi Giám đốc duyệt, chốt ngày giao với kinh doanh</td><td>Báo các SO bị lùi</td></tr>
+            <tr><td><Pill tone="bad">C</Pill></td><td>Đơn gấp chen vào vùng khóa (tách lệnh đang chạy, đổi lệnh đã phát)</td><td>Chủ tịch HĐQT duyệt lô, rồi Giám đốc duyệt chen vùng khóa</td><td>Hỏi TP Kỹ thuật/QA; báo kế toán (phiếu lĩnh bổ sung), TP mua hàng, Chủ tịch nếu trễ SO</td></tr>
           </tbody>
         </table></div>
       </section>
@@ -596,7 +622,7 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
           )}
           <div className="border-t border-line px-4 py-3 text-[13.5px]">
             <div className="mb-1 font-medium">Các bước duyệt (hệ thống tự chọn theo mức)</div>
-            <ol className="list-decimal pl-5 text-muted">{(sim.level === 'A' ? ['Quản lý SX lập đề nghị, chạy mô phỏng', 'Quản lý SX áp dụng'] : sim.level === 'B' ? ['Quản lý SX lập đề nghị', 'Giám đốc duyệt, chốt ngày giao với kinh doanh', 'Áp dụng lịch mới'] : ['Quản lý SX lập đề nghị', 'TP Kỹ thuật/QA cho ý kiến', 'Giám đốc duyệt chen vào vùng khóa', 'Áp dụng lịch mới']).map((s) => <li key={s}>{s}</li>)}</ol>
+            <ol className="list-decimal pl-5 text-muted">{(sim.level === 'A' ? ['Quản lý SX lập đề nghị, chạy mô phỏng', 'Chủ tịch HĐQT duyệt lô ngoài kế hoạch', 'Quản lý SX áp dụng'] : sim.level === 'B' ? ['Quản lý SX lập đề nghị', 'Chủ tịch HĐQT duyệt lô ngoài kế hoạch', 'Giám đốc duyệt, chốt ngày giao với kinh doanh', 'Áp dụng lịch mới'] : ['Quản lý SX lập đề nghị', 'TP Kỹ thuật/QA cho ý kiến', 'Chủ tịch HĐQT duyệt lô ngoài kế hoạch', 'Giám đốc duyệt chen vào vùng khóa', 'Áp dụng lịch mới']).map((s) => <li key={s}>{s}</li>)}</ol>
             <div className="mt-1 text-muted">Hệ thống báo: {sim.notify.join(', ')}.</div>
           </div>
           <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
@@ -617,7 +643,7 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
         {(reqs ?? []).length ? (reqs as ChangeRow[]).map((c) => {
           const cur = c.status === 'PENDING' ? c.steps.findIndex((s) => !s.done_at) : -1;
           const curStep = cur >= 0 ? c.steps[cur] : null;
-          const mine = curStep && roles.includes(curStep.role);
+          const mine = curStep && roles.includes(curStep.role) && (!curStep.user_ids?.length || curStep.user_ids.includes(userId) || roles.includes('ADMIN'));
           const self = c.created_by === userId || c.steps.some((s) => s.done_by === userId);
           const lastRole = c.steps[c.steps.length - 1].role;
           const canApply = ['READY', 'LINE_ADDED'].includes(c.status) && (hasRole(roles, ROLE.plan) || roles.includes(lastRole));

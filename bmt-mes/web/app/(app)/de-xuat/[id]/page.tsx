@@ -6,7 +6,7 @@ import { StageBar, type Stage } from '@/components/stage-bar';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import type { Approval } from '@/lib/approvals';
-import { DOC_STATUS, df, nf } from '@/lib/format';
+import { DOC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { deletePrLine, savePrHeader, savePrLine, submitPr } from '../actions';
@@ -29,6 +29,8 @@ export default async function PrDetail({ params, searchParams }:
   ]);
   const draft = pr.status === 'DRAFT';
   const editable = draft && can(me, 'purchase', 'create');
+  // Đề xuất từ dự trù: cột nhu cầu, tồn đạt QC, đang về, tồn dự kiến (quy trình final: TP SX lập, Giám đốc duyệt)
+  const fromMrp = (lines ?? []).some((l) => l.need_qty !== null);
   const showPrice = me.can_see_price;
   const total = (lines ?? []).reduce((s, l) => s + (l.unit_price === null ? 0 : Number(l.qty) * Number(l.unit_price)), 0);
   // Chưa gửi duyệt: vẫn hiện trước các bước sẽ đi qua để người lập biết ai duyệt
@@ -61,12 +63,22 @@ export default async function PrDetail({ params, searchParams }:
         <section className="card overflow-x-auto">
           <div className="card-h"><h2>Danh sách vật tư đề xuất</h2><span className="text-[13px] text-muted">{lines?.length ?? 0} dòng</span></div>
           <table className="tbl">
-            <thead><tr><th>Mã VT</th><th>Vật tư</th><th className="num">Số lượng</th><th>ĐVT</th><th className="num">Tồn khả dụng</th><th>Ngày cần</th>{showPrice && <th className="num">Đơn giá</th>}{showPrice && <th className="num">Thành tiền</th>}{editable && <th />}</tr></thead>
+            <thead><tr><th>Mã VT</th><th>Vật tư</th>{fromMrp && <><th className="num">Nhu cầu SX</th><th className="num">Tồn đạt QC</th><th className="num">Đang về, đã đề xuất</th></>}<th className="num">Số mua</th><th>ĐVT</th>{fromMrp ? <th className="num">Tồn dự kiến sau SX</th> : <th className="num">Tồn khả dụng</th>}<th>Ngày cần</th>{showPrice && <th className="num">Đơn giá</th>}{showPrice && <th className="num">Thành tiền</th>}{editable && <th />}</tr></thead>
             <tbody>
               {(lines ?? []).map((l) => (
                 <tr key={l.id}>
                   <td className="mono font-medium">{l.material_code}</td><td>{l.material_name}</td>
-                  <td className="num font-medium">{nf(l.qty, 2)}</td><td>{l.uom}</td><td className="num">{nf(l.available, 1)}</td><td>{df(l.need_date)}</td>
+                  {fromMrp && <><td className="num">{nf(l.need_qty, 2)}</td><td className="num">{nf(l.available_qty, 2)}</td><td className="num">{nf(l.incoming_qty, 2)}</td></>}
+                  <td className="num font-medium">{editable ? (
+                    <form action={savePrLine} className="flex items-center justify-end gap-1">
+                      <input type="hidden" name="pr_id" value={id} /><input type="hidden" name="material_code" value={l.material_code} />
+                      <input className="inp w-[110px] py-1 text-right" name="qty" defaultValue={numIn(l.qty)} inputMode="decimal" aria-label={`Số mua ${l.material_code}`} />
+                      <SubmitButton className="btn btn-sm" pendingText="…">Lưu</SubmitButton>
+                    </form>
+                  ) : nf(l.qty, 2)}{l.mrp_qty !== null && Number(l.mrp_qty) !== Number(l.qty) && <div className="text-[12px] font-normal text-warn">MES đề nghị {nf(l.mrp_qty, 2)}</div>}</td>
+                  <td>{l.uom}</td>
+                  {fromMrp ? <td className={`num ${l.projected_qty !== null && Number(l.projected_qty) < 0 ? 'text-bad' : ''}`}>{nf(l.projected_qty, 2)}</td> : <td className="num">{nf(l.available, 1)}</td>}
+                  <td>{df(l.need_date)}</td>
                   {showPrice && <td className="num">{l.unit_price === null ? <Pill tone="warn">Chưa có giá</Pill> : nf(l.unit_price)}</td>}
                   {showPrice && <td className="num">{l.unit_price === null ? '—' : nf(Number(l.qty) * Number(l.unit_price))}</td>}
                   {editable && (
@@ -75,9 +87,9 @@ export default async function PrDetail({ params, searchParams }:
                   )}
                 </tr>
               ))}
-              {(lines ?? []).length === 0 && <tr><td colSpan={9}><Empty>Chưa có dòng vật tư.</Empty></td></tr>}
+              {(lines ?? []).length === 0 && <tr><td colSpan={13}><Empty>Chưa có dòng vật tư.</Empty></td></tr>}
             </tbody>
-            {showPrice && (lines?.length ?? 0) > 0 && <tfoot><tr><td colSpan={7} className="px-3 py-2 text-right font-medium">Tổng (dòng có giá)</td><td className="num px-3 font-medium">{nf(total)} đ</td>{editable && <td />}</tr></tfoot>}
+            {showPrice && (lines?.length ?? 0) > 0 && <tfoot><tr><td colSpan={fromMrp ? 10 : 7} className="px-3 py-2 text-right font-medium">Tổng (dòng có giá)</td><td className="num px-3 font-medium">{nf(total)} đ</td>{editable && <td />}</tr></tfoot>}
           </table>
           {editable && (
             <form action={savePrLine} className="grid gap-3 border-t border-line bg-sunk/50 p-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end">

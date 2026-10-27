@@ -2,8 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 import { parseNum } from '@/lib/format';
-import { submitForApproval } from '@/lib/notify';
+import { flushEmailOutbox, submitForApproval } from '@/lib/notify';
 import { createClient } from '@/lib/supabase/server';
 
 const back = (id: string, kind: 'ok' | 'err', msg: string) => redirect(`/ke-hoach/${id}?${kind}=${encodeURIComponent(msg)}`);
@@ -103,4 +104,63 @@ export async function adjustMrp(form: FormData) {
   if (error) back(planId, 'err', error.message);
   revalidatePath(`/ke-hoach/${planId}`);
   back(planId, 'ok', 'Đã điều chỉnh kết quả MRP. Đề xuất mua sinh ra sẽ dùng số liệu mới.');
+}
+
+// ---------------- Phiếu điều chỉnh kế hoạch tháng (TP SX lập, Chủ tịch HĐQT duyệt) ----------------
+const adjBack = (id: string, kind: 'ok' | 'err', msg: string) => redirect(`/ke-hoach/dieu-chinh/${id}?${kind}=${encodeURIComponent(msg)}`);
+
+export async function createAdj(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('app').rpc('adj_create', { p_plan: planId, p_reason: String(form.get('reason') ?? '') });
+  if (error) back(planId, 'err', error.message);
+  redirect(`/ke-hoach/dieu-chinh/${data}?ok=` + encodeURIComponent('Đã lập phiếu nháp. Thêm các dòng điều chỉnh rồi gửi Chủ tịch HĐQT duyệt.'));
+}
+
+// Đọc các dòng của form (tối đa 12): loại, dòng kế hoạch / mã mới, số mét, hạn giao, ưu tiên, ghi chú
+function adjLines(form: FormData, id: string) {
+  const lines: Record<string, unknown>[] = [];
+  for (let i = 0; i < 12; i++) {
+    const kind = String(form.get(`kind_${i}`) ?? '');
+    if (!kind) continue;
+    const raw = String(form.get(`qty_${i}`) ?? '').trim();
+    const qty = raw ? parseNum(raw) : null;
+    if (raw && (qty === null || Number.isNaN(qty) || qty < 0)) adjBack(id, 'err', `Dòng ${i + 1}: số mét "${raw}" không hợp lệ`);
+    lines.push({
+      kind, plan_line_id: String(form.get(`line_${i}`) ?? ''), product_code: String(form.get(`code_${i}`) ?? '').trim().toUpperCase(),
+      qty_m: qty, due_date: String(form.get(`due_${i}`) ?? '') || null, priority: String(form.get(`prio_${i}`) ?? '') || null,
+      note: String(form.get(`note_${i}`) ?? '').trim(),
+    });
+  }
+  return lines;
+}
+
+export async function saveAdj(form: FormData) {
+  const id = String(form.get('id'));
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('adj_save', { p_adj: id, p_reason: String(form.get('reason') ?? ''), p_lines: adjLines(form, id) });
+  if (error) adjBack(id, 'err', error.message);
+  revalidatePath(`/ke-hoach/dieu-chinh/${id}`);
+  adjBack(id, 'ok', 'Đã lưu phiếu điều chỉnh');
+}
+
+export async function submitAdj(form: FormData) {
+  const id = String(form.get('id'));
+  const supabase = await createClient();
+  const save = await supabase.schema('app').rpc('adj_save', { p_adj: id, p_reason: String(form.get('reason') ?? ''), p_lines: adjLines(form, id) });
+  if (save.error) adjBack(id, 'err', save.error.message);
+  const { error } = await supabase.schema('app').rpc('adj_submit', { p_adj: id });
+  if (error) adjBack(id, 'err', error.message);
+  after(async () => { await flushEmailOutbox(); });
+  revalidatePath('/', 'layout');
+  adjBack(id, 'ok', 'Đã gửi Chủ tịch HĐQT duyệt. Duyệt xong MES tự áp vào kế hoạch tháng.');
+}
+
+export async function cancelAdj(form: FormData) {
+  const id = String(form.get('id'));
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('adj_cancel', { p_adj: id });
+  if (error) adjBack(id, 'err', error.message);
+  revalidatePath(`/ke-hoach/dieu-chinh/${id}`);
+  adjBack(id, 'ok', 'Đã hủy phiếu nháp');
 }

@@ -153,7 +153,7 @@ if (!lineRow.includes('3.500') || !lineRow.includes('7')) fail(`Dòng kế hoạ
 ok('Sản lượng "3.500" được hiểu đúng 3.500 m, 7 bobin');
 const cuCells = await page.locator('tr:has-text("CU-024") td').allInnerTexts();
 // Lý thuyết 24,723 × 3,5 = 86,53 kg; cấp SX = /(1−1,5%) = 87,85 kg → đề nghị 100 kg (bội số 100) × 268.000 đ
-if (cuCells[3] !== '86,53' || cuCells[4] !== '87,85' || cuCells[10] !== '100' || !cuCells.join(' ').includes('Đặt hàng')) {
+if (cuCells[3] !== '86,53' || cuCells[4] !== '87,85' || cuCells[11] !== '100' || !cuCells.join(' ').includes('Đặt hàng')) {
   fail(`Dòng MRP CU-024 sai: ${cuCells.join(' | ')}`);
 }
 ok('MRP CU-024: lý thuyết 86,53 kg → cấp SX 87,85 kg → đề nghị mua 100 kg (khớp Excel)');
@@ -217,7 +217,7 @@ await approveAs('ct@bmt.test', planNo, 'Chủ tịch HĐQT');
   await login(p, 'bgd@bmt.test');
   await p.goto(planUrl);
   const cells = await p.locator('tr:has-text("CU-024") td').allInnerTexts();
-  if (cells[11] !== '26.800.000') fail(`BGĐ phải thấy thành tiền CU-024 = 26.800.000: ${cells.join(' | ')}`);
+  if (cells[13] !== '26.800.000') fail(`BGĐ phải thấy thành tiền CU-024 = 26.800.000: ${cells.join(' | ')}`);
   ok('BGĐ thấy thành tiền CU-024 = 100 kg × 268.000 = 26.800.000 đ');
   await c.close();
 }
@@ -243,7 +243,10 @@ await page.goto(planUrl);
 await clickNav(page, 'button:has-text("Sinh đề xuất mua (PR)")');
 if (!page.url().includes('/de-xuat/')) fail('Sinh PR phải chuyển sang trang đề xuất mua');
 await expectOk(page, 'Sinh PR sau khi BGĐ duyệt kế hoạch');
-if (!(await page.locator('tr:has-text("CU-024")').first().innerText()).includes('120')) fail('PR phải dùng số đã điều chỉnh 120 kg');
+if ((await page.inputValue('tr:has-text("CU-024") input[name=qty]')) !== '120') fail('PR phải dùng số đã điều chỉnh 120 kg');
+const prRow = await page.locator('tr:has-text("CU-024")').first().innerText();
+if (!prRow.includes('87,85') || !prRow.includes('MES đề nghị 100')) fail(`PR từ dự trù phải có cột nhu cầu 87,85 kg và số MES đề nghị: ${prRow}`);
+ok('Đề xuất mua từ dự trù có cột nhu cầu, tồn, đang về, tồn dự kiến; TP SX sửa được số mua');
 ok('PR sinh từ MRP dùng số lượng đã điều chỉnh (CU-024 120 kg)');
 await ctx.close();
 {
@@ -255,6 +258,32 @@ await ctx.close();
   ok('Đã sinh PR: kết quả MRP bị khóa');
   await c.close();
 }
+// 6a''. Phiếu điều chỉnh kế hoạch tháng: Kế hoạch SX lập (đổi sản lượng 3.500 → 4.000 m), Chủ tịch HĐQT duyệt, MES áp vào kế hoạch
+[ctx, page] = await ctxFor();
+await login(page, 'sx.kh@bmt.test');
+await page.goto(planUrl);
+await page.fill('#dieu-chinh input[name=reason]', 'Khách đặt thêm 500 m');
+await Promise.all([page.waitForURL('**/ke-hoach/dieu-chinh/**'), page.click('#dieu-chinh button:has-text("Lập phiếu điều chỉnh")')]);
+await expectOk(page, 'Lập phiếu điều chỉnh kế hoạch tháng');
+const adjNo = (await page.textContent('main h1')).split(' ·')[0].trim();
+await page.selectOption('select[name=kind_0]', 'QTY');
+await page.selectOption('select[name=line_0]', { index: 1 });
+await page.fill('input[name=qty_0]', '4.000');
+await clickNav(page, 'button:has-text("Lưu và gửi Chủ tịch HĐQT duyệt")');
+await expectOk(page, `Gửi ${adjNo} cho Chủ tịch HĐQT duyệt`);
+if (!(await page.textContent('main')).includes('3.500 → 4.000')) fail('Phiếu điều chỉnh phải hiện 3.500 → 4.000 m');
+await page.screenshot({ path: `${SHOTS}/05c-phieu-dieu-chinh.png`, fullPage: true });
+await ctx.close();
+await approveAs('ct@bmt.test', adjNo, 'Chủ tịch HĐQT');
+[ctx, page] = await ctxFor();
+await login(page, 'sx.kh@bmt.test');
+await page.goto(planUrl);
+if (!(await page.locator('tr:has-text("PFR-2C-1P5")').first().innerText()).includes('4.000')) fail('Duyệt xong: dòng kế hoạch phải thành 4.000 m');
+if (!(await page.locator('#mrp-stale').count())) fail('Duyệt điều chỉnh xong phải báo chạy lại dự trù');
+await clickNav(page, 'button:has-text("Chạy MRP")');
+if (!(await page.textContent('main')).includes('Dự trù nhiều tầng')) fail('Trang kế hoạch phải có bảng dự trù nhiều tầng');
+ok('Chủ tịch duyệt phiếu điều chỉnh: MES áp 4.000 m vào kế hoạch, báo chạy lại dự trù; dự trù nhiều tầng hiện bảng TP → BTP → NVL');
+await ctx.close();
 
 // 6b. Thêm mới: vật tư, đề xuất mua thủ công → người duyệt tiếp theo nhận thông báo → duyệt
 [ctx, page] = await ctxFor();
@@ -479,6 +508,10 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   await page.goto(`${BASE}/ghi-nhan-ca`);
   const shiftBody = await page.innerText('body');
   if (!shiftBody.includes('NVL để lại máy chạy tiếp cùng lô') || !shiftBody.includes('Phế cả ca')) fail(`${email}: báo cáo ca thiếu phần NVL để lại máy / phế cả ca`);
+  await page.goto(`${BASE}/lich-may?tab=thang`);
+  const mBody = await page.innerText('body');
+  if (/Application error|PGRST/i.test(mBody)) fail(`${email}: Lịch máy tab kế hoạch tháng lỗi`);
+  if (!mBody.includes('Lịch theo lô')) fail(`${email}: Lịch máy thiếu bảng lịch theo lô (ngày dự kiến, ngày chốt, giữ chỗ)`);
   await page.goto(`${BASE}/bao-cao/ngay`);
   if (!(await page.innerText('body')).includes('Hao hụt theo công đoạn')) fail(`${email}: báo cáo ngày không hiện bảng hao hụt`);
   if (!(await page.locator('form button', { hasText: /gửi báo cáo ngày/i }).count())) fail(`${email}: thiếu nút gửi báo cáo ngày`);
