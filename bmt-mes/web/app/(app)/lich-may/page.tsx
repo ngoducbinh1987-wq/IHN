@@ -387,7 +387,7 @@ function SlotDetail({ kh, view, sel, canPlan }: { kh: Kh; view: View; sel: Slot;
           <div className="text-[12.5px] text-muted">Mỗi ca chỉ xếp {S} phút ({view.sch.RUN} × {kh.version?.params.fill_pct ?? kh.cfg.fill_pct}%){sel.op === 'CD3' && o.shield ? ' · xoắn và quấn AL/PET liền dây: lấy tốc độ chậm hơn của hai bước' : ''}</div></td></tr>
         <tr><td className="text-muted">Người đứng máy</td><td><b>{sel.operator}</b><div className="text-[12.5px] text-muted">{op?.job}</div></td></tr>
         <tr><td className="text-muted">Đổi máy</td><td><b>{sel.setup ? `${Math.round(sel.setup)} phút` : 'Không'}</b><div className="text-[12.5px] text-muted">{sel.setup ? `${sel.why} · cần mẫu đầu mã đạt trước khi chạy hàng loạt` : 'Cùng mã, cùng màu với việc trước hoặc là việc đầu tiên của máy'}</div></td></tr>
-        <tr><td className="text-muted">Bắt đầu lúc này vì</td><td><b>{sel.reason}</b><div className="text-[12.5px] text-muted">Thứ tự trên máy: {o.prio === 0 ? 'đơn gấp' : o.due ? `theo hạn giao ${dd(o.due)}` : 'chưa có hạn giao, xếp sau'}{sel.color ? ', màu sáng trước tối sau' : ''}</div></td></tr>
+        <tr><td className="text-muted">Bắt đầu lúc này vì</td><td><b>{sel.reason}</b><div className="text-[12.5px] text-muted">Thứ tự trên máy: {o.prio === 0 ? 'đơn gấp' : o.due ? `theo hạn giao ${dd(o.due)}` : 'chưa có hạn giao, xếp sau'}{(kh.cfg.group_days ?? 0) > 0 ? `, gom lô cùng cỡ/màu trong ${kh.cfg.group_days} ngày` : ''}{sel.color ? ', màu sáng trước tối sau' : ''}</div></td></tr>
         <tr><td className="text-muted">Ngày xong lệnh</td><td><b>{dl && dl.end ? `${opName(last, o)} xong ${fmtT(kh, dl.end - 0.01)} + 1 ca kiểm tra, đóng gói = ${dd(f?.finDate)}` : 'Chưa xếp đủ công đoạn'}</b>
           <div className="text-[12.5px] text-muted">{f?.slack == null ? '' : f.slack >= 0 ? `Còn dư ${f.slack} ngày so với hạn giao` : `Trễ ${-f.slack} ngày so với hạn giao`}</div></td></tr>
       </tbody></table></div>
@@ -453,7 +453,7 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
           <div className="overflow-x-auto"><table className="tbl"><tbody>
             <tr><td className="w-[160px]"><b>Kế hoạch tháng</b></td><td>{kh.planNo}: {kh.orders.length} dòng, số mét, hạn giao và mức ưu tiên do Giám đốc đặt</td></tr>
             <tr><td><b>Đường đi công đoạn</b></td><td>Theo nhóm sản phẩm. Cách điện silicone chạy line silicone; HDPE/PVC chạy line vỏ. Cáp chống nhiễu: xoắn và quấn AL/PET liền dây trên máy xoắn</td></tr>
-            <tr><td><b>Tốc độ chuẩn</b></td><td>TP Kỹ thuật/QA ban hành (cỡ &lt; 2,5 mm²): bện {r('CD1')?.rate_small}, bọc cách điện {r('CD2')?.rate_small}, xoắn {r('CD3')?.rate_small}, AL/PET {r('CD4')?.rate_small}, vỏ {r('CD5')?.rate_small} m/phút{c.rates.some((x) => !x.confirmed) ? ' · còn số giả định chưa ban hành' : ''}</td></tr>
+            <tr><td><b>Tốc độ</b></td><td>{(c.speeds ?? []).length ? `Khai báo theo máy: ${[...new Set((c.speeds ?? []).map((x) => x.machine_code))].join(', ')}${(c.speeds ?? []).some((x) => x.status !== 'APPROVED') ? ' (có dòng chờ TP Kỹ thuật/QA duyệt)' : ''}. ` : 'Chưa máy nào khai báo tốc độ riêng. '}Mặc định theo công đoạn (cỡ &lt; 2,5 mm²): bện {r('CD1')?.rate_small}, bọc cách điện {r('CD2')?.rate_small}, xoắn {r('CD3')?.rate_small}, AL/PET {r('CD4')?.rate_small}, vỏ {r('CD5')?.rate_small} m/phút{c.rates.some((x) => !x.confirmed) ? ' · còn số giả định chưa ban hành' : ''}</td></tr>
             <tr><td><b>Phút đổi máy</b></td><td>Màu sáng → tối {co('INS_UP')}′, tối → sáng {co('INS_DOWN')}′, đổi cỡ {co('INS_SIZE')}′, đổi màu vỏ {co('SH_COLOR')}′, đổi mã vỏ {co('SH_CODE')}′, bện đổi cỡ {co('BUN_SIZE')}′, xoắn đổi mã {co('TWS_CODE')}′</td></tr>
             <tr><td><b>Ca làm việc</b></td><td>{cal.shifts.map((s) => `Ca ${s.code} ${s.start_time}–${s.end_time}, nghỉ ${s.break_min}′`).join('; ')} · nghỉ Chủ nhật</td></tr>
             <tr><td><b>Người và tay nghề</b></td><td>{kh.operators.filter((w) => w.skills.length).map((w) => `${w.code}: ${w.skills.join(', ')}`).join(' · ')} · mỗi người đứng {c.machines_per_operator} máy cùng lúc</td></tr>
@@ -465,8 +465,11 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
           <div className="card-h"><h2>Quy tắc xếp</h2></div>
           <ol className="list-decimal space-y-2 py-3 pl-9 pr-4 text-[14px]">
             <li><b>Đơn gấp đã duyệt</b> xếp trước, rồi đến <b>hạn giao sớm</b>. Dòng chưa có hạn giao xếp sau cùng.</li>
-            <li>Mỗi việc vào <b>máy cùng loại có người đủ tay nghề rảnh sớm nhất</b>, đã tính phút đổi máy.</li>
-            <li>Trong cùng lệnh, <b>màu sáng chạy trước, màu tối sau</b>. Cùng cỡ ruột chạy liền nhau.</li>
+            <li><b>Gom lô:</b> {(c.group_days ?? 0) > 0
+              ? <>lô có hạn giao không muộn hơn lô hạn sớm nhất đang chờ cùng máy quá <b>{c.group_days} ngày</b> được chạy liền nếu ít phút đổi máy hơn: cùng cỡ ruột, cùng màu, cùng mã chạy liền nhau (không đổi máy) → đổi màu sáng sang tối → đổi lớn (tối sang sáng phải xả, đổi cỡ, thay khuôn). Đơn gấp không bị lô thường vượt.</>
+              : <>đang tắt (khung gom 0 ngày): chạy đúng thứ tự hạn giao.</>}</li>
+            <li>Màu <b>sáng chạy trước, tối sau</b>; lô đầu tiên của máy chọn màu sáng nhất.</li>
+            <li>Mỗi việc vào <b>máy cùng loại có người đủ tay nghề rảnh sớm nhất</b>, đã tính phút đổi máy. Tốc độ theo <b>khai báo của từng máy</b> (Quản lý máy → Tốc độ); máy chưa khai báo dùng tốc độ mặc định theo công đoạn.</li>
             <li><b>Gối đầu công đoạn:</b> công đoạn sau bắt đầu khi công đoạn trước đã chạy ít nhất 1 ca và không xong trước công đoạn trước.</li>
             <li>Mỗi ca chỉ xếp <b>{c.fill_pct}%</b> thời gian chạy.</li>
             <li>Khi xếp lại: <b>phần đã chạy và vùng khóa {c.frozen_days} ngày giữ nguyên</b>. Chen vào vùng khóa phải qua đơn phát sinh mức C.</li>

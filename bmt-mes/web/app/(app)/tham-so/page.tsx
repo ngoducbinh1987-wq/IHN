@@ -18,6 +18,7 @@ const PARAMS: [key: string, label: string, unit: string, range: string][] = [
   ['cutoff_time', 'Giờ chốt phát lệnh ngày', 'hôm trước', 'HH:MM'], ['machines_per_operator', 'Số máy 1 người đứng cùng lúc', 'máy', '1 – 3'],
   ['downtime_reason_min', 'Dừng máy bắt buộc lý do khi quá', 'phút', '1 – 30'], ['plc_dev_pct', 'Ngưỡng lệch mét PLC / khai báo', '%', '0,1 – 2'],
   ['auto_shifts', 'Số ca đạt liên tiếp để chuyển tự động', 'ca', '3 – 30'], ['plc_loss_min', 'Mất kết nối PLC chuyển sang nhập tay sau', 'phút', '1 – 60'],
+  ['group_days', 'Khung gom lô cùng cỡ ruột, cùng màu (0 = không gom)', 'ngày', '0 – 30'],
 ];
 const MODE: Record<string, string> = { MANUAL: 'Nhập tay', BOTH: 'Song song', PLC: 'Tự động (PLC)' };
 const OPNAME: Record<string, string> = { BUNCHER: 'Bện ruột dẫn (CD1)', EXTRUDER_SI: 'Bọc cách điện silicone (CD2)', TWISTER: 'Xoắn + quấn AL/PET (CD3 + CD4)', EXTRUDER_TP: 'Bọc vỏ (CD5); bọc cách điện HDPE/PVC (CD2)' };
@@ -139,7 +140,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
           </section>
 
           <section className="card">
-            {head('rates', 'Tốc độ chuẩn (m/phút)', isKt, 'TP Kỹ thuật/QA')}
+            {head('rates', 'Tốc độ mặc định theo công đoạn (m/phút)', isKt, 'TP Kỹ thuật/QA')}
             <form action={saveRates}>
               <div className="overflow-x-auto"><table className="tbl">
                 <thead><tr><th>Công đoạn</th><th className="num">Cỡ &lt; 2,5 mm²</th><th className="num">Cỡ ≥ 2,5 mm²</th><th>Đơn vị</th></tr></thead>
@@ -153,6 +154,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
               </table></div>
               {E('rates', isKt) ? foot('rates', 'Ví dụ: Theo kết quả chạy thử tuần 44, line silicone chạy ổn định 85 m/phút.')
                 : <p className="px-4 py-3 text-[12.5px] text-muted">{cfg.rates.some((r) => !r.confirmed) ? <><Pill tone="warn">Giả định · chờ TP Kỹ thuật/QA ban hành</Pill> </> : <><Pill tone="ok">Đã ban hành</Pill> </>}Cáp chống nhiễu chạy xoắn và quấn AL/PET cùng lượt nên lấy tốc độ chậm hơn của hai bước.</p>}
+              <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Xếp lịch dùng <b>tốc độ khai báo của từng máy</b> ở <Link href="/may/toc-do" className="link">Quản lý máy → Tốc độ</Link> ({(cfg.speeds ?? []).length ? `${machines.filter((m) => (cfg.speeds ?? []).some((x) => x.machine_code === m.code)).map((m) => m.code).join(', ')} đã khai báo` : 'chưa máy nào khai báo'}); máy hoặc công đoạn chưa khai báo thì dùng bảng này.</p>
             </form>
           </section>
 

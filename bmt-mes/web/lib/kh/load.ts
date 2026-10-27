@@ -43,6 +43,10 @@ export async function loadConfig(db: Db) {
     rates: (c.rates ?? []).map((r: Record<string, unknown>) => ({ ...r, rate_small: Number(r.rate_small), rate_large: Number(r.rate_large) })),
     changeovers: (c.changeovers ?? []).map((r: Record<string, unknown>) => ({ ...r, minutes: Number(r.minutes) })),
     workdays: Array.isArray(c.workdays) && c.workdays.length ? (c.workdays as number[]).map(Number) : null,
+    group_days: Number(c.group_days ?? 7),
+    speeds: ((c.speeds ?? []) as Record<string, unknown>[]).map((x) => ({
+      ...x, std_mpm: Number(x.std_mpm), rated_mpm: x.rated_mpm == null ? null : Number(x.rated_mpm), max_mpm: x.max_mpm == null ? null : Number(x.max_mpm),
+    })) as Config['speeds'],
   } as Config;
   const ORDER = ['BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02'];
   const machines = ((m ?? []) as MachineInfo[]).map((x) => ({ ...x, tag_count: Number(x.tag_count) }))
@@ -55,8 +59,12 @@ type LineRow = {
   product_code: string; product_name: string; group_code: string; cores: number; insulation: string | null; shield: boolean | null;
   sheath_color: string | null; single_color: string | null; core_colors: string[] | null; route: string[] | null; size_mm2: number;
   so_no: string | null; spec_status: string; plan_no: string; plan_status: string; sched_start: string | null;
+  product_id: string | null; core_code: string | null;
 };
-export type OrderMeta = { group: string; size: number; cores: string[]; sheath: string | null; sil: boolean; shield: boolean; route: Op[] };
+export type OrderMeta = {
+  group: string; size: number; cores: string[]; sheath: string | null; sil: boolean; shield: boolean; route: Op[];
+  product_id?: string | null; core?: string | null;
+};
 
 export function orderFrom(r: Omit<LineRow, 'plan_id' | 'plan_no' | 'plan_status' | 'sched_start' | 'line_no' | 'qty_m' | 'due_date' | 'priority' | 'change_request_id' | 'so_no' | 'id'> & Partial<LineRow>, label: string): Order {
   const route = ((r.route ?? []) as string[]).filter((x): x is Op => (OPS as string[]).includes(x));
@@ -70,14 +78,22 @@ export function orderFrom(r: Omit<LineRow, 'plan_id' | 'plan_no' | 'plan_status'
     sil: (r.insulation ?? '').toUpperCase().startsWith('SIL'), shield: Boolean(r.shield), route,
     qty: Number(r.qty_m) || 0, due: r.due_date ?? null, prio: Number(r.priority ?? 1),
     source: r.so_no ?? (r.change_request_id ? 'Đơn phát sinh' : 'Kế hoạch tháng'),
+    product_id: r.product_id ?? null, core: r.core_code ?? null,
   };
 }
-export const metaOf = (o: Order): OrderMeta => ({ group: o.group, size: o.size, cores: o.cores, sheath: o.sheath, sil: o.sil, shield: o.shield, route: o.route });
+export const metaOf = (o: Order): OrderMeta => ({
+  group: o.group, size: o.size, cores: o.cores, sheath: o.sheath, sil: o.sil, shield: o.shield, route: o.route, product_id: o.product_id ?? null, core: o.core ?? null,
+});
+// Dấu vân tay tốc độ khai báo theo máy: đổi (duyệt, thêm, bỏ) thì lịch đang dùng cần xếp lại
+export const speedSig = (cfg: Pick<Config, 'speeds'>) => (cfg.speeds ?? [])
+  .map((x) => [x.machine_code, x.op_code, x.product_id ?? '', x.group_code ?? '', x.core_code ?? '', x.std_mpm, x.rated_mpm ?? '', x.max_mpm ?? '', x.status].join(':'))
+  .sort().join('|');
 
 export type VersionRow = {
   id: string; plan_id: string; version: number; is_current: boolean; base_date: string; created_at: string; created_by_name: string | null;
   reason: string; change_no: string | null;
-  params: { S: number; SPD: number; RUN: number; fill_pct: number; frozen_days: number; machines_per_operator: number; plan_no?: string; workdays?: number[]; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
+  params: { S: number; SPD: number; RUN: number; fill_pct: number; frozen_days: number; machines_per_operator: number; plan_no?: string; workdays?: number[];
+    group_days?: number; speeds_sig?: string; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
 };
 
 export type Kh = Awaited<ReturnType<typeof loadKh>>;
@@ -115,7 +131,7 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
         id: String(r.plan_line_id), label: String(r.label), product_code: String(r.product_code), product_name: String(r.product_name ?? ''),
         group: String(r.group_code ?? m.group ?? ''), size: Number(m.size ?? 0), cores: m.cores ?? [], sheath: m.sheath ?? null,
         sil: Boolean(m.sil), shield: Boolean(m.shield), route: (m.route ?? []) as Op[], qty: Number(r.qty_m), due: (r.due_date as string) ?? null,
-        prio: Number(r.priority ?? 1), source: String(r.source ?? ''),
+        prio: Number(r.priority ?? 1), source: String(r.source ?? ''), product_id: m.product_id ?? null, core: m.core ?? null,
       } as Order;
     }).sort((a, b) => a.label.localeCompare(b.label));
   }
@@ -165,6 +181,7 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
   const dirty = Boolean(version && (cfgCal.S !== version.params.S || cfgCal.SPD !== version.params.SPD
     || base.cfg.machines_per_operator !== Number(version.params.machines_per_operator)
     || cfgCal.wd.join() !== cal.wd.join()
+    || (version.params.speeds_sig ?? '') !== speedSig(base.cfg)
     || (lastParamAt && lastParamAt > version.created_at)));
   const missing = version ? orders.filter((o) => !sch!.slots.some((s) => s.lineId === o.id)) : [];
 

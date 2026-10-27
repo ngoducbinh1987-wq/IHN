@@ -26,6 +26,7 @@ export async function saveConfig(form: FormData) {
     downtime_reason_min: num(form, 'downtime_reason_min', 'Dừng máy bắt buộc lý do', e), plc_dev_pct: num(form, 'plc_dev_pct', 'Ngưỡng lệch PLC', e),
     auto_shifts: num(form, 'auto_shifts', 'Số ca đạt liên tiếp', e), plc_loss_min: num(form, 'plc_loss_min', 'Mất kết nối PLC', e),
     machines_per_operator: num(form, 'machines_per_operator', 'Số máy 1 người đứng', e),
+    group_days: num(form, 'group_days', 'Khung gom lô', e),
   };
   const db = await createClient();
   const { data, error } = await db.schema('app').rpc('kh_save_config', { p, p_reason: String(form.get('reason') ?? '') });

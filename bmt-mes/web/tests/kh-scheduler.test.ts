@@ -1,5 +1,5 @@
 // Kiểm thử bộ xếp lịch máy (không cần database): node --experimental-strip-types web/tests/kh-scheduler.test.ts
-import { schedule, makeCalendar, finishInfo, buildTasks, type Order, type Config, type MachineInfo, type OperatorInfo } from '../lib/kh/scheduler.ts';
+import { schedule, makeCalendar, finishInfo, buildTasks, machineSpeed, rateOn, type Order, type Config, type MachineInfo, type OperatorInfo, type SpeedCfg } from '../lib/kh/scheduler.ts';
 const cfg: Config = { fill_pct: 85, frozen_days: 3, cutoff_time: '16:00', downtime_reason_min: 5, plc_dev_pct: 0.5, auto_shifts: 10, plc_loss_min: 10, machines_per_operator: 1,
   shifts: [{ code: 'A', start_time: '06:00', end_time: '14:00', break_min: 30, active: true }, { code: 'B', start_time: '14:00', end_time: '22:00', break_min: 30, active: false }, { code: 'C', start_time: '22:00', end_time: '06:00', break_min: 30, active: false }],
   rates: [['CD1', 100, 80], ['CD2', 80, 70], ['CD3', 50, 50], ['CD4', 60, 60], ['CD5', 60, 45]].map(([op, a, b], i) => ({ op_code: op as string, label: '', unit: '', rate_small: a as number, rate_large: b as number, confirmed: false, sort: i })),
@@ -78,4 +78,76 @@ const r5 = schedule(orders, ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots },
 const got = r5.slots.filter((s) => s.key === 'L1|CD1|').reduce((a, s) => a + s.meters, 0);
 console.log('credit D01 bện', got, '(=60000+5000)');
 if (Math.abs(got - 65000) > 2) bad('credit');
+
+// ---------- Gom lô cùng cỡ ruột, cùng màu (khung gom lô) ----------
+// 8 lô xen kẽ cỡ/màu, hạn giao cách nhau 1 ngày: gom phải giảm phút đổi máy, không lô nào trễ hạn hơn khung gom
+const mix: Order[] = [
+  mk(11, 'SIF-1C-1P5', 'SIF', 1.5, ['Đen'], null, 15000, '2026-11-16'),
+  mk(12, 'SIF-1C-2P5', 'SIF', 2.5, ['Trắng'], null, 15000, '2026-11-17'),
+  mk(13, 'SIF-1C-1P5', 'SIF', 1.5, ['Trắng'], null, 15000, '2026-11-18'),
+  mk(14, 'SIF-1C-2P5', 'SIF', 2.5, ['Đen'], null, 15000, '2026-11-19'),
+  mk(15, 'SIF-1C-1P5', 'SIF', 1.5, ['Đen'], null, 15000, '2026-11-20'),
+  mk(16, 'SIF-1C-2P5', 'SIF', 2.5, ['Trắng'], null, 15000, '2026-11-21'),
+  mk(17, 'SIF-1C-1P5', 'SIF', 1.5, ['Trắng'], null, 15000, '2026-11-22'),
+  mk(18, 'SIF-1C-2P5', 'SIF', 2.5, ['Đen'], null, 15000, '2026-11-23'),
+];
+const setupMin = (sch: typeof r) => sch.slots.reduce((a, s) => a + s.setup, 0);
+const changes = (sch: typeof r) => sch.slots.filter((s) => s.setup > 0).length;
+const g0 = schedule(mix, { ...ctx, cfg: { ...cfg, group_days: 0 } });
+const g7 = schedule(mix, { ...ctx, cfg: { ...cfg, group_days: 7 } });
+check(g0, mix, 'gom0'); check(g7, mix, 'gom7');
+console.log('ngày xong (khung 0 → 7):', mix.map((o) => `${o.label} ${finishInfo(g0, cal, mix).get(o.id)!.finDate?.slice(5)}→${finishInfo(g7, cal, mix).get(o.id)!.finDate?.slice(5)} hạn ${o.due!.slice(5)}`).join(' | '));
+console.log('gom: phút đổi máy', setupMin(g0), '→', setupMin(g7), '; số lần đổi', changes(g0), '→', changes(g7));
+if (!(setupMin(g7) < setupMin(g0))) bad('gom lô không giảm phút đổi máy');
+const f0 = finishInfo(g0, cal, mix), f7 = finishInfo(g7, cal, mix);
+for (const o of mix) {
+  const a = f0.get(o.id)!, b = f7.get(o.id)!;
+  if (b.slack != null && a.slack != null && b.slack < Math.min(0, a.slack) - 7) bad(`gom làm ${o.label} trễ quá khung`);
+}
+// Trên mỗi máy: trong một đợt cùng cỡ, màu sáng trước tối (không có tối → sáng giữa hai việc cùng cỡ khi còn việc sáng cùng cỡ chờ)
+for (const [m, sl] of g7.byMachine) if (m.startsWith('EXT-SI')) console.log(m, sl.map((s) => mix.find((o) => o.id === s.lineId)!.size + (s.color ?? '')).join(' → '));
+// Khung 0 ngày: giữ đúng thứ tự hạn giao trên từng máy
+for (const [m, sl] of g0.byMachine) for (let i = 1; i < sl.length; i++) {
+  if (sl[i].op !== 'CD2') continue;
+  const a = mix.find((o) => o.id === sl[i - 1].lineId)!, b = mix.find((o) => o.id === sl[i].lineId)!;
+  if (sl[i - 1].op === 'CD2' && a.due! > b.due!) bad(`khung 0: ${m} chạy ${a.label} trước ${b.label} hạn sớm hơn`);
+}
+// Đơn gấp không bị lô thường gom vượt
+const urg = { ...mk(19, 'SIF-1C-2P5', 'SIF', 2.5, ['Đen'], null, 15000, '2026-11-30'), prio: 0 };
+const gu = schedule([...mix, urg], { ...ctx, cfg: { ...cfg, group_days: 30 } });
+check(gu, [...mix, urg], 'gấp+gom');
+const uStart = gu.opDone.get('L19|CD2')!.start, firstCd2 = Math.min(...gu.slots.filter((s) => s.op === 'CD2').map((s) => s.runStart));
+console.log('đơn gấp bọc bắt đầu', uStart.toFixed(0), 'việc bọc đầu tiên', firstCd2.toFixed(0));
+if (uStart > firstCd2 + cal.S) bad('đơn gấp bị gom lô đẩy sau');
+
+// ---------- Tốc độ theo khai báo máy ----------
+const sp = (machine_code: string, op_code: string, std_mpm: number, x: Partial<SpeedCfg> = {}): SpeedCfg =>
+  ({ machine_code, op_code, product_id: null, group_code: null, core_code: null, std_mpm, rated_mpm: null, max_mpm: null, status: 'APPROVED', submitted_at: '2026-10-27', ...x });
+const speeds: SpeedCfg[] = [
+  sp('EXT-SI-01', 'CD2', 120), sp('EXT-SI-02', 'CD2', 40),
+  sp('EXT-SI-01', 'CD2', 90, { group_code: 'SIF' }),                       // riêng nhóm SIF trên line 1
+  sp('EXT-SI-01', 'CD2', 70, { product_id: 'P-SIF', status: 'PENDING' }),  // riêng mã, chờ duyệt
+  sp('EXT-SI-02', 'CD2', 200, { rated_mpm: 150, max_mpm: 60, group_code: 'XYZ' }),
+  sp('TWS-01', 'CD3', 80), sp('TWS-01', 'CD4', 30),
+  sp('BUN-01', 'CD1', 500, { status: 'OBSOLETE' }),
+];
+const cfgS = { ...cfg, speeds };
+const oS = { ...mix[0], product_id: 'P-SIF' }, oG = mix[0], oX = { ...mix[0], group: 'XYZ' };
+const eq = (a: number, b: number, m: string) => { if (Math.abs(a - b) > 1e-9) bad(`${m}: ${a} ≠ ${b}`); };
+eq(machineSpeed(cfgS, 'EXT-SI-01', 'CD2', oS)!.v, 70, 'tốc độ riêng mã');
+if (!machineSpeed(cfgS, 'EXT-SI-01', 'CD2', oS)!.pending) bad('tốc độ chờ duyệt phải đánh dấu');
+eq(machineSpeed(cfgS, 'EXT-SI-01', 'CD2', oG)!.v, 90, 'tốc độ riêng nhóm');
+eq(machineSpeed(cfgS, 'EXT-SI-02', 'CD2', oG)!.v, 40, 'tốc độ chung của máy');
+eq(machineSpeed(cfgS, 'EXT-SI-02', 'CD2', oX)!.v, 60, 'giới hạn theo dải hoạt động');
+if (machineSpeed(cfgS, 'BUN-01', 'CD1', oG) !== null) bad('dòng OBSOLETE không được dùng');
+eq(rateOn(cfgS, 'BUN-01', 'CD1', oG).v, 100, 'máy chưa khai báo dùng mặc định');
+eq(rateOn(cfgS, 'TWS-01', 'CD3', { ...mix[0], shield: true }).v, 30, 'xoắn + AL/PET lấy tốc độ chậm hơn');
+const gs = schedule(mix, { ...ctx, cfg: { ...cfgS, group_days: 7 } });
+check(gs, mix, 'tốc độ máy');
+for (const s of gs.slots) if (s.op === 'CD2') {
+  const want = s.machine === 'EXT-SI-01' ? 90 : 40;
+  if (Math.abs(s.rate - want) > 1e-9) bad(`slot ${s.key} ${s.machine} tốc độ ${s.rate} ≠ ${want}`);
+  if (Math.abs((s.end - s.runStart) * s.rate - s.meters) > 1) bad(`slot ${s.key} phút chạy không khớp tốc độ`);
+}
+console.log('tốc độ: line 1', gs.byMachine.get('EXT-SI-01')!.length, 'việc, line 2', gs.byMachine.get('EXT-SI-02')!.length, 'việc; lý do mẫu:', gs.slots.find((s) => s.machine === 'EXT-SI-01')!.reason);
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

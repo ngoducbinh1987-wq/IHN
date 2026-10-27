@@ -1,7 +1,8 @@
 // Bộ xếp lịch máy theo máy và theo người đứng máy (thuần tính toán, không gọi database).
 // Đơn vị thời gian: "phút xếp lịch". Mỗi ca có S phút xếp lịch = phút chạy × tỷ lệ xếp lịch (%), mỗi ngày SPD ca.
-// Quy tắc (BR-KH-04..07): đơn gấp → hạn giao sớm → màu sáng trước tối; gối đầu công đoạn ≥ 1 ca;
-// chỉ xếp khi có người đủ tay nghề rảnh; xếp lại giữ nguyên phần trước mốc (đã chạy + vùng khóa).
+// Quy tắc (BR-KH-04..07): đơn gấp → hạn giao sớm → gom lô cùng cỡ ruột, cùng màu (trong khung gom lô) → màu sáng trước tối;
+// gối đầu công đoạn ≥ 1 ca; chỉ xếp khi có người đủ tay nghề rảnh; xếp lại giữ nguyên phần trước mốc (đã chạy + vùng khóa).
+// Tốc độ: theo khai báo của từng máy (master.machine_speeds); máy chưa khai báo dùng tốc độ mặc định theo công đoạn.
 
 export type Op = 'CD1' | 'CD2' | 'CD3' | 'CD5';
 export const OPS: Op[] = ['CD1', 'CD2', 'CD3', 'CD5'];
@@ -9,10 +10,17 @@ export const OPS: Op[] = ['CD1', 'CD2', 'CD3', 'CD5'];
 export type ShiftCfg = { code: string; start_time: string; end_time: string; break_min: number; active: boolean };
 export type RateCfg = { op_code: string; label: string; unit: string; rate_small: number; rate_large: number; confirmed: boolean; sort: number };
 export type ChangeoverCfg = { code: string; op_code: string; label: string; minutes: number; sort: number };
+// Tốc độ khai báo ở phần Máy: riêng máy × công đoạn, có thể riêng theo mã sản phẩm / nhóm / mã lõi
+export type SpeedCfg = {
+  machine_code: string; op_code: string; product_id: string | null; group_code: string | null; core_code: string | null;
+  std_mpm: number; rated_mpm: number | null; max_mpm: number | null; status: string; submitted_at?: string | null; label?: string | null;
+};
 export type Config = {
   fill_pct: number; frozen_days: number; cutoff_time: string; downtime_reason_min: number; plc_dev_pct: number;
   auto_shifts: number; plc_loss_min: number; machines_per_operator: number;
   shifts: ShiftCfg[]; rates: RateCfg[]; changeovers: ChangeoverCfg[]; workdays?: number[] | null;
+  speeds?: SpeedCfg[];   // tốc độ theo máy (trống: dùng rates)
+  group_days?: number;   // khung gom lô (ngày); 0 = không gom
 };
 export type MachineInfo = { code: string; name: string; machine_type: string; data_mode: string; tag_count: number; operators: string[] };
 export type OperatorInfo = { code: string; job: string; extra: string | null; is_deputy: boolean; keeps_fg: boolean; skills: string[]; learning: string[] };
@@ -33,6 +41,8 @@ export type Order = {
   due: string | null;    // yyyy-mm-dd
   prio: number;          // 0 gấp, 1 thường
   source: string;
+  product_id?: string | null; // để chọn tốc độ khai báo riêng theo mã sản phẩm
+  core?: string | null;       // mã lõi của spec (tốc độ riêng theo lõi)
 };
 
 export type Task = {
@@ -124,11 +134,42 @@ export function canRun(machineType: string, t: Pick<Task, 'op' | 'order'>): bool
   return (MACHINE_OPS[machineType] ?? []).includes(t.op);
 }
 
+// Tốc độ mặc định theo công đoạn (Tham số xếp lịch): cỡ < 2,5 mm² và ≥ 2,5 mm²
+const defRate = (cfg: Pick<Config, 'rates'>, code: string, o: Pick<Order, 'size'>) => {
+  const x = cfg.rates.find((y) => y.op_code === code);
+  return x ? Number(o.size >= 2.5 ? x.rate_large : x.rate_small) : 50;
+};
 export function speedOf(cfg: Pick<Config, 'rates'>, op: Op, o: Pick<Order, 'size' | 'shield'>): number {
-  const big = o.size >= 2.5;
-  const r = (code: string) => { const x = cfg.rates.find((y) => y.op_code === code); return x ? Number(big ? x.rate_large : x.rate_small) : 50; };
-  if (op === 'CD3' && o.shield) return Math.min(r('CD3'), r('CD4'));
-  return r(op);
+  if (op === 'CD3' && o.shield) return Math.min(defRate(cfg, 'CD3', o), defRate(cfg, 'CD4', o));
+  return defRate(cfg, op, o);
+}
+
+// Tốc độ khai báo của một máy cho một công đoạn (giống app.check_capacity):
+// ưu tiên dòng riêng mã sản phẩm → nhóm + mã lõi → mã lõi → nhóm → chung của máy; cùng mức thì dòng đã duyệt, rồi dòng mới nhất.
+// Tốc độ dùng = min(tốc độ chuẩn, danh định, tốc độ tối đa của dải hoạt động).
+export type Speed = { v: number; src: 'MAY' | 'MD'; pending: boolean };
+export function machineSpeed(cfg: Pick<Config, 'speeds'>, machine: string, op: string, o: Pick<Order, 'product_id' | 'group' | 'core'>): Speed | null {
+  const rows = (cfg.speeds ?? []).filter((s) => s.machine_code === machine && s.op_code === op && s.status !== 'OBSOLETE'
+    && (!s.product_id || s.product_id === o.product_id) && (!s.group_code || s.group_code === o.group) && (!s.core_code || s.core_code === o.core));
+  if (!rows.length) return null;
+  const rank = (s: SpeedCfg) => [s.product_id ? 1 : 0, s.group_code && s.core_code ? 1 : 0, s.core_code ? 1 : 0, s.group_code ? 1 : 0, s.status === 'APPROVED' ? 1 : 0];
+  const best = rows.reduce((a, b) => {
+    const ra = rank(a), rb = rank(b);
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return rb[i] > ra[i] ? b : a;
+    return String(b.submitted_at ?? '') > String(a.submitted_at ?? '') ? b : a;
+  });
+  const lim = [Number(best.std_mpm), Number(best.rated_mpm ?? best.std_mpm), Number(best.max_mpm ?? best.std_mpm)].filter((x) => x > 0);
+  return lim.length ? { v: Math.min(...lim), src: 'MAY', pending: best.status !== 'APPROVED' } : null;
+}
+// Tốc độ chạy một công đoạn trên một máy: khai báo của máy, chưa có thì mặc định theo công đoạn.
+// Xoắn có quấn AL/PET liền dây: lấy tốc độ chậm hơn của hai bước.
+export function rateOn(cfg: Pick<Config, 'rates' | 'speeds'>, machine: string, op: Op, o: Pick<Order, 'size' | 'shield' | 'product_id' | 'group' | 'core'>): Speed {
+  const one = (code: string): Speed => machineSpeed(cfg, machine, code, o) ?? { v: defRate(cfg, code, o), src: 'MD', pending: false };
+  if (op === 'CD3' && o.shield) {
+    const a = one('CD3'), b = one('CD4');
+    return { v: Math.min(a.v, b.v), src: a.src === 'MAY' || b.src === 'MAY' ? 'MAY' : 'MD', pending: a.pending || b.pending };
+  }
+  return one(op);
 }
 
 export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates'>): Task[] {
@@ -241,14 +282,23 @@ export function schedule(
   }
   for (const id of pending) opDone.get(key(tasks[id].order.id, tasks[id].op))!.left++;
 
-  const ready = (t: Task): number | null => {
+  // Công đoạn trước đã chạy ≥ 1 ca và công đoạn này không xong trước công đoạn trước (run: phút chạy trên máy đang xét)
+  const ready = (t: Task, run: number): number | null => {
     if (t.k === 0) return 0;
     const prevOp = t.order.route[t.k - 1];
     const p = opDone.get(key(t.order.id, prevOp))!;
     if (p.left > 0) return null;
     if (p.end === 0) return 0;
-    return Math.max(p.start + S, p.end + S - t.run);
+    return Math.max(p.start + S, p.end + S - run);
   };
+  const spMemo = new Map<string, Speed>();
+  const spOf = (m: string, t: Task) => {
+    const k = m + '|' + t.id;
+    let v = spMemo.get(k);
+    if (!v) { v = rateOn(cfg, m, t.op, t.order); spMemo.set(k, v); }
+    return v;
+  };
+  const G = Math.max(0, Math.round(Number(cfg.group_days ?? 0)));
   const laneFor = (code: string) => {
     let best: { w: (typeof workers)[number]; li: number; f: number } | null = null;
     for (const w of workers) if (w.skills.includes(code)) w.lanes.forEach((f, li) => { if (!best || f < best.f) best = { w, li, f }; });
@@ -256,33 +306,48 @@ export function schedule(
   };
   const due = (o: Order) => o.due ?? '9999-12-31';
   const byPrio = (a: Order, b: Order) => a.prio - b.prio || due(a).localeCompare(due(b));
+  type Cand = { t: Task; r: number; sp: Speed; run: number };
+  // Chọn việc cho một máy trong các việc bắt đầu được gần như cùng lúc:
+  // 1) lô dẫn đầu = đơn gấp → hạn giao sớm nhất → màu sáng; 2) các lô cùng mức gấp, hạn giao không muộn hơn lô dẫn đầu quá G ngày
+  // được chạy trước nếu ít phút đổi máy hơn (gom cùng cỡ ruột, cùng màu, cùng mã); 3) bằng nhau: màu sáng trước, hạn sớm trước.
+  const pick = (pool: Cand[], last: Prev): { x: Cand; lead: Cand; su: number } => {
+    const lead = [...pool].sort((a, b) => byPrio(a.t.order, b.t.order) || colorRank(a.t.color) - colorRank(b.t.color) || a.t.id - b.t.id)[0];
+    const leadDue = lead.t.order.due;
+    const limit = G > 0 && leadDue ? addDays(leadDue, G) : leadDue ?? '9999-12-31';
+    const ok = G > 0 ? pool.filter((c) => c.t.order.prio === lead.t.order.prio && due(c.t.order) <= limit) : [lead];
+    const scored = ok.map((c) => ({ c, su: changeover(cfg, last, c.t)[0] }));
+    scored.sort((a, b) => a.su - b.su || colorRank(a.c.t.color) - colorRank(b.c.t.color) || byPrio(a.c.t.order, b.c.t.order) || a.c.t.id - b.c.t.id);
+    return { x: scored[0].c, lead, su: scored[0].su };
+  };
+  const what = (t: Task) => t.op === 'CD1' ? `cỡ ${t.order.size} mm²` : t.op === 'CD2' ? `cỡ ${t.order.size} mm², màu ${t.color}`
+    : t.op === 'CD5' ? `mã ${t.order.product_code}, vỏ ${t.color}` : `mã ${t.order.product_code}`;
 
   let guard = 0;
   while (pending.size && guard++ < 50000) {
-    const opts: { m: (typeof machines)[number]; t: Task; r: number; st: number; rs: number; ln: NonNullable<ReturnType<typeof laneFor>> }[] = [];
+    const opts: { m: (typeof machines)[number]; t: Task; r: number; st: number; rs: number; sp: Speed; run: number; lead: Task; ln: NonNullable<ReturnType<typeof laneFor>> }[] = [];
     for (const m of machines) {
       const ln = laneFor(m.code); if (!ln) continue;
-      const cands: { t: Task; r: number }[] = [];
+      const cands: Cand[] = [];
       for (const id of pending) {
         const t = tasks[id];
         if (!canRun(m.machine_type, t)) continue;
-        const r = ready(t); if (r !== null) cands.push({ t, r });
+        const sp = spOf(m.code, t), run = t.m / sp.v;
+        const r = ready(t, run); if (r !== null) cands.push({ t, r, sp, run });
       }
       if (!cands.length) continue;
       const startOf = (x: { r: number }) => Math.max(m.free, x.r, ln.f);
       const minStart = Math.min(...cands.map(startOf));
       const pool = cands.filter((x) => startOf(x) <= minStart + S / 2);
-      pool.sort((a, b) => byPrio(a.t.order, b.t.order) || colorRank(a.t.color) - colorRank(b.t.color) || a.t.id - b.t.id);
-      const x = pool[0];
+      const { x, lead, su } = pick(pool, m.last);
       const st0 = startOf(x);
-      opts.push({ m, t: x.t, r: x.r, st: st0, rs: st0 + changeover(cfg, m.last, x.t)[0], ln });
+      opts.push({ m, t: x.t, r: x.r, st: st0, rs: st0 + su, sp: x.sp, run: x.run, lead: lead.t, ln });
     }
     if (!opts.length) break;
     // máy dùng chung người: trong nửa ca đầu, ưu tiên đơn gấp và hạn giao sớm
     const minRs = Math.min(...opts.map((o) => o.rs));
     const best = opts.filter((o) => o.rs <= minRs + S / 2)
       .sort((a, b) => byPrio(a.t.order, b.t.order) || a.rs - b.rs)[0];
-    const { m, t, ln } = best;
+    const { m, t, ln, sp, run, lead } = best;
     const [su, why] = changeover(cfg, m.last, t);
     const prevOp = t.k > 0 ? t.order.route[t.k - 1] : null;
     const st0 = best.st;
@@ -290,10 +355,14 @@ export function schedule(
     if (prevOp && st0 === best.r && best.r > m.free && best.r >= ln.f) reason = `Chờ ${OP_NAME[prevOp].toLowerCase()} của lệnh này chạy trước ít nhất 1 ca (gối đầu)`;
     else if (st0 === ln.f && ln.f > m.free) reason = `Chờ người: ${ln.w.code} đang đứng máy khác, xong việc mới sang máy này`;
     else reason = m.last ? 'Máy làm xong việc trước thì chạy tiếp' : 'Máy và người đều sẵn, chạy ngay';
-    const end = st0 + su + t.run;
+    const dmy = (d: string | null) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'chưa có';
+    if (lead !== t) reason += ` · Gom lô: chạy liền ${what(t)} để giảm đổi máy (hạn ${dmy(t.order.due)}, trong khung ${G} ngày so với ${lead.order.label} hạn ${dmy(lead.order.due)})`;
+    else if (m.last && su === 0 && m.last.order.id !== t.order.id) reason += ` · Cùng ${what(t)} với việc trước, không đổi máy`;
+    if (sp.src === 'MAY') reason += ` · Tốc độ ${Math.round(sp.v * 10) / 10} m/phút theo khai báo máy${sp.pending ? ' (chưa duyệt)' : ''}`;
+    const end = st0 + su + run;
     m.slots.push({
       key: t.key, lineId: t.order.id, op: t.op, color: t.color, machine: m.code, operator: ln.w.code, lane: ln.li,
-      start: st0, runStart: st0 + su, end, setup: su, meters: t.m, rate: t.rate, speed: t.rate, reason, why, part: false,
+      start: st0, runStart: st0 + su, end, setup: su, meters: t.m, rate: sp.v, speed: sp.v, reason, why, part: false,
     });
     m.free = end; m.last = { order: t.order, op: t.op, color: t.color }; ln.w.lanes[ln.li] = end;
     const d = opDone.get(key(t.order.id, t.op))!;

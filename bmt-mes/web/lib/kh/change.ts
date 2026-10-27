@@ -6,6 +6,7 @@ import type { Order } from './scheduler';
 export type ProductRow = {
   id: string; product_code: string; product_name: string; group_code: string; cores: number; insulation: string | null; shield: boolean | null;
   sheath_color: string | null; core_colors: string[] | null; route: string[] | null; size_mm2: number; spec_status: string;
+  core_code?: string | null;
 };
 export type ChangeInput = { product_code: string; qty: number; due: string; so: string; prio: 0 | 1; br: boolean };
 export type Step = { role: string; label: string; done_by?: string; done_name?: string; done_at?: string; result?: string; comment?: string };
@@ -25,7 +26,7 @@ export function stepsFor(level: 'A' | 'B' | 'C'): Step[] {
 
 export function simulate(kh: Kh, product: ProductRow, input: ChangeInput) {
   const order: Order = {
-    ...orderFrom({ ...product, single_color: null, qty_m: input.qty, due_date: input.due, priority: input.prio, so_no: input.so || null, change_request_id: 'new' }, 'MỚI'),
+    ...orderFrom({ ...product, product_id: product.id, core_code: product.core_code ?? null, single_color: null, qty_m: input.qty, due_date: input.due, priority: input.prio, so_no: input.so || null, change_request_id: 'new' }, 'MỚI'),
     id: 'new', source: input.so || 'Đơn phát sinh',
   };
   const br = input.prio === 0 && input.br;

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { type ChangeInput, type ProductRow, readChange, simulate, stepsFor } from '@/lib/kh/change';
-import { type Kh, ROLE, carryOver, hasRole, loadKh, metaOf, rebuild } from '@/lib/kh/load';
+import { type Kh, ROLE, carryOver, hasRole, loadKh, metaOf, rebuild, speedSig } from '@/lib/kh/load';
 import type { Order } from '@/lib/kh/scheduler';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -18,6 +18,7 @@ function payload(kh: Kh, orders: Order[], r: ReturnType<typeof rebuild>) {
     p_params: {
       S: r.cal.S, SPD: r.cal.SPD, RUN: r.cal.RUN, fill_pct: kh.cfg.fill_pct, frozen_days: kh.cfg.frozen_days,
       machines_per_operator: kh.cfg.machines_per_operator, plan_no: kh.planNo, workdays: r.cal.wd,
+      group_days: kh.cfg.group_days ?? 0, speeds_sig: speedSig(kh.cfg),
       shifts: r.cal.shifts.map((s) => ({ code: s.code, start_time: s.start_time, end_time: s.end_time, break_min: s.break_min })),
     },
     p_orders: orders.map((o) => ({

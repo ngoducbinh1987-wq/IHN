@@ -38,12 +38,12 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
       <Tabs active={tab.key} items={TABS.map((t) => ({ key: t.key, label: t.label, href: `/may/toc-do?tab=${t.key}`, count: t.key === 'cho-duyet' ? pending ?? 0 : undefined }))} />
       <Flash ok={sp.ok} err={sp.err ?? error?.message} />
       <p className="mb-4 max-w-4xl text-[13.5px] text-muted">
-        Kế hoạch sản xuất dùng cột “Chuẩn lập KH”, không vượt danh định nhà sản xuất và dải tốc độ của máy. Thứ tự chọn: mã sản phẩm → nhóm + mã lõi → mã lõi → nhóm → mặc định của máy.
-        TP Kỹ thuật/QA khai báo và duyệt trong Hồ sơ máy; chờ quá 1 ngày làm việc thì Giám đốc duyệt tạm.
-        Máy chưa có tốc độ riêng thì dùng tốc độ mặc định theo công đoạn bên dưới (cùng số Lịch máy dùng để xếp lịch).
+        Lịch máy và kiểm tra công suất dùng cột “Chuẩn lập KH” của từng máy, không vượt danh định nhà sản xuất và dải tốc độ của máy. Thứ tự chọn: mã sản phẩm → nhóm + mã lõi → mã lõi → nhóm → mặc định của máy.
+        TP Kỹ thuật/QA khai báo và duyệt trong Hồ sơ máy; chờ quá 1 ngày làm việc thì Giám đốc duyệt tạm. Tốc độ chờ duyệt vẫn dùng để xếp lịch nhưng ghi “chưa duyệt” ở từng việc.
+        Máy chưa có tốc độ riêng thì dùng tốc độ mặc định theo công đoạn bên dưới. Đổi tốc độ xong, Quản lý SX bấm Xếp lại lịch để áp dụng.
       </p>
       <section className="card mb-4 max-w-4xl overflow-x-auto">
-        <div className="card-h">Tốc độ mặc định theo công đoạn<span className="text-[13px] font-normal text-muted">m/ph · dùng chung với Lịch máy</span></div>
+        <div className="card-h">Tốc độ mặc định theo công đoạn<span className="text-[13px] font-normal text-muted">m/ph · dùng khi máy chưa khai báo tốc độ riêng</span></div>
         {(defaults ?? []).length ? (
           <table className="tbl">
             <thead><tr><th>Công đoạn</th><th className="num">Ruột &lt; 2,5 mm²</th><th className="num">Ruột ≥ 2,5 mm²</th><th>Đơn vị</th><th>Tình trạng</th></tr></thead>
