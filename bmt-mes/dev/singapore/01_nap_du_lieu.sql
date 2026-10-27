@@ -6,6 +6,7 @@ declare
   v_schemas text[] := array['core','master','sales','plan','purchase','inv','mfg','qa','cost','wf','iot','integ'];
   r record; v_list text; v_pending text[]; v_progress boolean;
   v_cols text; v_rows jsonb; v_n bigint; v_total bigint := 0; v_tables int := 0; v_seq jsonb; k text;
+  v_null text[]; v_sel text; v_pk text; v_deferred jsonb := '[]'; d jsonb; v_set text;
 begin
   if current_database() <> 'postgres' or not exists (select 1 from _mig.files) then raise exception 'Sai dự án'; end if;
   for r in select c.oid::regclass t from pg_class c join pg_namespace n on n.oid=c.relnamespace
@@ -43,7 +44,35 @@ begin
       get diagnostics v_n = row_count; v_total := v_total + v_n; v_tables := v_tables + 1;
       v_pending := array_remove(v_pending, k); v_progress := true;
     end loop;
-    if not v_progress then raise exception 'Vòng khóa ngoại: %', v_pending; end if;
+    if not v_progress then
+      -- Vòng khóa ngoại (vd products.current_spec_id ↔ product_specs.product_id): chọn bảng có cột khóa ngoại trỏ vào bảng chưa nạp
+      -- đều cho phép NULL, nạp với các cột đó để trống, nạp xong hết thì điền lại theo khóa chính
+      foreach k in array v_pending loop
+        select array_agg(distinct a.attname) into v_null from pg_constraint co join pg_attribute a on a.attrelid=co.conrelid and a.attnum = any(co.conkey)
+          where co.contype='f' and co.conrelid = k::regclass and co.confrelid <> co.conrelid and co.confrelid::regclass::text = any(v_pending);
+        continue when exists (select 1 from pg_attribute a where a.attrelid = k::regclass and a.attname = any(v_null) and a.attnotnull);
+        select jsonb_agg(e) into v_rows from _mig.payload p, jsonb_array_elements(p.body) e where p.batch=p_batch and p.tbl=k;
+        select string_agg(quote_ident(a.attname), ', ' order by a.attnum),
+               string_agg(case when a.attname = any(v_null) then 'null' else quote_ident(a.attname) end, ', ' order by a.attnum)
+          into v_cols, v_sel from pg_attribute a
+          where a.attrelid = k::regclass and a.attnum>0 and not a.attisdropped and a.attgenerated='';
+        execute format('insert into %s (%s) overriding system value select %s from jsonb_populate_recordset(null::%s, $1)', k::regclass, v_cols, v_sel, k::regclass) using v_rows;
+        get diagnostics v_n = row_count; v_total := v_total + v_n; v_tables := v_tables + 1;
+        v_deferred := v_deferred || jsonb_build_object('t', k, 'cols', to_jsonb(v_null));
+        v_pending := array_remove(v_pending, k); v_progress := true;
+        exit;
+      end loop;
+      if not v_progress then raise exception 'Vòng khóa ngoại: %', v_pending; end if;
+    end if;
+  end loop;
+  -- điền lại các cột đã để trống khi phá vòng
+  for d in select * from jsonb_array_elements(v_deferred) loop
+    k := d->>'t';
+    select string_agg(format('t.%1$I = s.%1$I', a.attname), ' and ') into v_pk from pg_index i join pg_attribute a on a.attrelid=i.indrelid and a.attnum = any(i.indkey)
+      where i.indrelid = k::regclass and i.indisprimary;
+    select string_agg(format('%1$I = s.%1$I', c), ', ') into v_set from jsonb_array_elements_text(d->'cols') c;
+    select jsonb_agg(e) into v_rows from _mig.payload p, jsonb_array_elements(p.body) e where p.batch=p_batch and p.tbl=k;
+    execute format('update %s t set %s from jsonb_populate_recordset(null::%s, $1) s where %s', k::regclass, v_set, k::regclass, v_pk) using v_rows;
   end loop;
   for r in select c.oid::regclass t from pg_class c join pg_namespace n on n.oid=c.relnamespace
            where c.relkind in ('r','p') and not c.relispartition and n.nspname = any(v_schemas) loop
