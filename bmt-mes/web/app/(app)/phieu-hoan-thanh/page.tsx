@@ -20,7 +20,7 @@ type Slip = {
   id: string; slip_no: string; paper_no: string | null; status: string; void_reason: string | null; recorded_at: string; op_code: string; op_name: string;
   wo_no: string; product_code: string; machine_code: string | null; carrier_code: string | null; operator_code: string; ended_at: string | null;
   gross_kg: number; net_kg: number; qty_m: number; qty_estimated: boolean; scrap_kg: number | null; lot_no: string; qc_status: string;
-  inputs: { code: string; left_kg: number | null; used_m: number }[]; recorded_by_name: string | null;
+  inputs: { code: string; left_kg: number | null; used_m: number }[]; recorded_by_name: string | null; true_m: number | null; true_used_kg: number | null;
 };
 type Hu = { hu_no: string; carrier_code: string | null; lot_no: string; qty: number; gross_kg: number | null; tare_kg: number | null; op_code: string | null; qc_status: string; color: string | null };
 
@@ -186,7 +186,7 @@ export default async function SlipsPage({ searchParams }: { searchParams: Promis
                 <td><span className="mono">{s.wo_no}</span><div className="text-[12px] text-muted">{s.product_code}</div></td>
                 <td>{s.op_code}</td><td>{s.machine_code ?? '—'}</td><td className="mono">{s.carrier_code ?? '—'}</td><td>{s.operator_code}</td>
                 <td className="num">{nf(s.net_kg, 2)}</td>
-                <td className="num">{nf(s.qty_m, 1)}{s.qty_estimated ? <div className="text-[12px] text-muted">ước tính</div> : null}</td>
+                <td className="num">{nf(s.qty_m, 1)}{s.qty_estimated ? <div className="text-[12px] text-muted">ước tính{s.true_m ? ` · thật ${nf(s.true_m)} m / ${nf(s.true_used_kg, 1)} kg (line đùn)` : ''}</div> : null}</td>
                 <td className="text-[12.5px]">{(s.inputs ?? []).map((i) => `${i.code}${i.left_kg ? ` (dư ${nf(i.left_kg, 1)} kg)` : ''}`).join(', ') || '—'}</td>
                 <td className="mono text-[12.5px]">{s.lot_no}</td>
                 <td>{s.status === 'VOID' ? <Pill tone="mute">Đã hủy</Pill> : <StatusPill map={QC_STATUS} value={s.qc_status} />}</td>

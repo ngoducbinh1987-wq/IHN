@@ -12,8 +12,12 @@ import { confirmReport, judgeSample, reopenReport, saveReport, submitReport } fr
 
 export const metadata = { title: 'Ghi nhận ca' };
 
+type Keep = { material_code: string; kg: number; wo_no: string };
+type Scrap = { wo_no: string; op_code: string; reason: string; kg: number };
+type SlipSum = { wo_no: string; op_code: string; qty_m: number; status: string; scrap_kg: number | null };
 type Report = {
   id: string; status: 'DRAFT' | 'SUBMITTED' | 'CONFIRMED'; operator_code: string | null; source: string; scrap_kg: number; scrap_reason: string | null; note: string | null;
+  keeps: Keep[]; scraps: Scrap[];
   lines: { key: string; declared_m: number; plc_m: number | null; bobbins: number }[]; downtime: { from: string; to: string; min: number; reason: string; src: string }[];
   samples: Sample[]; saved_at: string | null; submitted_at: string | null; submitted_by_name: string | null; confirmed_at: string | null; confirmed_by_name: string | null; machine_code: string; shift_code: string;
 };
@@ -48,6 +52,37 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
   const q = (x: Record<string, string>) => '/ghi-nhan-ca?' + new URLSearchParams({ d: date, s: shift, ...(code ? { m: code } : {}), ...x }).toString();
   const sh = shifts.find((s) => s.code === shift);
 
+  // Sản lượng MES tự cộng từ phiếu hoàn thành của máy trong ngày (Kế toán SX đã nhập)
+  const { data: slipRows } = code
+    ? await db.schema('app').from('v_bobbin_slips').select('wo_no, op_code, qty_m, status, scrap_kg').eq('work_date', date).eq('machine_code', code).eq('status', 'ACTIVE').returns<SlipSum[]>()
+    : { data: [] as SlipSum[] };
+  const slips = slipRows ?? [];
+  const lineIds = plan.map((l) => l.plan_line_id).filter(Boolean);
+  const { data: wos } = lineIds.length || slips.length
+    ? await db.schema('mfg').from('work_orders').select('wo_no, plan_line_id, status')
+        .or([lineIds.length ? `plan_line_id.in.(${lineIds.join(',')})` : '', slips.length ? `wo_no.in.(${[...new Set(slips.map((x) => x.wo_no))].join(',')})` : ''].filter(Boolean).join(','))
+    : { data: [] as { wo_no: string; plan_line_id: string | null; status: string }[] };
+  const woOfLine = (id: string) => (wos ?? []).filter((w) => w.plan_line_id === id && w.status !== 'CANCELLED').map((w) => w.wo_no);
+  const schedOp = (op: string) => (op === 'CD4' ? 'CD3' : op);
+  const fromSlips = (l: { plan_line_id: string; op: string }) => {
+    const mine = slips.filter((x) => woOfLine(l.plan_line_id).includes(x.wo_no) && schedOp(x.op_code) === l.op);
+    return { m: mine.reduce((a, x) => a + Number(x.qty_m), 0), n: mine.length };
+  };
+  const matched = new Set(plan.flatMap((l) => slips.filter((x) => woOfLine(l.plan_line_id).includes(x.wo_no) && schedOp(x.op_code) === l.op)));
+  const extraSlips = slips.filter((x) => !matched.has(x));
+  const slipScrap = slips.reduce((a, x) => a + Number(x.scrap_kg ?? 0), 0);
+  // Lô · công đoạn của máy trong ca: theo lịch và theo phiếu hoàn thành
+  const woOps = [...new Set([
+    ...plan.flatMap((l) => woOfLine(l.plan_line_id).map((w) => `${w}|${l.op}`)),
+    ...slips.map((x) => `${x.wo_no}|${x.op_code}`),
+    ...(rep?.scraps ?? []).map((x) => `${x.wo_no}|${x.op_code}`),
+  ])];
+  const woList = [...new Set([...woOps.map((x) => x.split('|')[0]), ...(rep?.keeps ?? []).map((k) => k.wo_no)])];
+  const { data: mats } = await db.schema('master').from('materials').select('code, name, uom').in('group_code', ['CONDUCTOR', 'COMPOUND', 'ADDITIVE', 'COLOR', 'TAPE_FILLER']).eq('is_scrap', false).order('code');
+  const keeps: Keep[] = [...(rep?.keeps ?? []), ...Array.from({ length: locked ? 0 : 3 }, () => ({ material_code: '', kg: 0, wo_no: '' }))];
+  const oldScrap: Scrap[] = rep && !rep.scraps?.length && Number(rep.scrap_kg) > 0 ? [{ wo_no: '', op_code: '', reason: rep.scrap_reason ?? '', kg: Number(rep.scrap_kg) }] : [];
+  const scraps: Scrap[] = [...(rep?.scraps ?? []), ...oldScrap, ...Array.from({ length: locked ? 0 : 3 }, () => ({ wo_no: '', op_code: '', reason: '', kg: 0 }))];
+
   return (
     <>
       <Toolbar title={<span>Ghi nhận ca · {wdl(date)} {dd(date)} · Ca {shift}</span>} reload={q({})}
@@ -56,6 +91,7 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
           {shifts.length > 1 && <select name="s" defaultValue={shift} className="inp w-auto py-1" aria-label="Ca">{shifts.map((s) => <option key={s.code} value={s.code}>Ca {s.code}</option>)}</select>}
           {code && <input type="hidden" name="m" value={code} />}
           <button className="btn btn-sm">Xem</button>
+          <Link className="btn btn-sm" href={`/in/bao-cao-ca?d=${date}&s=${shift}`} target="_blank">In báo cáo ca trống</Link>
         </form>} />
       <div className="mt-3 text-[13px] text-muted">Màn hình tại máy · {sh ? `${sh.start_time} – ${sh.end_time}` : ''}{!isWorkday(date, kh.cal.wd) ? ' · ngày nghỉ: không có kế hoạch' : ''}{kh.version ? ` · lịch máy phiên bản ${kh.version.version}` : ''}</div>
       <div className="mt-3"><Flash ok={sp.ok} err={sp.err} /></div>
@@ -104,32 +140,37 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
                   </tr>
                 ))}
               </tbody></table></div>
-              {pendingSamples > 0 && <p className="border-t border-line px-4 py-2.5 text-[13px] text-warn">Mẫu chưa đạt: chỉ chạy lấy mẫu, chưa được chạy hàng loạt và chưa gửi được báo cáo ca.</p>}
+              {pendingSamples > 0 && <p className="border-t border-line px-4 py-2.5 text-[13px] text-warn">Mẫu chưa đạt: chỉ chạy lấy mẫu, chưa chạy hàng loạt. Mẫu Không đạt thì chưa gửi được báo cáo ca (QC vẫn kiểm từng bobin sau công đoạn).</p>}
             </section>
           )}
 
           <form action={saveReport} className="flex flex-col gap-4">
             {hidden}
             <section className="card">
-              <div className="card-h"><h2>Sản lượng theo lệnh</h2><span className="text-[13px] font-normal text-muted">nhập theo đồng hồ mét, ngay trong ca</span></div>
+              <div className="card-h"><h2>Sản lượng theo lệnh</h2><span className="text-[13px] font-normal text-muted">MES tự cộng từ phiếu hoàn thành bobin; máy chưa có phiếu thì nhập theo đồng hồ mét</span></div>
               {plan.length ? (
                 <div className="overflow-x-auto"><table className="tbl">
-                  <thead><tr><th>Dòng</th><th>Sản phẩm</th><th className="num">KH cả ca</th><th className="num">Khai báo (m)</th><th className="num">Bobin ra</th><th className="num">Đạt</th></tr></thead>
+                  <thead><tr><th>Dòng</th><th>Sản phẩm</th><th className="num">KH cả ca</th><th className="num">Phiếu hoàn thành</th><th className="num">Khai báo (m)</th><th className="num">Bobin ra</th><th className="num">Đạt</th></tr></thead>
                   <tbody>{plan.map((l, i) => {
                     const v = val(l.key);
+                    const fs = fromSlips(l);
                     return (
                       <tr key={l.key}>
                         <td className="mono">{l.label}</td>
                         <td><b>{l.product_code}</b><div className="text-[12px] text-muted">{OP_NAME[l.op as Op] ?? l.op}{l.color ? <> · <Swatch color={l.color} />{l.color}</> : ''}{l.newCode ? ' · đổi mã giữa ca' : ''}</div></td>
                         <td className="num">{nf(l.planned_m)}<div className="text-[12px] text-muted">{UNIT[l.op as Op]}</div></td>
-                        <td className="num w-[140px]"><input name={`decl_${i}`} defaultValue={v ? nf(v.declared_m) : ''} inputMode="numeric" className="inp text-right" disabled={locked} aria-label={`Mét khai báo ${l.label}`} /></td>
-                        <td className="num w-[100px]"><input name={`bob_${i}`} defaultValue={v?.bobbins ? String(v.bobbins) : ''} inputMode="numeric" className="inp text-right" disabled={locked} aria-label={`Bobin ra ${l.label}`} /></td>
+                        <td className="num">{fs.n ? <>{nf(fs.m)}<div className="text-[12px] text-muted">{fs.n} bobin</div></> : '—'}</td>
+                        <td className="num w-[140px]"><input name={`decl_${i}`} defaultValue={v ? nf(v.declared_m) : fs.n ? nf(fs.m) : ''} inputMode="numeric" className="inp text-right" disabled={locked} aria-label={`Mét khai báo ${l.label}`} /></td>
+                        <td className="num w-[100px]"><input name={`bob_${i}`} defaultValue={v?.bobbins ? String(v.bobbins) : fs.n ? String(fs.n) : ''} inputMode="numeric" className="inp text-right" disabled={locked} aria-label={`Bobin ra ${l.label}`} /></td>
                         <td className="num">{v && l.planned_m ? pc(v.declared_m / l.planned_m) : '—'}</td>
                       </tr>
                     );
                   })}</tbody>
                 </table></div>
               ) : <Empty>{m?.code} không có việc trong ca {shift} ngày {dd(date)} theo lịch máy.</Empty>}
+              {extraSlips.length > 0 && (
+                <p className="border-t border-line px-4 py-2 text-[12.5px] text-muted">Phiếu hoàn thành ngoài lịch ca này: {extraSlips.map((x) => `${x.wo_no} ${x.op_code} ${nf(x.qty_m)} m`).join(' · ')}</p>
+              )}
               <div className="flex flex-wrap items-end gap-3 border-t border-line px-4 py-3">
                 <label className="lbl">Người đứng máy
                   <select name="operator" defaultValue={rep?.operator_code ?? (plan[0] ? kh.sch?.byMachine.get(code ?? '')?.find((s) => s.key === plan[0].key)?.operator ?? '' : '')} className="inp w-[200px]" disabled={locked}>
@@ -157,25 +198,50 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
             </section>
 
             <section className="card">
-              <div className="card-h"><h2>Phế phẩm và ghi chú</h2></div>
-              <div className="flex flex-wrap items-end gap-3 px-4 py-3">
-                <label className="lbl w-[140px]">Khối lượng (kg)<input name="scrap_kg" defaultValue={rep && Number(rep.scrap_kg) ? numIn(rep.scrap_kg) : ''} inputMode="decimal" className="inp text-right" disabled={locked} /></label>
-                <label className="lbl min-w-[200px] flex-1">Nguyên nhân<select name="scrap_reason" defaultValue={rep?.scrap_reason ?? ''} className="inp" disabled={locked}>
-                  <option value="">—</option>{Object.entries(SCRAP_REASONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+              <div className="card-h"><h2>NVL để lại máy chạy tiếp cùng lô</h2><span className="text-[13px] font-normal text-muted">đồng trên giá xả, nhựa trong phễu khi ngày mai chạy tiếp cùng lô · NVL trả kho nhập ở Phiếu xuất NVL, NVL thừa</span></div>
+              <div className="overflow-x-auto"><table className="tbl">
+                <thead><tr><th>Vật tư</th><th className="num">Kg cân</th><th>Lô chạy tiếp</th></tr></thead>
+                <tbody>{keeps.length ? keeps.map((k, i) => (
+                  <tr key={i}>
+                    <td className="min-w-[200px]"><input name={`kp_mat_${i}`} defaultValue={k.material_code} list="kp-mats" className="inp mono uppercase" disabled={locked} aria-label={`Vật tư để lại máy ${i + 1}`} /></td>
+                    <td className="num w-[140px]"><input name={`kp_kg_${i}`} defaultValue={k.kg ? numIn(k.kg) : ''} inputMode="decimal" className="inp text-right" disabled={locked} aria-label={`Kg để lại máy ${i + 1}`} /></td>
+                    <td className="min-w-[180px]"><select name={`kp_wo_${i}`} defaultValue={k.wo_no} className="inp" disabled={locked} aria-label={`Lô chạy tiếp ${i + 1}`}>
+                      <option value="">—</option>{woList.map((w) => <option key={w} value={w}>{w}</option>)}</select></td>
+                  </tr>
+                )) : <tr><td colSpan={3} className="text-[13px] text-muted">Không để lại NVL trên máy.</td></tr>}</tbody>
+              </table></div>
+              <datalist id="kp-mats">{(mats ?? []).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>
+            </section>
+
+            <section className="card">
+              <div className="card-h"><h2>Phế cả ca</h2><span className="text-[13px] font-normal text-muted">chỉ phế chưa ghi trên phiếu hoàn thành bobin (khởi động, xả nhựa, đổi màu…) · ghi vào sổ phế khi TP SX chốt ca</span></div>
+              <div className="overflow-x-auto"><table className="tbl">
+                <thead><tr><th>Lô · công đoạn</th><th>Lý do</th><th className="num">Kg</th></tr></thead>
+                <tbody>{scraps.length ? scraps.map((x, i) => (
+                  <tr key={i}>
+                    <td className="min-w-[200px]"><select name={`sc_wo_${i}`} defaultValue={x.wo_no ? `${x.wo_no}|${x.op_code}` : ''} className="inp" disabled={locked} aria-label={`Lô phế ${i + 1}`}>
+                      <option value="">—</option>{woOps.map((w) => <option key={w} value={w}>{w.replace('|', ' · ')}</option>)}</select></td>
+                    <td className="min-w-[200px]"><select name={`sc_reason_${i}`} defaultValue={x.reason} className="inp" disabled={locked} aria-label={`Lý do phế ${i + 1}`}>
+                      <option value="">—</option>{Object.entries(SCRAP_REASONS).map(([k2, v2]) => <option key={k2} value={k2}>{v2}</option>)}</select></td>
+                    <td className="num w-[140px]"><input name={`sc_kg_${i}`} defaultValue={x.kg ? numIn(x.kg) : ''} inputMode="decimal" className="inp text-right" disabled={locked} aria-label={`Kg phế ${i + 1}`} /></td>
+                  </tr>
+                )) : <tr><td colSpan={3} className="text-[13px] text-muted">Không có phế ngoài phiếu bobin.</td></tr>}</tbody>
+              </table></div>
+              <div className="flex flex-wrap items-end gap-3 border-t border-line px-4 py-3">
+                <p className="w-full text-[12.5px] text-muted">Phế đã ghi trên phiếu hoàn thành của máy trong ngày: {nf(slipScrap, 2)} kg. Phế đồng để thùng riêng.</p>
                 <label className="lbl w-full">Ghi chú<textarea name="note" rows={2} defaultValue={rep?.note ?? ''} className="inp" disabled={locked} /></label>
-                <p className="w-full text-[12.5px] text-muted">Cuối ca nộp phế đồng về kho cùng vật tư thừa để cân bằng đồng.</p>
               </div>
             </section>
 
             {status === 'DRAFT' && (plan.length > 0 || rep) && (
               <section className="card flex flex-col gap-2 px-4 py-3">
                 {missingReason > 0 && <div className="text-[13px] text-warn">Còn {missingReason} lần dừng chưa chọn lý do. Chọn xong mới gửi được.</div>}
-                {pendingSamples > 0 && <div className="text-[13px] text-warn">Mẫu đầu ca/đầu mã chưa đạt. Chưa gửi được báo cáo ca.</div>}
+                {samples.some((x) => x.status === 'NG') && <div className="text-[13px] text-warn">Mẫu đầu ca/đầu mã không đạt. Chưa gửi được báo cáo ca.</div>}
                 {canSubmit ? (
                   <div className="flex flex-wrap items-center gap-2">
                     <SubmitButton className="btn">Lưu nháp</SubmitButton>
                     <SubmitButton formAction={submitReport}>Lưu và gửi xác nhận</SubmitButton>
-                    <span className="text-[12.5px] text-muted">Tổ trưởng / Quản lý SX xác nhận trước {sh?.end_time ?? 'khi hết ca'}. Vắng thì tổ phó NV1 xác nhận theo ủy quyền.</span>
+                    <span className="text-[12.5px] text-muted">TP SX chốt ca (vắng thì tổ phó NV1). Kế toán SX nhập từ tờ báo cáo ca giấy có chữ ký công nhân.</span>
                   </div>
                 ) : <LockNote>Vai trò này chỉ xem báo cáo ca</LockNote>}
                 {rep?.saved_at && <div className="text-[12px] text-muted">Lưu lần cuối {df(rep.saved_at, true)}</div>}

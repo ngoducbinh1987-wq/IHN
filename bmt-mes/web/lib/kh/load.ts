@@ -14,7 +14,7 @@ export const ROLE = {
   params: ['BGD'],                           // ca, tham số chung, cách nhập dữ liệu, hạn giao
   rates: ['KT_TP'],                          // tốc độ chuẩn, phút đổi máy
   sample: ['KT_TP', 'QC'],                   // duyệt mẫu đầu ca/đầu mã
-  submit: ['VAN_HANH', 'TO_TRUONG', 'SX_TP'],// nhập báo cáo ca
+  submit: ['VAN_HANH', 'TO_TRUONG', 'SX_TP', 'KT_KHO'], // nhập báo cáo ca (Kế toán SX nhập từ tờ giấy)
   confirm: ['TO_TRUONG', 'SX_TP'],           // xác nhận ca
   slip: ['KT_KHO'],                          // duyệt phiếu lĩnh
 };

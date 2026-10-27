@@ -35,6 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       { href: '/lenh-ngay', label: 'Lệnh SX ngày', icon: 'order', group: 'Sản xuất' },
       { href: '/ghi-nhan-ca', label: 'Ghi nhận ca', icon: 'shift', group: 'Sản xuất' },
       { href: '/phieu-hoan-thanh', label: 'Phiếu hoàn thành bobin', icon: 'checklist', group: 'Sản xuất' },
+      { href: '/phieu-xuat-nvl', label: 'Phiếu xuất NVL, NVL thừa', icon: 'issue', group: 'Sản xuất' },
       { href: '/kh-thuc-te', label: 'Kế hoạch – Thực tế', icon: 'chart', group: 'Sản xuất' },
       { href: '/tham-so', label: 'Máy, người & tham số', icon: 'sliders', group: 'Sản xuất' },
     );
@@ -54,7 +55,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     items.push({ href: '/kho/kiem-ke', label: 'Kiểm kê', icon: 'count', group: 'Kho' });
   }
   if (office && (inv || can(me, 'sales', 'view'))) items.push({ href: '/kho/xuat-ban', label: 'Xuất giao hàng', icon: 'truck', group: 'Kho' });
-  if (can(me, 'production', 'view') || inv || can(me, 'cost', 'view')) items.push({ href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: 'chart', group: 'Báo cáo' });
+  if (can(me, 'production', 'view') || inv || can(me, 'cost', 'view')) {
+    items.push({ href: '/bao-cao/ngay', label: 'Báo cáo sản xuất ngày', icon: 'report', group: 'Báo cáo' });
+    items.push({ href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: 'chart', group: 'Báo cáo' });
+  }
   if (inv && office) items.push({ href: '/kho/so-cai', label: 'Nhập – xuất – tồn', icon: 'ledger', group: 'Báo cáo' });
   if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
   if (can(me, 'quality', 'view')) items.push({ href: '/kho/qc', label: 'QC bobin, lô hàng', icon: 'checklist', group: 'Kỹ thuật / QA', badge: qcWait ?? 0 });

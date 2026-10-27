@@ -31,13 +31,28 @@ async function save(form: FormData) {
     if (!min) back(form, 'err', `Dừng máy dòng ${i + 1}: nhập giờ dạng HH:MM, giờ chạy lại sau giờ dừng`);
     downtime.push({ from, to, min, reason: String(form.get(`dt_reason_${i}`) ?? ''), src: 'MANUAL' });
   }
-  const scrap = parseNum(form.get('scrap_kg'));
-  if (scrap !== null && (Number.isNaN(scrap) || scrap < 0)) back(form, 'err', 'Phế phẩm (kg) phải là số ≥ 0');
+  // NVL để lại máy chạy tiếp cùng lô; phế cả ca ngoài phiếu bobin (Kế toán SX nhập từ tờ báo cáo ca giấy)
+  const keeps: { material_code: string; kg: number; wo_no: string }[] = [];
+  for (let i = 0; i < 12; i++) {
+    const mat = String(form.get(`kp_mat_${i}`) ?? '').trim().toUpperCase();
+    if (!mat) continue;
+    const kg = parseNum(form.get(`kp_kg_${i}`));
+    if (kg === null || Number.isNaN(kg) || kg <= 0) back(form, 'err', `NVL để lại máy ${mat}: nhập kg cân`);
+    keeps.push({ material_code: mat, kg: kg as number, wo_no: String(form.get(`kp_wo_${i}`) ?? '') });
+  }
+  const scraps: { wo_no: string; op_code: string; reason: string; kg: number }[] = [];
+  for (let i = 0; i < 12; i++) {
+    const kg = parseNum(form.get(`sc_kg_${i}`));
+    if (kg === null) continue;
+    if (Number.isNaN(kg) || kg <= 0) back(form, 'err', `Phế cả ca dòng ${i + 1}: kg phải là số > 0`);
+    const [wo_no = '', op_code = ''] = String(form.get(`sc_wo_${i}`) ?? '').split('|');
+    scraps.push({ wo_no, op_code, reason: String(form.get(`sc_reason_${i}`) ?? ''), kg });
+  }
   const { data, error } = await db.schema('app').rpc('kh_save_report', {
     p_date: d, p_machine: m,
     p: {
       shift_code: s, operator_code: String(form.get('operator') ?? '') || null, plan_id: kh.version?.plan_id ?? null, source: 'MANUAL',
-      lines, downtime, samples: sampleTemplate(plan), scrap_kg: scrap ?? 0, scrap_reason: String(form.get('scrap_reason') ?? '') || null,
+      lines, downtime, samples: sampleTemplate(plan), keeps, scraps, scrap_kg: 0,
       note: String(form.get('note') ?? '').trim() || null,
     },
   });
@@ -57,7 +72,7 @@ export async function submitReport(form: FormData) {
   const { error } = await db.schema('app').rpc('kh_submit_report', { p_id: id });
   if (error) back(form, 'err', 'Đã lưu nháp nhưng chưa gửi được: ' + error.message);
   revalidatePath('/ghi-nhan-ca');
-  back(form, 'ok', 'Đã gửi báo cáo ca. Tổ trưởng / Quản lý SX xác nhận trước khi hết ca.');
+  back(form, 'ok', 'Đã gửi báo cáo ca. TP SX chốt ca (vắng thì tổ phó NV1).');
 }
 
 export async function confirmReport(form: FormData) {
@@ -65,7 +80,7 @@ export async function confirmReport(form: FormData) {
   const { error } = await db.schema('app').rpc('kh_confirm_report', { p_id: String(form.get('id')), p_note: String(form.get('note') ?? '') });
   if (error) back(form, 'err', error.message);
   revalidatePath('/ghi-nhan-ca');
-  back(form, 'ok', 'Đã xác nhận báo cáo ca. Số liệu đã khóa và cộng vào Kế hoạch – Thực tế.');
+  back(form, 'ok', 'Đã chốt ca: số liệu khóa, phế cả ca ghi vào sổ phế của lô, cộng vào Kế hoạch – Thực tế.');
 }
 
 export async function reopenReport(form: FormData) {

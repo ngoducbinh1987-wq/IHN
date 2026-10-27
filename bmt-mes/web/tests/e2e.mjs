@@ -457,7 +457,8 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   await login(page, email, pw);
   const pages = ['/kho', '/kho/ton', '/kho/phieu', '/kho/quet', '/kho/cap-phat', '/kho/kiem-ke', '/kho/nhan-hang', '/kho/so-cai', '/kho/cai-dat',
     '/lich-may', '/lenh-ngay', '/ghi-nhan-ca', '/kh-thuc-te', '/tham-so', '/may', '/may/checklist', '/may/bao-duong', '/may/toc-do',
-    '/may/kiem-tra', '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut', '/phieu-hoan-thanh', '/kho/qc'];
+    '/may/kiem-tra', '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut', '/phieu-hoan-thanh', '/kho/qc',
+    '/phieu-xuat-nvl', '/bao-cao/ngay', '/in/phieu-xuat-nvl', '/in/bao-cao-ca'];
   for (const u of pages) {
     const res = await page.goto(`${BASE}${u}`);
     const body = await page.innerText('body');
@@ -474,6 +475,16 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
     if (res.status() !== 200 || !(await page.innerText('body')).includes('PHIẾU HOÀN THÀNH BOBIN')) fail(`${email}: bản in phiếu hoàn thành lỗi`);
     ok(`${email.split('@')[0]}: form nhập phiếu hoàn thành + bản in phiếu trống mở được`);
   }
+  // Đợt 3: báo cáo ca có phần NVL để lại máy, phế cả ca; báo cáo ngày có nút gửi; bản in báo cáo ca trống
+  await page.goto(`${BASE}/ghi-nhan-ca`);
+  const shiftBody = await page.innerText('body');
+  if (!shiftBody.includes('NVL để lại máy chạy tiếp cùng lô') || !shiftBody.includes('Phế cả ca')) fail(`${email}: báo cáo ca thiếu phần NVL để lại máy / phế cả ca`);
+  await page.goto(`${BASE}/bao-cao/ngay`);
+  if (!(await page.innerText('body')).includes('Hao hụt theo công đoạn')) fail(`${email}: báo cáo ngày không hiện bảng hao hụt`);
+  if (!(await page.locator('form button', { hasText: /gửi báo cáo ngày/i }).count())) fail(`${email}: thiếu nút gửi báo cáo ngày`);
+  const pr = await page.goto(`${BASE}/in/bao-cao-ca?m=BUN-01`);
+  if (pr.status() !== 200 || !(await page.innerText('body')).includes('BÁO CÁO CA')) fail(`${email}: bản in báo cáo ca lỗi`);
+  ok(`${email.split('@')[0]}: báo cáo ca (NVL để lại máy, phế cả ca), báo cáo ngày, bản in báo cáo ca trống mở được`);
   await ctx.close();
 }
 
