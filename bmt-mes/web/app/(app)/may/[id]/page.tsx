@@ -261,6 +261,7 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
     || Number(Boolean(x.product_id)) - Number(Boolean(y.product_id)) || (mm2.get(x.core_code) ?? 0) - (mm2.get(y.core_code) ?? 0));
   return (
     <>
+      {machineType !== 'MIXER' && machineType !== 'PACKER' && (
       <section className="card mb-4">
         <div className="card-h">Dải hoạt động<span className="text-[13px] font-normal text-muted">tiết diện ruột dẫn máy làm được · kiểm tra kế hoạch chặn mã ngoài dải</span></div>
         {cfg ? (
@@ -274,7 +275,7 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
         ) : (
           <div className="p-4 text-[15px]">{rg ? <>Tiết diện ruột <b className="tabular-nums">{rg.min_value === null ? '…' : nf(rg.min_value, 2)} – {rg.max_value === null ? '…' : nf(rg.max_value, 2)} mm²</b></> : <span className="text-muted">Chưa khai (không giới hạn)</span>}</div>
         )}
-      </section>
+      </section>)}
 
       <section className="card overflow-x-auto">
         <div className="card-h">Tốc độ chuẩn ({U})<span className="text-[13px] font-normal text-muted">Lịch máy chọn: riêng mã SP → theo cỡ ruột → mặc định của máy</span></div>

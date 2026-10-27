@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026003900: máy trộn silicone (CD0, kg/giờ) và máy đóng gói (CD6) vào lịch máy, năng lực, vật tư ngày.
+-- Kiểm thử migration 20261026003900 + 20261026004000: máy trộn silicone (CD0, kg/giờ) và máy đóng gói (CD6) vào lịch máy, năng lực, vật tư ngày.
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 set client_min_messages = warning;
 begin;
@@ -44,6 +44,9 @@ select pg_temp.ok(plan.mix_kg_km((select current_spec_id from master.products wh
 select pg_temp.ok(plan.mix_kg_km((select current_spec_id from master.products where id = (select v from t where k = 'pvc'))) is null, 'Mã PVC không cần trộn silicone');
 
 -- ================================================================ 3. Năng lực: máy trộn tính theo kg
+-- Dải tiết diện chỉ áp cho máy bện, đùn, xoắn, bọc vỏ: dải nhập nhầm ở máy trộn / máy đóng gói không chặn mã
+insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom)
+select id, 'SIZE_MM2', 'Thử dải nhầm', 10, 35, 'mm²' from master.machines where code in ('SIL-MIX', 'PACK-01');
 select pg_temp.as_user('X_SXTP');
 set local role authenticated;
 create temp table cap as select app.check_capacity(null, pg_temp.today(), pg_temp.today() + 6, 1, 0,
@@ -57,6 +60,7 @@ select pg_temp.ok((select (o ->> 'req_min')::numeric between
 select pg_temp.ok((select (o ->> 'req_min')::numeric between 10000 / 120.0 - 1 and 10000 / 120.0 + 1 from cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'PACKER'),
   'Phút đóng gói = mét cáp ÷ tốc độ cuốn');
 select pg_temp.ok((select (j -> 'issues')::text not like '%Chưa có tốc độ chuẩn%' from cap), 'Không còn báo thiếu tốc độ chuẩn cho trộn / đóng gói');
+select pg_temp.ok((select (j -> 'issues')::text not like '%ngoài dải%' from cap), 'Dải tiết diện không áp cho máy trộn, máy đóng gói');
 select pg_temp.ok((select (o ->> 'name') like 'Trộn silicone%' from cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'MIXER'), 'Nhãn nhóm máy trộn');
 
 -- ================================================================ 4. Vật tư theo việc trong ngày
