@@ -63,7 +63,7 @@ export async function deleteLine(form: FormData) {
   back(planId, 'ok', 'Đã xóa dòng');
 }
 
-// Chủ tịch HĐQT ở bước chốt: sửa/thêm/bỏ dòng; database kiểm bước, người chốt, lý do và tự chạy lại MRP
+// Người đang duyệt (Giám đốc duyệt, Chủ tịch HĐQT chốt): sửa/thêm/bỏ dòng; database kiểm bước, người duyệt, lý do và tự chạy lại MRP
 export async function chairSaveLine(form: FormData) {
   const planId = String(form.get('plan_id'));
   const lineId = String(form.get('line_id') ?? '') || null;
@@ -80,7 +80,7 @@ export async function chairSaveLine(form: FormData) {
   });
   if (error) back(planId, 'err', error.message);
   revalidatePath(`/ke-hoach/${planId}`);
-  back(planId, 'ok', `Đã ${lineId ? 'sửa' : 'thêm'} dòng, MRP đã tính lại. Xong thì bấm “Chốt kế hoạch”.`);
+  back(planId, 'ok', `Đã ${lineId ? 'sửa' : 'thêm'} dòng, MRP đã tính lại, ghi vào lịch sử duyệt. Xong thì bấm duyệt / chốt kế hoạch.`);
 }
 
 export async function chairRemoveLine(form: FormData) {
@@ -95,7 +95,8 @@ export async function chairRemoveLine(form: FormData) {
 export async function runMrp(form: FormData) {
   const planId = String(form.get('plan_id'));
   const supabase = await createClient();
-  const { error } = await supabase.schema('plan').rpc('run_mrp', { p_plan: planId });
+  // app.plan_run_mrp: giữ số đã chỉnh của vật tư không đổi nhu cầu; kế hoạch chờ duyệt thì chỉ người đang duyệt chạy
+  const { error } = await supabase.schema('app').rpc('plan_run_mrp', { p_plan: planId });
   if (error) back(planId, 'err', error.message);
   revalidatePath(`/ke-hoach/${planId}`);
   back(planId, 'ok', 'Đã chạy MRP');

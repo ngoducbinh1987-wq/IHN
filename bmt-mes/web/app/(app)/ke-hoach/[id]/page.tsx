@@ -64,15 +64,21 @@ export default async function PlanDetail({ params, searchParams }:
     && (!(flowHead?.submit_user_ids?.length) || flowHead.submit_user_ids.includes(me.id));
   const canMakePr = can(me, 'plan', 'create') || can(me, 'purchase', 'create');
   const editable = draft && can(me, 'plan', 'edit');
-  // Bước cuối (Chủ tịch HĐQT chốt): người giữ bước được sửa sản lượng, thêm, bỏ mã rồi chốt (database kiểm lại)
-  const chairTurn = plan.status === 'PENDING_APPROVAL' && req?.status === 'PENDING' && req.my_turn && req.step_index === req.step_total;
+  // Người đang giữ bước duyệt (Giám đốc duyệt, Chủ tịch HĐQT chốt) được sửa sản lượng, thêm, bỏ mã và đề nghị mua MRP rồi duyệt
+  // (nguyên tắc 27/10/2026: người duyệt có quyền chỉnh sửa đề xuất; database kiểm lại: wf.review_request)
+  const pending = plan.status === 'PENDING_APPROVAL';
+  const chairTurn = pending && req?.status === 'PENDING' && req.my_turn && !req.i_submitted;
+  const lastStep = Boolean(req && req.step_index === req.step_total);
   const lineEdit = editable || chairTurn;
   const stale = Boolean(plan.mrp_stale);
   const pr = prs?.[0];
-  // Điều chỉnh MRP: chỉ TP Mua hàng / TP Kỹ thuật-QA; khóa khi chờ duyệt, đã đóng, MRP cũ hoặc đã sinh PR (database kiểm tra lại)
-  const canAdjust = me.roles.includes('MUA_TP') || me.roles.includes('KT_TP');
-  const mrpLock = !['DRAFT', 'APPROVED'].includes(plan.status) ? 'kế hoạch đang chờ duyệt hoặc đã đóng'
+  // Điều chỉnh MRP (database kiểm lại ở app.adjust_mrp_line):
+  //  nháp: người lập kế hoạch (plan:create), TP Mua, TP KT/QA; chờ duyệt: người đang giữ bước duyệt; đã duyệt: TP Mua, TP KT/QA
+  const buyerOrTech = me.roles.includes('MUA_TP') || me.roles.includes('KT_TP');
+  const canAdjust = draft ? can(me, 'plan', 'create') || buyerOrTech : pending ? chairTurn : plan.status === 'APPROVED' && buyerOrTech;
+  const mrpLock = !['DRAFT', 'PENDING_APPROVAL', 'APPROVED'].includes(plan.status) ? 'kế hoạch đã đóng'
     : stale ? 'dòng kế hoạch đã thay đổi, cần chạy lại MRP' : pr ? `đã sinh ${pr.pr_no}` : null;
+  const canRunMrp = pending ? chairTurn : can(me, 'plan', 'create') && plan.status !== 'CLOSED';
   const adjustable = canAdjust && !mrpLock;
   const packs = packOpts ?? [];
   const showPrice = me.can_see_price;
@@ -83,7 +89,7 @@ export default async function PlanDetail({ params, searchParams }:
       <Toolbar title={<span>{plan.plan_no} – {plan.period_label}</span>}
         actions={<>
           {req && <Link className="btn btn-soft" href={`/duyet/${req.id}`}>Xem quy trình duyệt</Link>}
-          {can(me, 'plan', 'create') && (lines?.length ?? 0) > 0 && plan.status !== 'CLOSED' && (
+          {canRunMrp && (lines?.length ?? 0) > 0 && (
             <form action={runMrp}><input type="hidden" name="plan_id" value={id} /><SubmitButton className="btn btn-soft">Chạy MRP</SubmitButton></form>
           )}
           <Link className="btn btn-soft" href={`/in/ke-hoach/${id}`} target="_blank"><Printer size={16} />In</Link>
@@ -111,12 +117,13 @@ export default async function PlanDetail({ params, searchParams }:
         </div>
       )}
       {chairTurn && req && (
-        <div id="chair-turn" aria-label="Bước chốt kế hoạch" className="mb-4 flex flex-wrap items-center gap-3 rounded border-l-4 border-brand bg-brand-soft px-4 py-3 text-[14px]">
+        <div id="chair-turn" aria-label="Bước duyệt kế hoạch" className="mb-4 flex flex-wrap items-center gap-3 rounded border-l-4 border-brand bg-brand-soft px-4 py-3 text-[14px]">
           <div className="mr-auto min-w-0">
-            <b>Bạn đang ở bước chốt kế hoạch.</b> Sửa sản lượng, số lô, đóng gói bằng nút bút; thêm mã ở form dưới bảng; bỏ mã trong form sửa dòng.
-            Mỗi lần sửa phải ghi lý do, MES tự chạy lại MRP. Xong bấm <b>Chốt kế hoạch</b>; muốn TP SX làm lại thì Trả lại ở Quy trình duyệt.
+            <b>Bạn đang {lastStep ? 'ở bước chốt' : 'duyệt'} kế hoạch nên được sửa trước khi {lastStep ? 'chốt' : 'duyệt'}.</b> Sửa sản lượng, số lô, đóng gói bằng nút bút; thêm mã ở form dưới bảng; bỏ mã trong form sửa dòng;
+            sửa đề nghị mua ở bảng MRP (nút <Pencil size={13} className="inline" />). Mỗi lần sửa phải ghi lý do, MES tự chạy lại MRP (giữ số đã chỉnh của vật tư không đổi nhu cầu),
+            ghi vào lịch sử duyệt và báo người lập. Xong bấm <b>{lastStep ? 'Chốt kế hoạch' : 'Duyệt kế hoạch'}</b>; muốn TP SX làm lại thì Trả lại ở Quy trình duyệt.
           </div>
-          <form action={approve}><input type="hidden" name="id" value={req.id} /><SubmitButton pendingText="Đang chốt…">Chốt kế hoạch</SubmitButton></form>
+          <form action={approve}><input type="hidden" name="id" value={req.id} /><SubmitButton pendingText={lastStep ? 'Đang chốt…' : 'Đang duyệt…'}>{lastStep ? 'Chốt kế hoạch' : 'Duyệt kế hoạch'}</SubmitButton></form>
           <Link className="btn" href={`/duyet/${req.id}`}>Trả lại / ý kiến</Link>
         </div>
       )}
@@ -164,7 +171,7 @@ export default async function PlanDetail({ params, searchParams }:
 
       {(chairEdits ?? []).length > 0 && (
         <section className="card mb-4 overflow-x-auto" id="chair-edits">
-          <div className="card-h">Chủ tịch HĐQT chỉnh khi chốt</div>
+          <div className="card-h">Chỉnh dòng kế hoạch khi duyệt (Giám đốc, Chủ tịch HĐQT)</div>
           <table className="tbl">
             <thead><tr><th>Lúc</th><th>Người</th><th>SKU</th><th>Thay đổi</th><th>Lý do</th></tr></thead>
             <tbody>

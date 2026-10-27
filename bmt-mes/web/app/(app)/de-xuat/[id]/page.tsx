@@ -28,7 +28,12 @@ export default async function PrDetail({ params, searchParams }:
     supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code, enabled').eq('doc_type', 'PR').eq('enabled', true).order('seq'),
   ]);
   const draft = pr.status === 'DRAFT';
-  const editable = draft && can(me, 'purchase', 'create');
+  // Người lập sửa khi nháp; người đang giữ bước duyệt sửa khi chờ duyệt (database kiểm lại, ghi lịch sử duyệt)
+  const { data: reviewEdit } = pr.status === 'PENDING_APPROVAL'
+    ? await supabase.schema('app').rpc('can_review_edit', { p_doc_type: 'PR', p_doc_id: id })
+    : { data: false };
+  const reviewer = reviewEdit === true;
+  const editable = (draft && can(me, 'purchase', 'create')) || reviewer;
   // Đề xuất từ dự trù: cột nhu cầu, tồn đạt QC, đang về, tồn dự kiến (quy trình final: TP SX lập, Giám đốc duyệt)
   const fromMrp = (lines ?? []).some((l) => l.need_qty !== null);
   const showPrice = me.can_see_price;
@@ -44,7 +49,7 @@ export default async function PrDetail({ params, searchParams }:
       <Toolbar title={<span>{pr.pr_no} – {pr.note}</span>}
         actions={<>
           {req && <Link className="btn btn-soft" href={`/duyet/${req.id}`}>Xem quy trình duyệt</Link>}
-          {editable && (lines?.length ?? 0) > 0 && (
+          {draft && editable && (lines?.length ?? 0) > 0 && (
             <form action={submitPr}>
               <input type="hidden" name="pr_id" value={id} /><input type="hidden" name="pr_no" value={pr.pr_no} /><input type="hidden" name="note" value={pr.note ?? ''} />
               <SubmitButton className="btn btn-pri"><Send size={15} />Gửi duyệt</SubmitButton>
@@ -54,6 +59,12 @@ export default async function PrDetail({ params, searchParams }:
         </>} />
       <div className="-mx-4 mb-4 md:-mx-5"><StageBar stages={stages} /></div>
       <Flash ok={sp.ok} err={sp.err} />
+      {reviewer && (
+        <div role="note" id="review-edit" className="mb-4 rounded border-l-4 border-brand bg-brand-soft px-4 py-2.5 text-[14px]">
+          <b>Bạn đang duyệt đề xuất này</b> nên được sửa số mua, thêm hoặc bỏ dòng, ngày cần trước khi duyệt. Mỗi lần sửa ghi vào lịch sử duyệt và báo người lập.
+          {req && <> Sửa xong bấm duyệt ở <Link className="link" href={`/duyet/${req.id}`}>trang quy trình duyệt</Link>.</>}
+        </div>
+      )}
       {me.roles.includes('ADMIN') && (
         <AdminTools docType="PR" docId={id} docNo={pr.pr_no} requestId={req?.id} pending={req?.status === 'PENDING'} canReopen={!draft}
           back={`/de-xuat/${id}`} after="/de-xuat" />

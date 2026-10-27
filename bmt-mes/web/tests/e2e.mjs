@@ -161,7 +161,9 @@ if ((await page.textContent('body')).includes('Thành tiền') || (await page.te
 ok('Kế hoạch SX không thấy cột thành tiền và ngân sách (không có quyền xem giá)');
 await page.screenshot({ path: `${SHOTS}/05-ke-hoach-mrp.png`, fullPage: true });
 // 6a. Sửa dòng kế hoạch bằng nút bút: mở dữ liệu cũ, đổi quy cách đóng gói, cập nhật số kiện, đánh dấu cần chạy lại MRP
-if (await page.locator('tr:has-text("CU-024") a[title="Điều chỉnh"]').count()) fail('Kế hoạch SX không được thấy nút điều chỉnh MRP');
+// 27/10/2026: người lập kế hoạch sửa được bảng MRP – đề nghị mua khi kế hoạch còn nháp (migration 4400)
+if (!(await page.locator('tr:has-text("CU-024") a[title="Điều chỉnh"]').count())) fail('Kế hoạch SX (người lập) phải thấy nút điều chỉnh MRP khi kế hoạch nháp');
+ok('Người lập kế hoạch thấy nút điều chỉnh đề nghị mua khi kế hoạch còn nháp');
 await clickNav(page, 'a[title="Sửa dòng"]');
 if ((await page.inputValue('input[name=qty_m]')) !== '3500' || (await page.inputValue('select[name=pack_type]')) !== 'Bobin gỗ'
   || (await page.inputValue('select[name=m_per_pack]')) !== '500') fail('Form sửa phải mở đúng dữ liệu cũ 3500 m / Bobin gỗ / 500');

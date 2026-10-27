@@ -13,6 +13,9 @@ import { approve, comment, reject } from './actions';
 
 export const metadata = { title: 'Chi tiết quy trình' };
 
+// Chứng từ người đang duyệt sửa được trên trang chứng từ (database: wf.review_request); thêm loại mới khi có màn hình sửa
+const EDITABLE_BY_REVIEWER = ['PLAN', 'PR', 'PLAN_ADJ']; // PLAN còn có khung nhắc trong Thông tin chung
+
 const ACTION: Record<string, [string, 'ok' | 'bad' | 'info']> = {
   APPROVE: ['Chuyển giai đoạn', 'ok'], REJECT: ['Trả lại', 'bad'], COMMENT: ['Trao đổi', 'info'],
 };
@@ -92,6 +95,9 @@ export default async function ApprovalDetail({ params, searchParams }:
                   </details>
                 </div>
                 <span className="text-[12.5px] text-muted">Bạn đang giữ bước này</span>
+                {a.doc_link && EDITABLE_BY_REVIEWER.includes(a.doc_type) && !a.i_submitted && (
+                  <Link href={a.doc_link} className="btn btn-sm btn-soft" id="review-edit-link">Sửa nội dung trước khi duyệt</Link>
+                )}
               </div>
             )}
             {a.status === 'PENDING' && !a.my_turn && (
@@ -255,10 +261,10 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
         <Field label="Ngày cần vật tư">{df(plan?.material_need_date)}</Field>
         <Field label="Số SKU / tổng mét">{plan?.line_count} SKU · {nf(plan?.total_m)} m</Field>
         {canSeePrice && <Field label="Ngân sách vật tư">{run ? `${nf(run.budget_vnd)} đ` : '—'}{run?.missing_price_count ? ` (${run.missing_price_count} mã thiếu giá)` : ''}</Field>}
-        {(edits ?? 0) > 0 && <Field label="Chủ tịch chỉnh khi chốt"><Link className="text-brand hover:underline" href={`/ke-hoach/${a.doc_id}#chair-edits`}>{edits} lần sửa dòng</Link></Field>}
-        {a.status === 'PENDING' && a.my_turn && a.step_index === a.step_total && (
+        {(edits ?? 0) > 0 && <Field label="Chỉnh khi duyệt"><Link className="text-brand hover:underline" href={`/ke-hoach/${a.doc_id}#chair-edits`}>{edits} lần sửa dòng</Link></Field>}
+        {a.status === 'PENDING' && a.my_turn && !a.i_submitted && (
           <div className="md:col-span-2 mt-2 rounded border-l-4 border-brand bg-brand-soft px-3 py-2 text-[14px]">
-            Bước chốt: bạn được sửa sản lượng, thêm, bỏ mã trước khi chốt.{' '}
+            {a.step_index === a.step_total ? 'Bước chốt' : 'Bước duyệt'}: bạn được sửa sản lượng, thêm, bỏ mã và đề nghị mua MRP trước khi {a.step_index === a.step_total ? 'chốt' : 'duyệt'}.{' '}
             <Link className="font-medium text-brand hover:underline" href={`/ke-hoach/${a.doc_id}`}>Mở kế hoạch để chỉnh</Link>
           </div>
         )}

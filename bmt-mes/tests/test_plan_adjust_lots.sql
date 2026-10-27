@@ -132,7 +132,7 @@ insert into t select 'adj_req', app.adj_submit((select v from t where k = 'adj')
 select pg_temp.ok((select status = 'PENDING_APPROVAL' from plan.plan_adjustments where id = (select v from t where k = 'adj'))
   and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_CT') and title like '%PDC-%'),
   'Gửi duyệt: phiếu chờ Chủ tịch HĐQT, Chủ tịch nhận thông báo');
-select pg_temp.fails($$select app.adj_save((select v from t where k = 'adj'), null, '[]')$$, 'đã gửi duyệt', 'Đã gửi duyệt thì không sửa dòng');
+select pg_temp.fails($$select app.adj_save((select v from t where k = 'adj'), null, '[]')$$, 'Người lập không sửa', 'Đã gửi duyệt thì người lập không sửa dòng (người duyệt sửa)');
 select pg_temp.as_user('P_GD');
 select pg_temp.fails($$select wf.act((select v from t where k = 'adj_req'), 'APPROVE', null)$$, '', 'Giám đốc (không phải Chủ tịch) không duyệt phiếu điều chỉnh kế hoạch tháng');
 select pg_temp.as_user('P_CT');

@@ -105,10 +105,10 @@ select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp
 select pg_temp.as_user('H_CT');
 select pg_temp.fails($$select wf.act((select v from t where k = 'req'), 'APPROVE')$$, 'cần vai trò', 'Chủ tịch không duyệt thay bước Giám đốc');
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Tăng')$$,
-  'Chỉ sửa kế hoạch ở bước', 'Đang ở bước Giám đốc: Chủ tịch chưa sửa được');
+  'Chỉ người đang duyệt bước', 'Đang ở bước Giám đốc: Chủ tịch chưa sửa được');
+-- 27/10/2026 (migration 4400): người đang giữ bước duyệt nào cũng được sửa (Giám đốc ở bước 1); chi tiết ở test_reviewer_edit.sql
 select pg_temp.as_user('H_GD');
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Tăng')$$,
-  'Chỉ sửa kế hoạch ở bước', 'Giám đốc duyệt hoặc trả lại, không sửa kế hoạch');
+select pg_temp.ok(app.can_review_edit('PLAN', (select v from t where k = 'plan')), 'Giám đốc (bước 1) được sửa kế hoạch khi duyệt');
 -- TP SX không sửa được dòng khi đã gửi duyệt (RLS chỉ cho sửa khi Nháp)
 select pg_temp.as_user('H_SXTP');
 select pg_temp.ok(pg_temp.api_rows(format($$update plan.plan_lines set qty_m = 1 where id = %L$$, pg_temp.line('PFR-2C-1P5'))) = '0',
@@ -123,7 +123,7 @@ select pg_temp.fails($$select wf.act((select v from t where k = 'req'), 'APPROVE
 -- ================================================================ 3. Chủ tịch chỉnh khi chốt
 select pg_temp.as_user('H_SXTP');
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Tăng')$$,
-  'Chỉ người chốt kế hoạch', 'TP SX không sửa ở bước chốt');
+  'Người lập không sửa', 'TP SX không sửa ở bước chốt');
 select pg_temp.as_user('H_CT');
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', ' ')$$,
   'lý do', 'Chủ tịch sửa phải ghi lý do');
@@ -165,9 +165,9 @@ select pg_temp.ok((select count(*) from plan.mrp_runs where plan_id = (select v 
 -- ================================================================ 4. Chốt
 select wf.act((select v from t where k = 'req'), 'APPROVE', 'Chốt');
 select pg_temp.ok((select status from plan.production_plans where id = (select v from t where k = 'plan')) = 'APPROVED', 'Chủ tịch chốt: kế hoạch Đã duyệt');
-select pg_temp.ok((select body like 'PFR-2C-1P5: 10.000 → 12.000 m; SIF-1C-1P5: bỏ (5.000 m); SIF-1C-1P5: thêm 3.000 m%' from wf.notifications
-                   where user_id = pg_temp.uid('H_SXTP') and title = 'Chủ tịch đã chỉnh khi chốt KH-T42')
-  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('H_GD') and title = 'Chủ tịch đã chỉnh khi chốt KH-T42'),
+select pg_temp.ok((select body like 'PFR-2C-1P5: 10.000 → 12.000 m (Test h_ct); SIF-1C-1P5: bỏ (5.000 m) (Test h_ct); SIF-1C-1P5: thêm 3.000 m (Test h_ct)%' from wf.notifications
+                   where user_id = pg_temp.uid('H_SXTP') and title = 'Kế hoạch đã được chỉnh khi duyệt: KH-T42')
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('H_GD') and title = 'Kế hoạch đã được chỉnh khi duyệt: KH-T42'),
   'Chốt xong báo TP SX và Giám đốc các dòng Chủ tịch đã chỉnh');
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 13000, 1, 'Bobin gỗ', 500, 'KAVIX', 'x')$$,
   'không ở trạng thái chờ duyệt', 'Đã chốt: không sửa trực tiếp nữa (dùng phiếu điều chỉnh)');

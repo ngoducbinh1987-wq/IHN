@@ -63,9 +63,10 @@ export async function deletePrLine(form: FormData) {
 export async function savePrHeader(form: FormData) {
   const id = String(form.get('pr_id'));
   const supabase = await createClient();
-  const { error } = await supabase.schema('purchase').from('purchase_requests').update({
-    note: String(form.get('note') ?? '').trim(), need_date: String(form.get('need_date') || '') || null,
-  }).eq('id', id).eq('status', 'DRAFT');
+  // qua hàm database: người lập sửa khi nháp, người đang duyệt sửa khi chờ duyệt (ghi lịch sử duyệt)
+  const { error } = await supabase.schema('app').rpc('save_pr_header', {
+    p_pr: id, p_note: String(form.get('note') ?? '').trim(), p_need_date: String(form.get('need_date') || '') || null,
+  });
   if (error) back(id, 'err', error.message);
   back(id, 'ok', 'Đã lưu');
 }
