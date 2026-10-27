@@ -236,14 +236,19 @@ function DeleteBtn({ table, id, back, label = 'Xóa' }: { table: string; id: str
 async function SpeedTab({ id, lineId, isLine, opCode, cfg, canPropose, meId, canApprove, back }:
   { id: string; lineId: string; isLine: boolean; opCode: string | null; cfg: boolean; canPropose: boolean; meId: string; canApprove: boolean; back: string }) {
   const supabase = await createClient();
-  const [{ data: ranges }, { data: speeds }, { data: ops }, { data: groups }, { data: cores }, { data: products }] = await Promise.all([
+  const [{ data: ranges }, { data: speeds }, { data: ops }, { data: groups }, { data: cores }, { data: products }, { data: line }, { data: plcAll }] = await Promise.all([
     supabase.schema('app').from('v_machine_ranges').select('*').eq('machine_id', id).order('sort').order('label'),
     supabase.schema('app').from('v_machine_speeds').select('*').eq('machine_id', lineId).neq('status', 'OBSOLETE').order('op_code').order('core_code', { nullsFirst: true }),
     supabase.schema('master').from('operations').select('code, name').order('seq'),
     supabase.schema('master').from('product_groups').select('code, name').order('code'),
     supabase.schema('master').from('core_types').select('code, nominal_mm2').order('nominal_mm2'),
     supabase.schema('master').from('products').select('id, code').eq('active', true).order('code'),
+    supabase.schema('master').from('machines').select('code, data_mode').eq('id', lineId).maybeSingle(),
+    supabase.schema('app').rpc('kh_plc_speeds'),
   ]);
+  type PlcRow = { machine_code: string; op_code: string; product_id: string | null; group_code: string | null; core_code: string | null; meters: number; run_min: number; last_at: string | null };
+  const plc = ((plcAll ?? []) as PlcRow[]).filter((x) => x.machine_code === line?.code);
+  const pcode = new Map((products ?? []).map((p) => [p.id, p.code]));
   const coreList = [...new Map((cores ?? []).map((c) => [c.code, c])).values()];
   return (
     <>
@@ -325,6 +330,23 @@ async function SpeedTab({ id, lineId, isLine, opCode, cfg, canPropose, meId, can
           </>
         )}
       </section>
+
+      {isLine && (
+        <section className="card mt-4 overflow-x-auto">
+          <div className="card-h">Tốc độ thực tế đo từ PLC (30 ngày)<span className="text-[13px] font-normal text-muted">
+            {line?.data_mode === 'PLC' ? 'Máy đang chế độ Tự động: lịch máy dùng số này (cần ≥ 120 phút chạy cùng mã hoặc cùng cỡ ruột)' : 'Máy đang chế độ Nhập tay/Song song: lịch máy dùng bảng tự nhập ở trên, số này để so sánh'}</span></div>
+          <table className="tbl">
+            <thead><tr><th>Công đoạn</th><th>Sản phẩm</th><th>Nhóm · lõi</th><th className="num">Mét</th><th className="num">Phút chạy</th><th className="num">m/ph thực tế</th><th>Lần cuối</th></tr></thead>
+            <tbody>
+              {plc.map((x, i) => (
+                <tr key={i}><td>{x.op_code}</td><td>{(x.product_id && pcode.get(x.product_id)) ?? '—'}</td><td>{[x.group_code, x.core_code && `lõi ${x.core_code}`].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="num">{nf(x.meters)}</td><td className="num">{nf(x.run_min)}</td><td className="num font-medium">{nf(Number(x.run_min) > 0 ? Number(x.meters) / Number(x.run_min) : 0, 1)}</td><td>{df(x.last_at)}</td></tr>
+              ))}
+              {plc.length === 0 && <tr><td colSpan={7}><Empty>Chưa có dữ liệu PLC gắn với lệnh sản xuất trong 30 ngày.</Empty></td></tr>}
+            </tbody>
+          </table>
+        </section>
+      )}
     </>
   );
 }

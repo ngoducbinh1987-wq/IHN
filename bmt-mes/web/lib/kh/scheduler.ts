@@ -2,7 +2,9 @@
 // Đơn vị thời gian: "phút xếp lịch". Mỗi ca có S phút xếp lịch = phút chạy × tỷ lệ xếp lịch (%), mỗi ngày SPD ca.
 // Quy tắc (BR-KH-04..07): đơn gấp → hạn giao sớm → gom lô cùng cỡ ruột, cùng màu (trong khung gom lô) → màu sáng trước tối;
 // gối đầu công đoạn ≥ 1 ca; chỉ xếp khi có người đủ tay nghề rảnh; xếp lại giữ nguyên phần trước mốc (đã chạy + vùng khóa).
-// Tốc độ: theo khai báo của từng máy (master.machine_speeds); máy chưa khai báo dùng tốc độ mặc định theo công đoạn.
+// Tốc độ: máy chế độ Tự động (PLC) dùng tốc độ thực tế đo từ PLC (30 ngày, đủ ≥ PLC_MIN_RUN phút chạy);
+// chế độ Nhập tay/Song song (hoặc PLC chưa đủ dữ liệu) dùng bảng tốc độ tự nhập của máy (master.machine_speeds);
+// máy chưa khai báo dùng tốc độ mặc định theo công đoạn.
 
 export type Op = 'CD1' | 'CD2' | 'CD3' | 'CD5';
 export const OPS: Op[] = ['CD1', 'CD2', 'CD3', 'CD5'];
@@ -15,11 +17,15 @@ export type SpeedCfg = {
   machine_code: string; op_code: string; product_id: string | null; group_code: string | null; core_code: string | null;
   std_mpm: number; rated_mpm: number | null; max_mpm: number | null; status: string; submitted_at?: string | null; label?: string | null;
 };
+// Tốc độ thực tế từ PLC: tổng mét và phút chạy 30 ngày theo máy × công đoạn × mã SP/nhóm/mã lõi
+export type PlcSpeedCfg = { machine_code: string; op_code: string; product_id: string | null; group_code: string | null; core_code: string | null; meters: number; run_min: number; last_at?: string | null };
+export const PLC_MIN_RUN = 120; // phút chạy tối thiểu để tin tốc độ PLC
 export type Config = {
   fill_pct: number; frozen_days: number; cutoff_time: string; downtime_reason_min: number; plc_dev_pct: number;
   auto_shifts: number; plc_loss_min: number; machines_per_operator: number;
   shifts: ShiftCfg[]; rates: RateCfg[]; changeovers: ChangeoverCfg[]; workdays?: number[] | null;
   speeds?: SpeedCfg[];   // tốc độ theo máy (trống: dùng rates)
+  plc_speeds?: PlcSpeedCfg[]; // tốc độ thực tế đo từ PLC (máy chế độ Tự động)
   group_days?: number;   // khung gom lô (ngày); 0 = không gom
 };
 export type MachineInfo = { code: string; name: string; machine_type: string; data_mode: string; tag_count: number; operators: string[] };
@@ -147,7 +153,7 @@ export function speedOf(cfg: Pick<Config, 'rates'>, op: Op, o: Pick<Order, 'size
 // Tốc độ khai báo của một máy cho một công đoạn (giống app.check_capacity):
 // ưu tiên dòng riêng mã sản phẩm → nhóm + mã lõi → mã lõi → nhóm → chung của máy; cùng mức thì dòng đã duyệt, rồi dòng mới nhất.
 // Tốc độ dùng = min(tốc độ chuẩn, danh định, tốc độ tối đa của dải hoạt động).
-export type Speed = { v: number; src: 'MAY' | 'MD'; pending: boolean };
+export type Speed = { v: number; src: 'PLC' | 'MAY' | 'MD'; pending: boolean; note?: string };
 export function machineSpeed(cfg: Pick<Config, 'speeds'>, machine: string, op: string, o: Pick<Order, 'product_id' | 'group' | 'core'>): Speed | null {
   const rows = (cfg.speeds ?? []).filter((s) => s.machine_code === machine && s.op_code === op && s.status !== 'OBSOLETE'
     && (!s.product_id || s.product_id === o.product_id) && (!s.group_code || s.group_code === o.group) && (!s.core_code || s.core_code === o.core));
@@ -161,15 +167,39 @@ export function machineSpeed(cfg: Pick<Config, 'speeds'>, machine: string, op: s
   const lim = [Number(best.std_mpm), Number(best.rated_mpm ?? best.std_mpm), Number(best.max_mpm ?? best.std_mpm)].filter((x) => x > 0);
   return lim.length ? { v: Math.min(...lim), src: 'MAY', pending: best.status !== 'APPROVED' } : null;
 }
-// Tốc độ chạy một công đoạn trên một máy: khai báo của máy, chưa có thì mặc định theo công đoạn.
-// Xoắn có quấn AL/PET liền dây: lấy tốc độ chậm hơn của hai bước.
-export function rateOn(cfg: Pick<Config, 'rates' | 'speeds'>, machine: string, op: Op, o: Pick<Order, 'size' | 'shield' | 'product_id' | 'group' | 'core'>): Speed {
+// Tốc độ thực tế PLC: cùng mã sản phẩm → cùng nhóm + mã lõi → cùng mã lõi (cỡ ruột); mỗi mức cần ≥ PLC_MIN_RUN phút chạy.
+// Xoắn + quấn AL/PET chạy cùng lượt nên PLC đo được tốc độ chung (lấy cả dòng ghi công đoạn CD3 và CD4).
+export function plcSpeed(cfg: Pick<Config, 'plc_speeds'>, machine: string, op: Op, o: Pick<Order, 'product_id' | 'group' | 'core'>): Speed | null {
+  const ops = op === 'CD3' ? ['CD3', 'CD4'] : [op];
+  const rows = (cfg.plc_speeds ?? []).filter((x) => x.machine_code === machine && ops.includes(x.op_code));
+  const tiers: ((x: PlcSpeedCfg) => boolean)[] = [
+    (x) => !!o.product_id && x.product_id === o.product_id,
+    (x) => !!o.core && x.group_code === o.group && x.core_code === o.core,
+    (x) => !!o.core && x.core_code === o.core,
+  ];
+  for (const f of tiers) {
+    const sel = rows.filter(f);
+    const m = sel.reduce((a, x) => a + Number(x.meters), 0), min = sel.reduce((a, x) => a + Number(x.run_min), 0);
+    if (min >= PLC_MIN_RUN && m > 0) return { v: m / min, src: 'PLC', pending: false, note: `${Math.round(min)} phút chạy` };
+  }
+  return null;
+}
+// Tốc độ chạy một công đoạn trên một máy theo chế độ nhập dữ liệu của máy.
+// Bảng tự nhập: xoắn có quấn AL/PET liền dây lấy tốc độ chậm hơn của hai bước.
+export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds'>, machine: string, op: Op,
+  o: Pick<Order, 'size' | 'shield' | 'product_id' | 'group' | 'core'>, mode = 'MANUAL'): Speed {
+  if (mode === 'PLC') {
+    const p = plcSpeed(cfg, machine, op, o);
+    if (p) return p;
+  }
   const one = (code: string): Speed => machineSpeed(cfg, machine, code, o) ?? { v: defRate(cfg, code, o), src: 'MD', pending: false };
+  let r: Speed;
   if (op === 'CD3' && o.shield) {
     const a = one('CD3'), b = one('CD4');
-    return { v: Math.min(a.v, b.v), src: a.src === 'MAY' || b.src === 'MAY' ? 'MAY' : 'MD', pending: a.pending || b.pending };
-  }
-  return one(op);
+    r = { v: Math.min(a.v, b.v), src: a.src === 'MAY' || b.src === 'MAY' ? 'MAY' : 'MD', pending: a.pending || b.pending };
+  } else r = one(op);
+  if (mode === 'PLC') r.note = 'máy chế độ tự động nhưng PLC chưa đủ dữ liệu';
+  return r;
 }
 
 export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates'>): Task[] {
@@ -292,10 +322,11 @@ export function schedule(
     return Math.max(p.start + S, p.end + S - run);
   };
   const spMemo = new Map<string, Speed>();
+  const modeOf = new Map(ctx.machines.map((m) => [m.code, m.data_mode]));
   const spOf = (m: string, t: Task) => {
     const k = m + '|' + t.id;
     let v = spMemo.get(k);
-    if (!v) { v = rateOn(cfg, m, t.op, t.order); spMemo.set(k, v); }
+    if (!v) { v = rateOn(cfg, m, t.op, t.order, modeOf.get(m)); spMemo.set(k, v); }
     return v;
   };
   const G = Math.max(0, Math.round(Number(cfg.group_days ?? 0)));
@@ -358,7 +389,10 @@ export function schedule(
     const dmy = (d: string | null) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'chưa có';
     if (lead !== t) reason += ` · Gom lô: chạy liền ${what(t)} để giảm đổi máy (hạn ${dmy(t.order.due)}, trong khung ${G} ngày so với ${lead.order.label} hạn ${dmy(lead.order.due)})`;
     else if (m.last && su === 0 && m.last.order.id !== t.order.id) reason += ` · Cùng ${what(t)} với việc trước, không đổi máy`;
-    if (sp.src === 'MAY') reason += ` · Tốc độ ${Math.round(sp.v * 10) / 10} m/phút theo khai báo máy${sp.pending ? ' (chưa duyệt)' : ''}`;
+    const v1 = Math.round(sp.v * 10) / 10;
+    if (sp.src === 'PLC') reason += ` · Tốc độ ${v1} m/phút thực tế PLC 30 ngày (${sp.note})`;
+    else if (sp.src === 'MAY') reason += ` · Tốc độ ${v1} m/phút theo bảng tự nhập của máy${sp.pending ? ' (chưa duyệt)' : ''}${sp.note ? ', ' + sp.note : ''}`;
+    else if (sp.note) reason += ` · Tốc độ mặc định theo công đoạn, ${sp.note}`;
     const end = st0 + su + run;
     m.slots.push({
       key: t.key, lineId: t.order.id, op: t.op, color: t.color, machine: m.code, operator: ln.w.code, lane: ln.li,

@@ -1,5 +1,5 @@
 // Kiểm thử bộ xếp lịch máy (không cần database): node --experimental-strip-types web/tests/kh-scheduler.test.ts
-import { schedule, makeCalendar, finishInfo, buildTasks, machineSpeed, rateOn, type Order, type Config, type MachineInfo, type OperatorInfo, type SpeedCfg } from '../lib/kh/scheduler.ts';
+import { schedule, makeCalendar, finishInfo, buildTasks, machineSpeed, rateOn, plcSpeed, type Order, type Config, type MachineInfo, type OperatorInfo, type SpeedCfg, type PlcSpeedCfg } from '../lib/kh/scheduler.ts';
 const cfg: Config = { fill_pct: 85, frozen_days: 3, cutoff_time: '16:00', downtime_reason_min: 5, plc_dev_pct: 0.5, auto_shifts: 10, plc_loss_min: 10, machines_per_operator: 1,
   shifts: [{ code: 'A', start_time: '06:00', end_time: '14:00', break_min: 30, active: true }, { code: 'B', start_time: '14:00', end_time: '22:00', break_min: 30, active: false }, { code: 'C', start_time: '22:00', end_time: '06:00', break_min: 30, active: false }],
   rates: [['CD1', 100, 80], ['CD2', 80, 70], ['CD3', 50, 50], ['CD4', 60, 60], ['CD5', 60, 45]].map(([op, a, b], i) => ({ op_code: op as string, label: '', unit: '', rate_small: a as number, rate_large: b as number, confirmed: false, sort: i })),
@@ -150,4 +150,31 @@ for (const s of gs.slots) if (s.op === 'CD2') {
   if (Math.abs((s.end - s.runStart) * s.rate - s.meters) > 1) bad(`slot ${s.key} phút chạy không khớp tốc độ`);
 }
 console.log('tốc độ: line 1', gs.byMachine.get('EXT-SI-01')!.length, 'việc, line 2', gs.byMachine.get('EXT-SI-02')!.length, 'việc; lý do mẫu:', gs.slots.find((s) => s.machine === 'EXT-SI-01')!.reason);
+// ---------- Chế độ Tự động: tốc độ thực tế từ PLC ----------
+const plc = (machine_code: string, op_code: string, meters: number, run_min: number, x: Partial<PlcSpeedCfg> = {}): PlcSpeedCfg =>
+  ({ machine_code, op_code, product_id: null, group_code: 'SIF', core_code: '1P5', meters, run_min, ...x });
+const cfgP = { ...cfgS, plc_speeds: [
+  plc('EXT-SI-01', 'CD2', 6000, 100), plc('EXT-SI-01', 'CD2', 4000, 50, { group_code: 'PFR' }),   // cùng cỡ 1P5: 10000 m / 150 phút
+  plc('EXT-SI-02', 'CD2', 3000, 60),                                                               // chưa đủ 120 phút
+  plc('TWS-01', 'CD4', 5000, 125, { group_code: 'CTL', core_code: 'A14' }),
+] };
+const oP = { ...mix[0], core: '1P5' };
+eq(plcSpeed(cfgP, 'EXT-SI-01', 'CD2', oP)!.v, 10000 / 150, 'PLC: gộp cùng cỡ ruột khi nhóm chưa đủ phút chạy');
+eq(rateOn(cfgP, 'EXT-SI-01', 'CD2', oP, 'PLC').v, 10000 / 150, 'Máy chế độ Tự động dùng tốc độ PLC');
+eq(rateOn(cfgP, 'EXT-SI-01', 'CD2', oP, 'MANUAL').v, 90, 'Máy chế độ Nhập tay dùng bảng tự nhập (bỏ qua PLC)');
+eq(rateOn(cfgP, 'EXT-SI-01', 'CD2', oP, 'BOTH').v, 90, 'Chế độ Song song vẫn dùng bảng tự nhập');
+const fb = rateOn(cfgP, 'EXT-SI-02', 'CD2', oP, 'PLC');
+eq(fb.v, 40, 'PLC chưa đủ 120 phút chạy thì dùng bảng tự nhập');
+if (!fb.note) bad('phải ghi chú PLC chưa đủ dữ liệu');
+eq(rateOn(cfgP, 'TWS-01', 'CD3', { ...mix[0], group: 'CTL', core: 'A14', shield: true }, 'PLC').v, 40, 'Xoắn + AL/PET: PLC đo tốc độ chung');
+const mP = machines.map((m) => m.code === 'EXT-SI-01' ? { ...m, data_mode: 'PLC' } : m);
+const mixP = mix.map((o) => ({ ...o, core: o.size === 1.5 ? '1P5' : '2P5' }));
+const gp = schedule(mixP, { ...ctx, machines: mP, cfg: { ...cfgP, group_days: 7 } });
+check(gp, mixP, 'PLC');
+for (const s of gp.slots) if (s.op === 'CD2' && s.machine === 'EXT-SI-01') {
+  const o = mixP.find((x) => x.id === s.lineId)!;
+  const want = o.core === '1P5' ? 10000 / 150 : 90;
+  if (Math.abs(s.rate - want) > 1e-9) bad(`PLC slot ${s.key} tốc độ ${s.rate} ≠ ${want}`);
+}
+console.log('PLC lý do mẫu:', gp.slots.find((s) => s.machine === 'EXT-SI-01' && s.reason.includes('PLC'))?.reason);
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

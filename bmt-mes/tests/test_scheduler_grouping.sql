@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026003100_scheduler_grouping: khung gom lô, tốc độ theo máy trong app.v_kh_config, core_code trong v_kh_plan_lines.
+-- Kiểm thử migration 20261026003100_scheduler_grouping và 20261026003200_plc_speeds: khung gom lô, tốc độ theo máy trong app.v_kh_config, core_code trong v_kh_plan_lines.
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 set client_min_messages = warning;
 begin;
@@ -86,5 +86,34 @@ select pg_temp.ok(coalesce(pg_temp.api_val($q$select count(*)::text from app.v_k
 select pg_temp.ok(exists (select 1 from information_schema.columns where table_schema = 'app' and table_name = 'v_kh_plan_lines' and column_name = 'core_code'),
   'app.v_kh_plan_lines có cột core_code (chọn tốc độ theo mã lõi)');
 select pg_temp.ok(not has_function_privilege('anon', 'app.kh_save_config(jsonb,text)', 'execute'), 'anon không gọi được app.kh_save_config');
+
+-- ================================================================ 4. Tốc độ thực tế từ PLC (migration 20261026003200)
+create temp table g (k text primary key, v uuid);
+with x as (
+  insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
+  select 'LSX-G1', p.id, p.current_spec_id, h.id, 1000, 500, 'Bobin gỗ', 'KAVIX'
+  from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id
+  order by p.code limit 1 returning id)
+insert into g select 'wo', id from x;
+with x as (
+  insert into mfg.wo_operations (wo_id, op_code, seq, machine_id)
+  select (select v from g where k = 'wo'), 'CD2', 2, id from master.machines where code = 'EXT-SI-01' returning id)
+insert into g select 'op', id from x;
+insert into iot.telemetry_1m (machine_id, bucket, wo_op_id, run_seconds, avg_speed, meters)
+select m.id, date_trunc('minute', now()) - interval '1 day' + n * interval '1 minute', (select v from g where k = 'op'), 60, 80, 80
+from master.machines m, generate_series(1, 150) n where m.code = 'EXT-SI-01'
+union all  -- bộ đếm nhảy: bỏ
+select m.id, date_trunc('minute', now()) - interval '2 days', (select v from g where k = 'op'), 60, 80, 999999 from master.machines m where m.code = 'EXT-SI-01'
+union all  -- quá 30 ngày: bỏ
+select m.id, date_trunc('minute', now()) - interval '40 days', (select v from g where k = 'op'), 60, 80, 50 from master.machines m where m.code = 'EXT-SI-01'
+union all  -- dừng gần hết phút: bỏ
+select m.id, date_trunc('minute', now()) - interval '3 days', (select v from g where k = 'op'), 10, 80, 13 from master.machines m where m.code = 'EXT-SI-01'
+on conflict do nothing;
+select pg_temp.as_user('G_SXTP');
+select pg_temp.ok(pg_temp.api_val($q$select x->>'run_min' || '|' || (x->>'meters') from app.v_kh_config, jsonb_array_elements(plc_speeds) x
+  where x->>'machine_code' = 'EXT-SI-01' and x->>'op_code' = 'CD2' and x->>'product_id' = (select product_id::text from mfg.work_orders where wo_no = 'LSX-G1')$q$) = '150.0|12000.0',
+  'Tốc độ PLC 30 ngày: 12.000 m / 150 phút chạy (bỏ phút bộ đếm nhảy, phút dừng, dữ liệu quá 30 ngày)');
+select pg_temp.ok(not has_function_privilege('authenticated', 'mfg.plc_speeds(integer)', 'execute')
+  and not has_function_privilege('anon', 'app.kh_plc_speeds()', 'execute'), 'Người dùng không gọi thẳng hàm tổng hợp PLC; anon không đọc được');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;

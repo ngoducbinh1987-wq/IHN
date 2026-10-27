@@ -102,6 +102,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
               </tr>
             ))}</tbody>
           </table></div>
+          <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Tốc độ xếp lịch theo cách nhập: <b>Nhập tay</b> và <b>Song song</b> dùng bảng tốc độ tự nhập của máy (chủng loại × cỡ ruột); <b>Tự động (PLC)</b> dùng tốc độ thực tế đo từ PLC 30 ngày gần nhất, cần ít nhất 120 phút chạy cùng mã hoặc cùng cỡ ruột, chưa đủ thì dùng bảng tự nhập.</p>
         </section>
 
         <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">

@@ -47,6 +47,7 @@ export async function loadConfig(db: Db) {
     speeds: ((c.speeds ?? []) as Record<string, unknown>[]).map((x) => ({
       ...x, std_mpm: Number(x.std_mpm), rated_mpm: x.rated_mpm == null ? null : Number(x.rated_mpm), max_mpm: x.max_mpm == null ? null : Number(x.max_mpm),
     })) as Config['speeds'],
+    plc_speeds: ((c.plc_speeds ?? []) as Record<string, unknown>[]).map((x) => ({ ...x, meters: Number(x.meters), run_min: Number(x.run_min) })) as Config['plc_speeds'],
   } as Config;
   const ORDER = ['BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02'];
   const machines = ((m ?? []) as MachineInfo[]).map((x) => ({ ...x, tag_count: Number(x.tag_count) }))

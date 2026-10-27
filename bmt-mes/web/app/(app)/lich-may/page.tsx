@@ -469,7 +469,7 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
               ? <>lô có hạn giao không muộn hơn lô hạn sớm nhất đang chờ cùng máy quá <b>{c.group_days} ngày</b> được chạy liền nếu ít phút đổi máy hơn: cùng cỡ ruột, cùng màu, cùng mã chạy liền nhau (không đổi máy) → đổi màu sáng sang tối → đổi lớn (tối sang sáng phải xả, đổi cỡ, thay khuôn). Đơn gấp không bị lô thường vượt.</>
               : <>đang tắt (khung gom 0 ngày): chạy đúng thứ tự hạn giao.</>}</li>
             <li>Màu <b>sáng chạy trước, tối sau</b>; lô đầu tiên của máy chọn màu sáng nhất.</li>
-            <li>Mỗi việc vào <b>máy cùng loại có người đủ tay nghề rảnh sớm nhất</b>, đã tính phút đổi máy. Tốc độ theo <b>khai báo của từng máy</b> (Quản lý máy → Tốc độ); máy chưa khai báo dùng tốc độ mặc định theo công đoạn.</li>
+            <li>Mỗi việc vào <b>máy cùng loại có người đủ tay nghề rảnh sớm nhất</b>, đã tính phút đổi máy. Tốc độ: máy chế độ <b>Nhập tay</b> dùng <b>bảng tốc độ tự nhập</b> của máy theo chủng loại × cỡ ruột (Quản lý máy → Tốc độ); máy chế độ <b>Tự động</b> dùng <b>tốc độ thực tế đo từ PLC</b> 30 ngày gần nhất (cần ít nhất 120 phút chạy cùng mã / cùng cỡ, chưa đủ thì dùng bảng tự nhập); chưa khai báo thì dùng tốc độ mặc định theo công đoạn.</li>
             <li><b>Gối đầu công đoạn:</b> công đoạn sau bắt đầu khi công đoạn trước đã chạy ít nhất 1 ca và không xong trước công đoạn trước.</li>
             <li>Mỗi ca chỉ xếp <b>{c.fill_pct}%</b> thời gian chạy.</li>
             <li>Khi xếp lại: <b>phần đã chạy và vùng khóa {c.frozen_days} ngày giữ nguyên</b>. Chen vào vùng khóa phải qua đơn phát sinh mức C.</li>
