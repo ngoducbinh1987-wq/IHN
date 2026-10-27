@@ -140,7 +140,13 @@ select pg_temp.ok((select count(*) from plan.mrp_runs where plan_id = (select v 
 select pg_temp.ok((select summary like 'Thử 4200: 2 SKU, 17.000 m%' from wf.approval_requests where id = (select v from t where k = 'req')),
   'Tóm tắt hồ sơ duyệt cập nhật theo số mới');
 -- Thêm mã: chưa phát hành spec thì chặn; mã đã có thì chặn; mã đã phát hành thì thêm được
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select id from master.products where code = 'SFR-2P-1'), 3000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Thêm')$$,
+-- Mã chưa phát hành spec: database mới là SFR-2P-1; dữ liệu thật lấy mã đầu tiên còn nháp
+insert into t select 'draft_prod', coalesce((select id from master.products where code = 'SFR-2P-1'
+    and (select status from master.product_specs where id = current_spec_id) <> 'RELEASED'),
+  (select p.id from master.products p join master.product_specs s on s.id = p.current_spec_id
+    where s.status <> 'RELEASED' and p.code not in ('PFR-2C-1P5', 'SIF-1C-1P5') order by p.code limit 1));
+select pg_temp.ok((select v from t where k = 'draft_prod') is not null, 'Có mã chưa phát hành spec để thử');
+select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select v from t where k = 'draft_prod'), 3000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Thêm')$$,
   'chưa phát hành spec', 'Thêm mã chưa phát hành spec vào kế hoạch chính thức: chặn');
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select id from master.products where code = 'SIF-1C-1P5'), 3000, 1, 'Cuộn PE', 200, 'KAVIX', 'Thêm')$$,
   'đã có trong kế hoạch', 'Thêm mã đã có: chặn, sửa dòng có sẵn');
