@@ -67,8 +67,9 @@ select pg_temp.ok((select string_agg(level_label || ':' || role_code, ' | ' orde
   = 'Giám đốc duyệt kế hoạch tháng:BGD | Chủ tịch HĐQT chốt kế hoạch tháng:BGD', 'Kế hoạch tháng: bước 1 Giám đốc duyệt, bước 2 Chủ tịch HĐQT chốt');
 select pg_temp.ok((select submit_role is null and submit_label = 'TP SX lập kế hoạch tháng, chạy MRP' from wf.approval_flows where doc_type = 'PLAN'),
   'TP SX lập kế hoạch tháng, chạy MRP');
-select pg_temp.ok((select enabled and cardinality(steps) = 1 from (select bool_and(enabled) enabled, array_agg(seq) steps from wf.approval_steps where doc_type = 'PLAN_ADJ') x),
-  'Phiếu điều chỉnh kế hoạch tháng giữ nguyên một bước Chủ tịch');
+select pg_temp.ok((select string_agg(level_label || ':' || role_code, ' | ' order by seq) from wf.approval_steps where doc_type = 'PLAN_ADJ' and enabled)
+  = 'Giám đốc duyệt đề xuất hiệu chỉnh kế hoạch tháng:BGD | Chủ tịch HĐQT duyệt hiệu chỉnh kế hoạch tháng:BGD',
+  'Đề xuất hiệu chỉnh kế hoạch tháng: Giám đốc duyệt rồi Chủ tịch HĐQT duyệt (migration 4500)');
 -- Giao đích danh như cấu hình thật: bước 1 Giám đốc, bước 2 Chủ tịch
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('H_GD')] where doc_type = 'PLAN' and seq = 1;
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('H_CT')] where doc_type = 'PLAN' and seq = 2;

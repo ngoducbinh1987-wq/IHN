@@ -136,7 +136,9 @@ await ctx.close();
 [ctx, page] = await ctxFor();
 await login(page, 'sx.kh@bmt.test');
 await page.goto(`${BASE}/ke-hoach/moi`);
-await page.fill('input[name=period_label]', 'Tháng 11/2026');
+await page.selectOption('select[name=month]', '11');
+await page.selectOption('select[name=year]', String(new Date().getFullYear()));
+if (await page.locator('input[name=mode]').count()) fail('Thêm kế hoạch: không còn chế độ sơ bộ');
 await page.fill('input[name=need_date]', '2026-11-20');
 await Promise.all([page.waitForURL('**/ke-hoach/**'), page.click('button:has-text("Tạo kế hoạch")')]);
 await expectOk(page, 'Tạo kế hoạch');
@@ -283,31 +285,35 @@ await ctx.close();
   ok('Đã sinh PR: kết quả MRP bị khóa');
   await c.close();
 }
-// 6a''. Phiếu điều chỉnh kế hoạch tháng: Kế hoạch SX lập (đổi sản lượng 3.500 → 4.000 m), Chủ tịch HĐQT duyệt, MES áp vào kế hoạch
+// 6a''. Đề xuất hiệu chỉnh kế hoạch tháng: Kế hoạch SX lập (đổi sản lượng 3.500 → 4.000 m), Giám đốc → Chủ tịch HĐQT duyệt, MES áp + MRP hiệu chỉnh
 [ctx, page] = await ctxFor();
 await login(page, 'sx.kh@bmt.test');
 await page.goto(planUrl);
 await page.fill('#dieu-chinh input[name=reason]', 'Khách đặt thêm 500 m');
-await Promise.all([page.waitForURL('**/ke-hoach/dieu-chinh/**'), page.click('#dieu-chinh button:has-text("Lập phiếu điều chỉnh")')]);
-await expectOk(page, 'Lập phiếu điều chỉnh kế hoạch tháng');
+await Promise.all([page.waitForURL('**/ke-hoach/dieu-chinh/**'), page.click('#dieu-chinh button:has-text("Lập đề xuất hiệu chỉnh")')]);
+await expectOk(page, 'Lập đề xuất hiệu chỉnh kế hoạch tháng');
 const adjNo = (await page.textContent('main h1')).split(' ·')[0].trim();
 await page.selectOption('select[name=kind_0]', 'QTY');
 await page.selectOption('select[name=line_0]', { index: 1 });
 await page.fill('input[name=qty_0]', '4.000');
-await clickNav(page, 'button:has-text("Lưu và gửi Chủ tịch HĐQT duyệt")');
-await expectOk(page, `Gửi ${adjNo} cho Chủ tịch HĐQT duyệt`);
-if (!(await page.textContent('main')).includes('3.500 → 4.000')) fail('Phiếu điều chỉnh phải hiện 3.500 → 4.000 m');
+await clickNav(page, 'button:has-text("Lưu nháp")');
+await expectOk(page, 'Lưu nháp đề xuất hiệu chỉnh');
+if (!(await page.locator('#mrp-hieu-chinh tr:has-text("CU-024")').count())) fail('Bảng MRP hiệu chỉnh (xem trước) phải có CU-024');
+ok('Bảng MRP hiệu chỉnh xem trước khi gửi duyệt');
+await clickNav(page, 'button:has-text("Lưu và gửi Giám đốc duyệt")');
+await expectOk(page, `Gửi ${adjNo} cho Giám đốc duyệt`);
+if (!(await page.textContent('main')).includes('3.500 → 4.000')) fail('Đề xuất hiệu chỉnh phải hiện 3.500 → 4.000 m');
 await page.screenshot({ path: `${SHOTS}/05c-phieu-dieu-chinh.png`, fullPage: true });
 await ctx.close();
+await approveAs('bgd@bmt.test', adjNo, 'Giám đốc');
 await approveAs('ct@bmt.test', adjNo, 'Chủ tịch HĐQT');
 [ctx, page] = await ctxFor();
 await login(page, 'sx.kh@bmt.test');
 await page.goto(planUrl);
 if (!(await page.locator('tr:has-text("PFR-2C-1P5")').first().innerText()).includes('4.000')) fail('Duyệt xong: dòng kế hoạch phải thành 4.000 m');
-if (!(await page.locator('#mrp-stale').count())) fail('Duyệt điều chỉnh xong phải báo chạy lại dự trù');
-await clickNav(page, 'button:has-text("Chạy MRP")');
+if (await page.locator('#mrp-stale').count()) fail('Duyệt hiệu chỉnh xong MES đã chạy MRP hiệu chỉnh: không còn báo chạy lại');
 if (!(await page.textContent('main')).includes('Dự trù nhiều tầng')) fail('Trang kế hoạch phải có bảng dự trù nhiều tầng');
-ok('Chủ tịch duyệt phiếu điều chỉnh: MES áp 4.000 m vào kế hoạch, báo chạy lại dự trù; dự trù nhiều tầng hiện bảng TP → BTP → NVL');
+ok('Giám đốc → Chủ tịch duyệt đề xuất hiệu chỉnh: MES áp 4.000 m vào kế hoạch, chạy MRP hiệu chỉnh; dự trù nhiều tầng hiện bảng TP → BTP → NVL');
 await ctx.close();
 
 // 6b. Thêm mới: vật tư, đề xuất mua thủ công → người duyệt tiếp theo nhận thông báo → duyệt

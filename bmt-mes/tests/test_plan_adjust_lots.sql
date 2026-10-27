@@ -48,7 +48,8 @@ insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('P_CT','BGD'),('P_GD','BGD'),('P_SXTP','SX_TP'),('P_SXKH','SX_KH'),('P_MUATP','MUA_TP'),
   ('P_KTTP','KT_TP'),('P_VH','VAN_HANH')) u(code, role) on u.code = p.employee_code;
 update core.profiles set status = 'LOCKED' where (employee_code is null or employee_code !~ '^P_') and status = 'ACTIVE';
-update wf.approval_steps set assignee_ids = array[pg_temp.uid('P_CT')] where doc_type in ('PLAN', 'PLAN_ADJ') and seq = (case doc_type when 'PLAN' then 2 else 1 end);
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('P_CT')] where doc_type in ('PLAN', 'PLAN_ADJ') and seq = 2;
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('P_GD')] where doc_type = 'PLAN_ADJ' and seq = 1;
 update wf.approval_steps set enabled = true where doc_type = 'PLAN' and seq = 2;
 
 -- Spec PFR-2C-1P5 phát hành (database mới chưa phát hành)
@@ -130,20 +131,25 @@ select pg_temp.ok((select count(*) > 0 and bool_and(extra_need > 0) from imp) an
   'Xem trước ảnh hưởng vật tư: nhu cầu thêm theo BOM (thêm 3.000 m + tăng 2.000 m)');
 insert into t select 'adj_req', app.adj_submit((select v from t where k = 'adj'));
 select pg_temp.ok((select status = 'PENDING_APPROVAL' from plan.plan_adjustments where id = (select v from t where k = 'adj'))
-  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_CT') and title like '%PDC-%'),
-  'Gửi duyệt: phiếu chờ Chủ tịch HĐQT, Chủ tịch nhận thông báo');
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title like '%PDC-%'),
+  'Gửi duyệt: đề xuất hiệu chỉnh chờ Giám đốc (bước 1), Giám đốc nhận thông báo');
 select pg_temp.fails($$select app.adj_save((select v from t where k = 'adj'), null, '[]')$$, 'Người lập không sửa', 'Đã gửi duyệt thì người lập không sửa dòng (người duyệt sửa)');
+select pg_temp.as_user('P_CT');
+select pg_temp.fails($$select wf.act((select v from t where k = 'adj_req'), 'APPROVE', null)$$, '', 'Chủ tịch chưa duyệt được khi Giám đốc chưa duyệt bước 1');
 select pg_temp.as_user('P_GD');
-select pg_temp.fails($$select wf.act((select v from t where k = 'adj_req'), 'APPROVE', null)$$, '', 'Giám đốc (không phải Chủ tịch) không duyệt phiếu điều chỉnh kế hoạch tháng');
+select pg_temp.ok(wf.act((select v from t where k = 'adj_req'), 'APPROVE', 'Đồng ý') = 'PENDING', 'Giám đốc duyệt bước 1, chuyển Chủ tịch');
+select pg_temp.fails($$select wf.act((select v from t where k = 'adj_req'), 'APPROVE', null)$$, '', 'Giám đốc không duyệt luôn bước Chủ tịch');
 select pg_temp.as_user('P_CT');
 select wf.act((select v from t where k = 'adj_req'), 'APPROVE', 'Đồng ý');
 select pg_temp.ok((select status = 'APPROVED' and applied_at is not null from plan.plan_adjustments where id = (select v from t where k = 'adj'))
   and (select qty_m = 12000 and due_date = pg_temp.today() + 15 from plan.plan_lines where id = (select v from t where k = 'line'))
   and exists (select 1 from plan.plan_lines where plan_id = (select v from t where k = 'plan') and adjustment_id = (select v from t where k = 'adj') and qty_m = 3000)
-  and (select mrp_stale from plan.production_plans where id = (select v from t where k = 'plan')),
-  'Chủ tịch duyệt: MES áp vào kế hoạch (thêm dòng 3.000 m, 12.000 m, hạn mới), đánh dấu chạy lại dự trù');
-select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_SXTP') and title like 'Kế hoạch tháng đã điều chỉnh%'),
-  'TP SX, Giám đốc, mua hàng được báo chạy lại dự trù, xếp lại lịch');
+  and (select not mrp_stale from plan.production_plans where id = (select v from t where k = 'plan'))
+  and (select mrp_run_id = (select id from plan.mrp_runs where plan_id = (select v from t where k = 'plan') order by run_at desc limit 1)
+       from plan.plan_adjustments where id = (select v from t where k = 'adj')),
+  'Chủ tịch duyệt: MES áp vào kế hoạch (thêm dòng 3.000 m, 12.000 m, hạn mới) và chạy MRP hiệu chỉnh');
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_SXTP') and title like 'Kế hoạch tháng đã hiệu chỉnh%'),
+  'TP SX, Giám đốc, mua hàng được báo kết quả MRP hiệu chỉnh, xếp lại lịch');
 select pg_temp.ok((select doc_link like '/ke-hoach/dieu-chinh/%' from app.v_approvals where id = (select v from t where k = 'adj_req')),
   'Trang duyệt mở đúng phiếu điều chỉnh');
 -- Bỏ dòng đang sản xuất → chặn

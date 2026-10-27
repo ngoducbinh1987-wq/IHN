@@ -11,26 +11,19 @@ const back = (id: string, kind: 'ok' | 'err', msg: string) => redirect(`/ke-hoac
 
 export async function createPlan(form: FormData) {
   const supabase = await createClient();
-  const { data: no, error: e1 } = await supabase.schema('core').rpc('next_no', { p_prefix: 'KH', p_width: 2 });
-  if (e1) redirect('/ke-hoach/moi?err=' + encodeURIComponent(e1.message));
-  const { data, error } = await supabase.schema('plan').from('production_plans').insert({
-    plan_no: no as string,
-    period_label: String(form.get('period_label')).trim(),
-    material_need_date: String(form.get('need_date')),
-    mode: form.get('mode') === 'PRELIMINARY' ? 'PRELIMINARY' : 'OFFICIAL',
-  }).select('id').single();
+  const { data, error } = await supabase.schema('app').rpc('create_plan', {
+    p_year: Number(form.get('year')), p_month: Number(form.get('month')), p_need_date: String(form.get('need_date') ?? '') || null,
+  });
   if (error) redirect('/ke-hoach/moi?err=' + encodeURIComponent(error.message));
-  redirect(`/ke-hoach/${data.id}?ok=` + encodeURIComponent(`Đã tạo kế hoạch ${no}. Thêm các dòng sản phẩm bên dưới.`));
+  redirect(`/ke-hoach/${data}?ok=` + encodeURIComponent('Đã tạo kế hoạch tháng. Thêm các dòng sản phẩm bên dưới.'));
 }
 
 export async function saveLine(form: FormData) {
   const planId = String(form.get('plan_id'));
   const productId = String(form.get('product_id'));
   const qty = parseNum(form.get('qty_m'));
-  const lots = parseNum(form.get('run_lots'));
   const mpp = parseNum(form.get('m_per_pack'));
   if (qty === null || Number.isNaN(qty) || qty < 0) back(planId, 'err', 'Sản lượng (m) phải là số ≥ 0');
-  if (lots === null || Number.isNaN(lots) || lots < 1) back(planId, 'err', 'Số lô chạy phải ≥ 1');
   if (mpp === null || Number.isNaN(mpp) || mpp <= 0) back(planId, 'err', 'Chọn quy cách m/kiện');
 
   const supabase = await createClient();
@@ -39,7 +32,7 @@ export async function saveLine(form: FormData) {
   const { data: prod } = await supabase.schema('master').from('products').select('code, current_spec_id').eq('id', productId).single();
   if (!prod?.current_spec_id) back(planId, 'err', 'Sản phẩm chưa có spec');
   const row = {
-    plan_id: planId, product_id: productId, spec_id: prod!.current_spec_id, qty_m: qty, run_lots: Math.round(lots!),
+    plan_id: planId, product_id: productId, spec_id: prod!.current_spec_id, qty_m: qty, run_lots: 1,
     m_per_pack: mpp, pack_type: String(form.get('pack_type')), brand: String(form.get('brand')),
     single_color: String(form.get('single_color') ?? '').trim() || null, wo_note: String(form.get('wo_note') ?? '').trim() || null,
   };
@@ -68,14 +61,12 @@ export async function chairSaveLine(form: FormData) {
   const planId = String(form.get('plan_id'));
   const lineId = String(form.get('line_id') ?? '') || null;
   const qty = parseNum(form.get('qty_m'));
-  const lots = parseNum(form.get('run_lots'));
   const mpp = parseNum(form.get('m_per_pack'));
   if (qty === null || Number.isNaN(qty) || qty <= 0) back(planId, 'err', 'Sản lượng (m) phải lớn hơn 0 (bỏ mã thì bấm Bỏ mã)');
-  if (lots === null || Number.isNaN(lots) || lots < 1) back(planId, 'err', 'Số lô chạy phải ≥ 1');
   if (mpp === null || Number.isNaN(mpp) || mpp <= 0) back(planId, 'err', 'Chọn quy cách m/kiện');
   const supabase = await createClient();
   const { error } = await supabase.schema('app').rpc('plan_chair_save_line', {
-    p_plan: planId, p_line: lineId, p_product: lineId ? null : String(form.get('product_id')), p_qty: qty, p_lots: Math.round(lots!),
+    p_plan: planId, p_line: lineId, p_product: lineId ? null : String(form.get('product_id')), p_qty: qty, p_lots: 1,
     p_pack_type: String(form.get('pack_type')), p_m_per_pack: mpp, p_brand: String(form.get('brand')), p_reason: String(form.get('reason') ?? ''),
   });
   if (error) back(planId, 'err', error.message);
@@ -136,16 +127,19 @@ export async function adjustMrp(form: FormData) {
   back(planId, 'ok', 'Đã điều chỉnh kết quả MRP. Đề xuất mua sinh ra sẽ dùng số liệu mới.');
 }
 
-// ---------------- Phiếu điều chỉnh kế hoạch tháng (TP SX lập, Chủ tịch HĐQT duyệt) ----------------
+// ---------------- Đề xuất hiệu chỉnh kế hoạch tháng (TP SX lập → Giám đốc → Chủ tịch HĐQT duyệt) ----------------
 const adjBack = (id: string, kind: 'ok' | 'err', msg: string) => redirect(`/ke-hoach/dieu-chinh/${id}?${kind}=${encodeURIComponent(msg)}`);
 
 export async function createAdj(form: FormData) {
   const planId = String(form.get('plan_id'));
   const supabase = await createClient();
   const { data, error } = await supabase.schema('app').rpc('adj_create', { p_plan: planId, p_reason: String(form.get('reason') ?? '') });
-  if (error && form.get('from') === 'list') redirect('/ke-hoach/dieu-chinh?err=' + encodeURIComponent(error.message));
-  if (error) back(planId, 'err', error.message);
-  redirect(`/ke-hoach/dieu-chinh/${data}?ok=` + encodeURIComponent('Đã lập phiếu nháp. Thêm các dòng điều chỉnh rồi gửi Chủ tịch HĐQT duyệt.'));
+  if (error) {
+    if (form.get('from') === 'moi') redirect('/ke-hoach/moi?err=' + encodeURIComponent(error.message));
+    if (form.get('from') === 'list') redirect('/ke-hoach/dieu-chinh?err=' + encodeURIComponent(error.message));
+    back(planId, 'err', error.message);
+  }
+  redirect(`/ke-hoach/dieu-chinh/${data}?ok=` + encodeURIComponent('Đã lập đề xuất hiệu chỉnh (nháp). Thêm các dòng, xem bảng MRP hiệu chỉnh rồi gửi Giám đốc duyệt.'));
 }
 
 // Đọc các dòng của form (tối đa 12): loại, dòng kế hoạch / mã mới, số mét, hạn giao, ưu tiên, ghi chú
@@ -172,7 +166,7 @@ export async function saveAdj(form: FormData) {
   const { error } = await supabase.schema('app').rpc('adj_save', { p_adj: id, p_reason: String(form.get('reason') ?? ''), p_lines: adjLines(form, id) });
   if (error) adjBack(id, 'err', error.message);
   revalidatePath(`/ke-hoach/dieu-chinh/${id}`);
-  adjBack(id, 'ok', 'Đã lưu phiếu điều chỉnh');
+  adjBack(id, 'ok', 'Đã lưu đề xuất hiệu chỉnh. Bảng MRP hiệu chỉnh bên dưới đã tính lại.');
 }
 
 export async function submitAdj(form: FormData) {
@@ -184,7 +178,7 @@ export async function submitAdj(form: FormData) {
   if (error) adjBack(id, 'err', error.message);
   after(async () => { await flushEmailOutbox(); });
   revalidatePath('/', 'layout');
-  adjBack(id, 'ok', 'Đã gửi Chủ tịch HĐQT duyệt. Duyệt xong MES tự áp vào kế hoạch tháng.');
+  adjBack(id, 'ok', 'Đã gửi Giám đốc duyệt, sau đó Chủ tịch HĐQT duyệt. Duyệt xong MES áp vào kế hoạch tháng và chạy MRP hiệu chỉnh.');
 }
 
 export async function cancelAdj(form: FormData) {
@@ -193,5 +187,5 @@ export async function cancelAdj(form: FormData) {
   const { error } = await supabase.schema('app').rpc('adj_cancel', { p_adj: id });
   if (error) adjBack(id, 'err', error.message);
   revalidatePath(`/ke-hoach/dieu-chinh/${id}`);
-  adjBack(id, 'ok', 'Đã hủy phiếu nháp');
+  adjBack(id, 'ok', 'Đã hủy đề xuất nháp');
 }

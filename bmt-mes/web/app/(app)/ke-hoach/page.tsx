@@ -29,13 +29,12 @@ export default async function PlansPage({ searchParams }: { searchParams: Promis
       <div className="card overflow-x-auto">
         {data && data.length > 0 ? (
           <table className="tbl">
-            <thead><tr><th>Kế hoạch</th><th>Chế độ</th><th className="num">Số SKU</th><th className="num">Tổng mét</th><th>Ngày cần vật tư</th><th>MRP</th><th>Trạng thái</th></tr></thead>
+            <thead><tr><th>Kế hoạch</th><th className="num">Số SKU</th><th className="num">Tổng mét</th><th>Ngày cần vật tư</th><th>MRP</th><th>Trạng thái</th></tr></thead>
             <tbody>
               {data.map((p) => (
                 <tr key={p.id}>
                   <td className="py-3"><Link className="text-[15px] font-medium text-brand hover:underline" href={`/ke-hoach/${p.id}`}>{p.plan_no} – {p.period_label}</Link>
                     <div className="text-[13px] text-muted">Tạo lúc {df(p.created_at, true)}</div></td>
-                  <td>{p.mode === 'OFFICIAL' ? 'Chính thức' : <Pill tone="warn">Sơ bộ</Pill>}</td>
                   <td className="num">{p.line_count}</td><td className="num">{nf(p.total_m)}</td>
                   <td>{df(p.material_need_date)}</td>
                   <td>{p.last_run_id ? <Pill tone="ok">Đã chạy</Pill> : <Pill>Chưa chạy</Pill>}</td>
@@ -44,7 +43,7 @@ export default async function PlansPage({ searchParams }: { searchParams: Promis
               ))}
             </tbody>
           </table>
-        ) : <Empty>Chưa có kế hoạch nào. Bấm “+ Thêm kế hoạch” để tạo kế hoạch kỳ đầu.</Empty>}
+        ) : <Empty>Chưa có kế hoạch nào. Bấm “+ Thêm kế hoạch” để lập kế hoạch tháng.</Empty>}
       </div>
     </>
   );

@@ -297,11 +297,14 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
     const [{ data: adj }, { data: lines }, { data: imp }] = await Promise.all([
       supabase.schema('app').from('v_plan_adjustments').select('*').eq('id', a.doc_id).maybeSingle(),
       supabase.schema('app').from('v_plan_adjustment_lines').select('*').eq('adj_id', a.doc_id).order('line_no'),
-      supabase.schema('app').rpc('adj_impact', { p_adj: a.doc_id }),
+      supabase.schema('app').rpc('adj_mrp', { p_adj: a.doc_id }),
     ]);
     const KIND: Record<string, string> = { ADD: 'Thêm mã / lô', QTY: 'Đổi sản lượng', DUE: 'Đổi hạn, ưu tiên', REMOVE: 'Bỏ mã' };
     const d = (x: string | null) => (x ? `${x.slice(8, 10)}/${x.slice(5, 7)}` : '—');
-    const short = ((imp ?? []) as { material_code: string; projected_after: number; uom: string }[]).filter((x) => Number(x.projected_after) < 0);
+    type R = { code: string; uom: string; buy_more: number; pending_before: number; pending_after: number; action: string };
+    const rv = (imp ?? {}) as { rows?: R[]; reductions?: { pr_no: string; material_code: string; old: number; new: number; uom: string }[]; error?: string; applied?: boolean };
+    const buy = (rv.rows ?? []).filter((x) => Number(x.buy_more) > 0);
+    const keep = (rv.rows ?? []).filter((x) => x.action === 'KEEP');
     return (
       <div className="flex flex-col gap-3">
         <Field label="Kế hoạch">{adj?.plan_no}</Field>
@@ -317,7 +320,13 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
             ))}</tbody>
           </table>
         </div>
-        <Field label="Vật tư">{short.length ? <span className="text-bad">Thiếu sau điều chỉnh: {short.map((x) => `${x.material_code} ${nf(-x.projected_after, 1)} ${x.uom}`).join(', ')} (đề xuất mua bổ sung sau khi duyệt)</span> : 'Đủ theo lần dự trù gần nhất'}</Field>
+        <Field label="MRP hiệu chỉnh">{rv.error ? <span className="text-muted">Chưa tính được: {rv.error}</span> : (
+          <div className="flex flex-col gap-1">
+            <span className={buy.length ? 'text-bad' : ''}>{buy.length ? `Mua thêm: ${buy.map((x) => `${x.code} ${nf(x.buy_more, 1)} ${x.uom}`).join(', ')}` : 'Không phải mua thêm'}</span>
+            {(rv.reductions ?? []).length > 0 && <span>{rv.applied ? 'Đã giảm' : 'Giảm khi duyệt'} đề xuất mua chưa duyệt: {(rv.reductions ?? []).map((c) => `${c.pr_no} ${c.material_code} ${nf(c.old, 1)} → ${nf(c.new, 1)} ${c.uom}`).join('; ')}</span>}
+            {keep.length > 0 && <span className="text-muted">Giữ nguyên (Giám đốc đã duyệt mua): {keep.map((x) => x.code).join(', ')}</span>}
+            <Link className="link" href={`/ke-hoach/dieu-chinh/${a.doc_id}#mrp-hieu-chinh`}>Xem bảng MRP hiệu chỉnh</Link>
+          </div>)}</Field>
       </div>
     );
   }

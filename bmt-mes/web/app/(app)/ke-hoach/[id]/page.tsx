@@ -14,7 +14,7 @@ import { approve } from '../../duyet/[id]/actions';
 import { adjustMrp, chairRemoveLine, chairSaveLine, createAdj, createPr, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
 
 const ADJ_STATUS: Record<string, [string, 'ok' | 'warn' | 'bad' | 'mute' | 'info']> = {
-  DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ Chủ tịch duyệt', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
+  DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ duyệt (Giám đốc → Chủ tịch)', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
 };
 const MRP_TONE: Record<string, 'ok' | 'warn' | 'bad' | 'mute' | 'info'> = {
   'Không cần mua': 'mute', 'Cập nhật giá': 'warn', 'Thiếu lead time': 'warn', 'Trễ': 'bad', 'Đặt hàng': 'info',
@@ -129,18 +129,17 @@ export default async function PlanDetail({ params, searchParams }:
       )}
       <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-[14px]">
         <span><span className="text-muted">Ngày cần vật tư:</span> {df(plan.material_need_date)}</span>
-        <span><span className="text-muted">Chế độ:</span> {plan.mode === 'OFFICIAL' ? 'Chính thức' : 'Sơ bộ'}</span>
         <span><span className="text-muted">Trạng thái:</span> <StatusPill map={DOC_STATUS} value={plan.status} /></span>
       </div>
 
       <section className="card mb-4 overflow-x-auto">
         <div className="card-h">Dòng kế hoạch · {nf(plan.total_m)} m · {nf(plan.total_packs)} kiện</div>
         <table className="tbl">
-          <thead><tr><th>SKU</th><th>Quy cách</th><th>Spec</th><th className="num">Sản lượng (m)</th><th className="num">Số lô</th><th>Đóng gói</th><th className="num">m/kiện</th><th className="num">Số kiện</th><th className="num">kg/kiện</th><th>TH</th>{lineEdit && <th />}</tr></thead>
+          <thead><tr><th>SKU</th><th>Quy cách</th><th>Spec</th><th className="num">Sản lượng (m)</th><th>Đóng gói</th><th className="num">m/kiện</th><th className="num">Số kiện</th><th className="num">kg/kiện</th><th>TH</th>{lineEdit && <th />}</tr></thead>
           <tbody>
             {(lines ?? []).map((l) => lineEdit && sp.sua === l.id ? (
               <tr key={l.id} className="bg-brand-soft/40">
-                <td colSpan={11} className="p-0">
+                <td colSpan={10} className="p-0">
                   <LineForm planId={id} line={l} products={products ?? []} packs={packs} chair={chairTurn} />
                 </td>
               </tr>
@@ -148,7 +147,7 @@ export default async function PlanDetail({ params, searchParams }:
               <tr key={l.id}>
                 <td className="mono font-medium">{l.product_code}</td><td className="min-w-[200px]">{l.description}</td>
                 <td><StatusPill map={SPEC_STATUS} value={l.spec_status} /></td>
-                <td className="num">{nf(l.qty_m)}</td><td className="num">{l.run_lots}</td><td>{l.pack_type}</td>
+                <td className="num">{nf(l.qty_m)}</td><td>{l.pack_type}</td>
                 <td className="num">{nf(l.m_per_pack)}</td>
                 <td className="num whitespace-nowrap">{nf(l.packs)}
                   {Number(l.odd_m) > 0 && <div className="text-[12px] text-muted">{nf(l.full_packs)} chẵn + 1 lẻ {nf(l.odd_m)} m</div>}</td>
@@ -162,7 +161,7 @@ export default async function PlanDetail({ params, searchParams }:
                 )}
               </tr>
             ))}
-            {(lines ?? []).length === 0 && <tr><td colSpan={11}><Empty>Chưa có dòng nào.</Empty></td></tr>}
+            {(lines ?? []).length === 0 && <tr><td colSpan={10}><Empty>Chưa có dòng nào.</Empty></td></tr>}
           </tbody>
         </table>
         {lineEdit && !sp.sua && <LineForm planId={id} products={products ?? []} packs={packs} chair={chairTurn} />}
@@ -181,7 +180,7 @@ export default async function PlanDetail({ params, searchParams }:
                   <td><span className="mono">{e.product_code}</span></td>
                   <td className="whitespace-nowrap">{e.action === 'ADD' ? <>Thêm <b>{nf(e.new_data?.qty_m)} m</b></>
                     : e.action === 'REMOVE' ? <>Bỏ mã ({nf(e.old_data?.qty_m)} m)</>
-                    : <>{nf(e.old_data?.qty_m)} → <b>{nf(e.new_data?.qty_m)} m</b>{e.old_data?.run_lots !== e.new_data?.run_lots && <> · lô {e.old_data?.run_lots} → {e.new_data?.run_lots}</>}
+                    : <>{nf(e.old_data?.qty_m)} → <b>{nf(e.new_data?.qty_m)} m</b>
                       {(e.old_data?.pack_type !== e.new_data?.pack_type || Number(e.old_data?.m_per_pack) !== Number(e.new_data?.m_per_pack)) && <> · {e.new_data?.pack_type} {nf(e.new_data?.m_per_pack)}</>}
                       {e.old_data?.brand !== e.new_data?.brand && <> · {e.new_data?.brand}</>}</>}</td>
                   <td className="min-w-[180px]">{e.reason}</td>
@@ -254,10 +253,10 @@ export default async function PlanDetail({ params, searchParams }:
 
       {(plan.status === 'APPROVED' || (adjs ?? []).length > 0) && (
         <section className="card mt-4" id="dieu-chinh">
-          <div className="card-h"><span>Phiếu điều chỉnh kế hoạch tháng</span><span className="text-[12.5px] font-normal text-muted">thêm, bớt mã, đổi sản lượng, đổi hạn giao, lô ngoài kế hoạch: TP SX lập, Chủ tịch HĐQT duyệt</span></div>
+          <div className="card-h"><span>Đề xuất hiệu chỉnh kế hoạch tháng</span><span className="text-[12.5px] font-normal text-muted">tăng, giảm sản lượng, thêm, bỏ mã, đổi hạn giao: TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT duyệt; MES chạy MRP hiệu chỉnh</span></div>
           {(adjs ?? []).length > 0 && (
             <div className="overflow-x-auto"><table className="tbl">
-              <thead><tr><th>Phiếu</th><th>Lý do</th><th className="num">Dòng</th><th>Người lập</th><th>Trạng thái</th></tr></thead>
+              <thead><tr><th>Đề xuất</th><th>Lý do</th><th className="num">Dòng</th><th>Người lập</th><th>Trạng thái</th></tr></thead>
               <tbody>{(adjs ?? []).map((a) => (
                 <tr key={a.id}><td className="mono"><Link className="link" href={`/ke-hoach/dieu-chinh/${a.id}`}>{a.adj_no}</Link></td><td>{a.reason}</td><td className="num">{a.line_count}</td>
                   <td>{a.created_by_name}<div className="text-[12px] text-muted">{df(a.created_at, true)}</div></td>
@@ -269,7 +268,7 @@ export default async function PlanDetail({ params, searchParams }:
             <form action={createAdj} className="flex flex-wrap items-end gap-3 px-4 py-3">
               <input type="hidden" name="plan_id" value={id} />
               <label className="lbl min-w-[280px] flex-1"><span className="req">Lý do điều chỉnh</span><input className="inp" name="reason" required placeholder="VD: khách ABC đặt thêm 3.000 m, khách XYZ lùi hạn" /></label>
-              <SubmitButton className="btn">Lập phiếu điều chỉnh</SubmitButton>
+              <SubmitButton className="btn">Lập đề xuất hiệu chỉnh</SubmitButton>
             </form>
           )}
         </section>
@@ -318,7 +317,6 @@ function LineForm({ planId, line, products, packs, chair = false }: { planId: st
         </select>
       </label>
       <label className="lbl">Sản lượng (m)<input className="inp inp-y text-right" name="qty_m" inputMode="decimal" required defaultValue={line ? String(line.qty_m).replace('.', ',') : undefined} autoFocus={Boolean(line)} /></label>
-      <label className="lbl">Số lô<input className="inp inp-y text-right" name="run_lots" defaultValue={line?.run_lots ?? 1} inputMode="numeric" required /></label>
       <PackFields options={packs} packType={line?.pack_type} mPerPack={line?.m_per_pack} />
       <label className="lbl">Thương hiệu<select className="inp inp-y" name="brand" defaultValue={line?.brand}><option>KAVIX</option><option>HEIZKA</option></select></label>
       {chair && (
