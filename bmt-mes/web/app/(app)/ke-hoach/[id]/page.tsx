@@ -14,7 +14,7 @@ import { approve } from '../../duyet/[id]/actions';
 import { adjustMrp, chairRemoveLine, chairSaveLine, createAdj, createPr, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
 
 const ADJ_STATUS: Record<string, [string, 'ok' | 'warn' | 'bad' | 'mute' | 'info']> = {
-  DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ Chủ tịch duyệt', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
+  DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ duyệt (Giám đốc → Chủ tịch)', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
 };
 const MRP_TONE: Record<string, 'ok' | 'warn' | 'bad' | 'mute' | 'info'> = {
   'Không cần mua': 'mute', 'Cập nhật giá': 'warn', 'Thiếu lead time': 'warn', 'Trễ': 'bad', 'Đặt hàng': 'info',
@@ -129,7 +129,6 @@ export default async function PlanDetail({ params, searchParams }:
       )}
       <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-[14px]">
         <span><span className="text-muted">Ngày cần vật tư:</span> {df(plan.material_need_date)}</span>
-        <span><span className="text-muted">Chế độ:</span> {plan.mode === 'OFFICIAL' ? 'Chính thức' : 'Sơ bộ'}</span>
         <span><span className="text-muted">Trạng thái:</span> <StatusPill map={DOC_STATUS} value={plan.status} /></span>
       </div>
 
@@ -253,10 +252,10 @@ export default async function PlanDetail({ params, searchParams }:
 
       {(plan.status === 'APPROVED' || (adjs ?? []).length > 0) && (
         <section className="card mt-4" id="dieu-chinh">
-          <div className="card-h"><span>Phiếu điều chỉnh kế hoạch tháng</span><span className="text-[12.5px] font-normal text-muted">thêm, bớt mã, đổi sản lượng, đổi hạn giao, lô ngoài kế hoạch: TP SX lập, Chủ tịch HĐQT duyệt</span></div>
+          <div className="card-h"><span>Đề xuất hiệu chỉnh kế hoạch tháng</span><span className="text-[12.5px] font-normal text-muted">tăng, giảm sản lượng, thêm, bỏ mã, đổi hạn giao: TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT duyệt; MES chạy MRP hiệu chỉnh</span></div>
           {(adjs ?? []).length > 0 && (
             <div className="overflow-x-auto"><table className="tbl">
-              <thead><tr><th>Phiếu</th><th>Lý do</th><th className="num">Dòng</th><th>Người lập</th><th>Trạng thái</th></tr></thead>
+              <thead><tr><th>Đề xuất</th><th>Lý do</th><th className="num">Dòng</th><th>Người lập</th><th>Trạng thái</th></tr></thead>
               <tbody>{(adjs ?? []).map((a) => (
                 <tr key={a.id}><td className="mono"><Link className="link" href={`/ke-hoach/dieu-chinh/${a.id}`}>{a.adj_no}</Link></td><td>{a.reason}</td><td className="num">{a.line_count}</td>
                   <td>{a.created_by_name}<div className="text-[12px] text-muted">{df(a.created_at, true)}</div></td>
@@ -268,7 +267,7 @@ export default async function PlanDetail({ params, searchParams }:
             <form action={createAdj} className="flex flex-wrap items-end gap-3 px-4 py-3">
               <input type="hidden" name="plan_id" value={id} />
               <label className="lbl min-w-[280px] flex-1"><span className="req">Lý do điều chỉnh</span><input className="inp" name="reason" required placeholder="VD: khách ABC đặt thêm 3.000 m, khách XYZ lùi hạn" /></label>
-              <SubmitButton className="btn">Lập phiếu điều chỉnh</SubmitButton>
+              <SubmitButton className="btn">Lập đề xuất hiệu chỉnh</SubmitButton>
             </form>
           )}
         </section>

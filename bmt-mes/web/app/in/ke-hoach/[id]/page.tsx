@@ -20,7 +20,7 @@ export default async function PrintPlan({ params }: { params: Promise<{ id: stri
         <div>
           <img src="/logo-bmt.png" alt="BMTcable" className="mb-2 h-10 w-auto" />
           <h1 className="text-[20px] font-medium">KẾ HOẠCH SẢN XUẤT {plan.plan_no}</h1>
-          <div>{plan.period_label} · Ngày cần vật tư: {df(plan.material_need_date)} · {plan.mode === 'OFFICIAL' ? 'Chính thức' : 'Sơ bộ'}{plan.mrp_stale ? ' · MRP cần tính lại' : ''}</div>
+          <div>{plan.period_label} · Ngày cần vật tư: {df(plan.material_need_date)}{plan.mrp_stale ? ' · MRP cần tính lại' : ''}</div>
         </div>
         <PrintButton />
       </div>

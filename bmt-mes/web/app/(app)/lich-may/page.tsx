@@ -249,7 +249,7 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
             );
           })}</tbody>
         </table></div>
-        <p className="px-4 py-3 text-[12.5px] text-muted">Dự kiến xong = công đoạn cuối xong + 1 ca kiểm tra, đóng gói (MES xếp 90 % thời gian ca). TP SX chốt ngày hoàn thành: sớm hơn dự kiến thì MES mô phỏng, báo không đủ máy hoặc chỉ ra lô bị lùi. Chốt xong bấm “Xếp lại lịch” (lịch xếp theo ngày chốt) rồi “Duyệt lịch lô”: lô đã duyệt được giữ chỗ trên lịch máy, xếp lại không dời. Đổi hạn giao, sản lượng của kế hoạch đã duyệt: lập phiếu điều chỉnh (Chủ tịch HĐQT duyệt) ở trang Kế hoạch.</p>
+        <p className="px-4 py-3 text-[12.5px] text-muted">Dự kiến xong = công đoạn cuối xong + 1 ca kiểm tra, đóng gói (MES xếp 90 % thời gian ca). TP SX chốt ngày hoàn thành: sớm hơn dự kiến thì MES mô phỏng, báo không đủ máy hoặc chỉ ra lô bị lùi. Chốt xong bấm “Xếp lại lịch” (lịch xếp theo ngày chốt) rồi “Duyệt lịch lô”: lô đã duyệt được giữ chỗ trên lịch máy, xếp lại không dời. Đổi hạn giao, sản lượng của kế hoạch đã duyệt: lập đề xuất hiệu chỉnh (Giám đốc → Chủ tịch HĐQT duyệt) ở trang Kế hoạch.</p>
       </section>
       {isBgd && !kh.version && kh.fromPlan && (
         <section className="card">

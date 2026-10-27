@@ -11,16 +11,11 @@ const back = (id: string, kind: 'ok' | 'err', msg: string) => redirect(`/ke-hoac
 
 export async function createPlan(form: FormData) {
   const supabase = await createClient();
-  const { data: no, error: e1 } = await supabase.schema('core').rpc('next_no', { p_prefix: 'KH', p_width: 2 });
-  if (e1) redirect('/ke-hoach/moi?err=' + encodeURIComponent(e1.message));
-  const { data, error } = await supabase.schema('plan').from('production_plans').insert({
-    plan_no: no as string,
-    period_label: String(form.get('period_label')).trim(),
-    material_need_date: String(form.get('need_date')),
-    mode: form.get('mode') === 'PRELIMINARY' ? 'PRELIMINARY' : 'OFFICIAL',
-  }).select('id').single();
+  const { data, error } = await supabase.schema('app').rpc('create_plan', {
+    p_year: Number(form.get('year')), p_month: Number(form.get('month')), p_need_date: String(form.get('need_date') ?? '') || null,
+  });
   if (error) redirect('/ke-hoach/moi?err=' + encodeURIComponent(error.message));
-  redirect(`/ke-hoach/${data.id}?ok=` + encodeURIComponent(`Đã tạo kế hoạch ${no}. Thêm các dòng sản phẩm bên dưới.`));
+  redirect(`/ke-hoach/${data}?ok=` + encodeURIComponent('Đã tạo kế hoạch tháng. Thêm các dòng sản phẩm bên dưới.'));
 }
 
 export async function saveLine(form: FormData) {
@@ -136,15 +131,18 @@ export async function adjustMrp(form: FormData) {
   back(planId, 'ok', 'Đã điều chỉnh kết quả MRP. Đề xuất mua sinh ra sẽ dùng số liệu mới.');
 }
 
-// ---------------- Phiếu điều chỉnh kế hoạch tháng (TP SX lập, Chủ tịch HĐQT duyệt) ----------------
+// ---------------- Đề xuất hiệu chỉnh kế hoạch tháng (TP SX lập → Giám đốc → Chủ tịch HĐQT duyệt) ----------------
 const adjBack = (id: string, kind: 'ok' | 'err', msg: string) => redirect(`/ke-hoach/dieu-chinh/${id}?${kind}=${encodeURIComponent(msg)}`);
 
 export async function createAdj(form: FormData) {
   const planId = String(form.get('plan_id'));
   const supabase = await createClient();
   const { data, error } = await supabase.schema('app').rpc('adj_create', { p_plan: planId, p_reason: String(form.get('reason') ?? '') });
-  if (error) back(planId, 'err', error.message);
-  redirect(`/ke-hoach/dieu-chinh/${data}?ok=` + encodeURIComponent('Đã lập phiếu nháp. Thêm các dòng điều chỉnh rồi gửi Chủ tịch HĐQT duyệt.'));
+  if (error) {
+    if (form.get('from') === 'moi') redirect('/ke-hoach/moi?err=' + encodeURIComponent(error.message));
+    back(planId, 'err', error.message);
+  }
+  redirect(`/ke-hoach/dieu-chinh/${data}?ok=` + encodeURIComponent('Đã lập đề xuất hiệu chỉnh (nháp). Thêm các dòng, xem bảng MRP hiệu chỉnh rồi gửi Giám đốc duyệt.'));
 }
 
 // Đọc các dòng của form (tối đa 12): loại, dòng kế hoạch / mã mới, số mét, hạn giao, ưu tiên, ghi chú
@@ -171,7 +169,7 @@ export async function saveAdj(form: FormData) {
   const { error } = await supabase.schema('app').rpc('adj_save', { p_adj: id, p_reason: String(form.get('reason') ?? ''), p_lines: adjLines(form, id) });
   if (error) adjBack(id, 'err', error.message);
   revalidatePath(`/ke-hoach/dieu-chinh/${id}`);
-  adjBack(id, 'ok', 'Đã lưu phiếu điều chỉnh');
+  adjBack(id, 'ok', 'Đã lưu đề xuất hiệu chỉnh. Bảng MRP hiệu chỉnh bên dưới đã tính lại.');
 }
 
 export async function submitAdj(form: FormData) {
@@ -183,7 +181,7 @@ export async function submitAdj(form: FormData) {
   if (error) adjBack(id, 'err', error.message);
   after(async () => { await flushEmailOutbox(); });
   revalidatePath('/', 'layout');
-  adjBack(id, 'ok', 'Đã gửi Chủ tịch HĐQT duyệt. Duyệt xong MES tự áp vào kế hoạch tháng.');
+  adjBack(id, 'ok', 'Đã gửi Giám đốc duyệt, sau đó Chủ tịch HĐQT duyệt. Duyệt xong MES áp vào kế hoạch tháng và chạy MRP hiệu chỉnh.');
 }
 
 export async function cancelAdj(form: FormData) {
@@ -192,5 +190,5 @@ export async function cancelAdj(form: FormData) {
   const { error } = await supabase.schema('app').rpc('adj_cancel', { p_adj: id });
   if (error) adjBack(id, 'err', error.message);
   revalidatePath(`/ke-hoach/dieu-chinh/${id}`);
-  adjBack(id, 'ok', 'Đã hủy phiếu nháp');
+  adjBack(id, 'ok', 'Đã hủy đề xuất nháp');
 }

@@ -123,7 +123,7 @@ export function orderFrom(r: Omit<LineRow, 'plan_id' | 'plan_no' | 'plan_status'
     size: Number(r.size_mm2) || 0, cores, sheath: route.includes('CD5') ? (r.sheath_color || 'Chưa rõ màu') : null,
     sil: (r.insulation ?? '').toUpperCase().startsWith('SIL'), shield: Boolean(r.shield), route,
     qty: Number(r.qty_m) || 0, due: r.due_date ?? null, commit: r.committed_date ?? null, prio: Number(r.priority ?? 1),
-    source: r.so_no ?? (r.change_request_id ? 'Đơn phát sinh' : r.adjustment_id ? 'Phiếu điều chỉnh' : 'Kế hoạch tháng'),
+    source: r.so_no ?? (r.change_request_id ? 'Đơn phát sinh' : r.adjustment_id ? 'Hiệu chỉnh kế hoạch' : 'Kế hoạch tháng'),
     product_id: r.product_id ?? null, core: r.core_code ?? null, mix: mix || null,
   };
 }
