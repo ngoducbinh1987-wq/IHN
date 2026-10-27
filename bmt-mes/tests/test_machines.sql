@@ -78,7 +78,7 @@ reset role;
 select pg_temp.as_user('M_VH');
 set local role authenticated;
 select pg_temp.fails($$select app.set_operator_skill('$$ || pg_temp.v('line') || $$', 'NV5', 'LEARNING')$$, 'Chỉ Quản lý SX', 'Vận hành không giao người đứng máy');
-select pg_temp.ok((select count(*) from app.machine_rate_defaults()) = 5, 'Vận hành xem được tốc độ mặc định theo công đoạn');
+select pg_temp.ok((select count(*) from app.machine_rate_defaults()) = 7, 'Vận hành xem được tốc độ mặc định theo công đoạn');
 reset role;
 select pg_temp.as_user('M_SXTP');
 set local role authenticated;

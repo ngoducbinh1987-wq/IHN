@@ -69,7 +69,7 @@ export async function saveShifts(form: FormData) {
 
 export async function saveRates(form: FormData) {
   const e = 'rates';
-  const rows = ['CD1', 'CD2', 'CD3', 'CD4', 'CD5'].map((op) => ({
+  const rows = String(form.get('ops') ?? '').split(',').filter(Boolean).map((op) => ({
     op_code: op, rate_small: num(form, `small_${op}`, `${op} cỡ < 2,5`, e), rate_large: num(form, `large_${op}`, `${op} cỡ ≥ 2,5`, e),
   }));
   const db = await createClient();

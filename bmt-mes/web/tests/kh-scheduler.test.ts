@@ -1,5 +1,5 @@
 // Kiểm thử bộ xếp lịch máy (không cần database): node --experimental-strip-types web/tests/kh-scheduler.test.ts
-import { schedule, makeCalendar, finishInfo, buildTasks, machineSpeed, rateOn, plcSpeed, type Order, type Config, type MachineInfo, type OperatorInfo, type SpeedCfg, type PlcSpeedCfg } from '../lib/kh/scheduler.ts';
+import { schedule, makeCalendar, finishInfo, buildTasks, machineSpeed, rateOn, plcSpeed, predOps, type Order, type Config, type MachineInfo, type OperatorInfo, type SpeedCfg, type PlcSpeedCfg } from '../lib/kh/scheduler.ts';
 const cfg: Config = { fill_pct: 85, frozen_days: 3, cutoff_time: '16:00', downtime_reason_min: 5, plc_dev_pct: 0.5, auto_shifts: 10, plc_loss_min: 10, machines_per_operator: 1,
   shifts: [{ code: 'A', start_time: '06:00', end_time: '14:00', break_min: 30, active: true }, { code: 'B', start_time: '14:00', end_time: '22:00', break_min: 30, active: false }, { code: 'C', start_time: '22:00', end_time: '06:00', break_min: 30, active: false }],
   rates: [['CD1', 100, 80], ['CD2', 80, 70], ['CD3', 50, 50], ['CD4', 60, 60], ['CD5', 60, 45]].map(([op, a, b], i) => ({ op_code: op as string, label: '', unit: '', rate_small: a as number, rate_large: b as number, confirmed: false, sort: i })),
@@ -188,4 +188,35 @@ const rn = schedule([...orders, urgK], ctx, { from: { S: r.S, SPD: r.SPD, slots:
 if (sig(rn.slots) === sig(r.slots)) console.log('(lưu ý: không giữ chỗ thì lô cuối cũng không đổi giờ trong bộ dữ liệu này)');
 console.log('Giữ chỗ', orders.find((o) => o.id === lastLine)?.label, ': đơn gấp xong', finishInfo(rk, cal, [...orders, urgK]).get(urgK.id)?.finDate,
   '(không giữ chỗ:', finishInfo(rn, cal, [...orders, urgK]).get(urgK.id)?.finDate + ')');
+// ---------- Trộn silicone (kg/giờ) và đóng gói trên máy cuốn bobin ----------
+{
+  const cfgM: Config = { ...cfg, rates: [...cfg.rates, { op_code: 'CD0', label: '', unit: 'kg/giờ', rate_small: 30, rate_large: 30, confirmed: false, sort: 0 },
+    { op_code: 'CD6', label: '', unit: 'm cáp', rate_small: 120, rate_large: 100, confirmed: false, sort: 6 }],
+    changeovers: [...cfg.changeovers, { code: 'MIX_CODE', op_code: 'CD0', label: '', minutes: 15, sort: 8 }, { code: 'PK_CODE', op_code: 'CD6', label: '', minutes: 10, sort: 9 }] };
+  const mach2: MachineInfo[] = [...machines, { code: 'SIL-MIX', name: 'SIL-MIX', machine_type: 'MIXER', data_mode: 'MANUAL', tag_count: 0, operators: ['NV1'] },
+    { code: 'PACK-01', name: 'PACK-01', machine_type: 'PACKER', data_mode: 'MANUAL', tag_count: 0, operators: ['NV4'] }];
+  const ops2 = operators.map((w) => w.code === 'NV1' ? { ...w, skills: [...w.skills, 'SIL-MIX'] } : w.code === 'NV4' ? { ...w, skills: ['PACK-01'] } : w);
+  const sifM: Order = { ...mk(21, 'SIF-1C-1P5', 'SIF', 1.5, ['Đỏ'], null, 20000, '2026-11-20'), route: ['CD0', 'CD1', 'CD2', 'CD6'], mix: 12 };
+  const pfrM: Order = { ...mk(22, 'PFR-2C-1P5', 'PFR', 1.5, ['Nâu', 'Trắng'], 'Đỏ', 10000, '2026-11-25'), route: ['CD0', 'CD1', 'CD2', 'CD3', 'CD5', 'CD6'], mix: 28.6 };
+  const ordM = [sifM, pfrM];
+  const calM = makeCalendar(cfgM, '2026-11-02');
+  const gm = schedule(ordM, { cfg: cfgM, cal: calM, machines: mach2, operators: ops2 });
+  if (gm.unplaced.length) bad(`trộn/đóng gói chưa xếp ${gm.unplaced.length}`);
+  const sp = (o: Order, op: string) => gm.opDone.get(o.id + '|' + op)!;
+  for (const o of ordM) {
+    if (o === sifM && sp(o, 'CD1').start > 1e-6) bad('bện phải chạy ngay, không chờ trộn');
+    if (sp(o, 'CD2').start < sp(o, 'CD0').start + gm.S - 1e-6) bad(`${o.label} bọc trước khi trộn đủ 1 ca`);
+    if (sp(o, 'CD2').start < sp(o, 'CD1').start + gm.S - 1e-6) bad(`${o.label} bọc trước khi bện đủ 1 ca`);
+    const last = o.route[o.route.length - 2];
+    if (sp(o, 'CD6').start < sp(o, last).start + gm.S - 1e-6 || sp(o, 'CD6').end < sp(o, last).end - 1e-6) bad(`${o.label} đóng gói không theo sau ${last}`);
+  }
+  // Máy trộn: phút chạy = kg ÷ (kg/giờ) × 60 (SIF 20 km × 12 kg/km = 240 kg ÷ 30 kg/giờ = 480 phút)
+  const mixRun = gm.slots.filter((s) => s.lineId === sifM.id && s.op === 'CD0').reduce((a, s) => a + (s.end - s.runStart), 0);
+  if (Math.abs(mixRun - 480) > 1) bad(`phút trộn SIF ${mixRun.toFixed(1)} ≠ 480`);
+  if (!gm.slots.every((s) => s.op !== 'CD0' || s.machine === 'SIL-MIX')) bad('trộn phải trên máy trộn');
+  if (!gm.slots.every((s) => s.op !== 'CD6' || s.machine === 'PACK-01')) bad('đóng gói phải trên máy đóng gói');
+  if (predOps(['CD0', 'CD1', 'CD2', 'CD6'], 1).length !== 0 || predOps(['CD0', 'CD1', 'CD2', 'CD6'], 3).join() !== 'CD2') bad('predOps sai');
+  const fm = finishInfo(gm, calM, ordM).get(sifM.id)!;
+  console.log('trộn + đóng gói: SIF trộn', mixRun.toFixed(0), 'phút; xong', fm.finDate, '; lý do trộn:', gm.slots.find((s) => s.op === 'CD0')!.reason);
+}
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

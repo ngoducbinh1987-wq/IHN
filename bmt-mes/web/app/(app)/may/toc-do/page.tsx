@@ -41,14 +41,14 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
         Đổi tốc độ xong, Quản lý SX bấm Xếp lại lịch để áp dụng.
       </p>
       <section className="card mb-4 max-w-4xl overflow-x-auto">
-        <div className="card-h">Tốc độ mặc định theo công đoạn<span className="text-[13px] font-normal text-muted">m/ph · dùng khi máy chưa khai báo tốc độ riêng</span></div>
+        <div className="card-h">Tốc độ mặc định theo công đoạn<span className="text-[13px] font-normal text-muted">dùng khi máy chưa khai báo tốc độ riêng</span></div>
         {(defaults ?? []).length ? (
           <table className="tbl">
             <thead><tr><th>Công đoạn</th><th className="num">Ruột &lt; 2,5 mm²</th><th className="num">Ruột ≥ 2,5 mm²</th><th>Đơn vị</th><th>Tình trạng</th></tr></thead>
             <tbody>
               {(defaults ?? []).map((r: { op_code: string; label: string; unit: string; rate_small: number; rate_large: number; confirmed: boolean }) => (
                 <tr key={r.op_code}><td><span className="mono">{r.op_code}</span> · {r.label}</td><td className="num">{nf(r.rate_small)}</td><td className="num">{nf(r.rate_large)}</td>
-                  <td>{r.unit}</td><td>{r.confirmed ? <Pill tone="ok">Đã xác nhận</Pill> : <Pill tone="warn">Giả định</Pill>}</td></tr>
+                  <td>{r.unit.includes('/') ? r.unit : `${r.unit}/phút`}</td><td>{r.confirmed ? <Pill tone="ok">Đã xác nhận</Pill> : <Pill tone="warn">Giả định</Pill>}</td></tr>
               ))}
             </tbody>
           </table>
@@ -58,9 +58,9 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
       {ops.length === 0 && <div className="card"><Empty>Chưa có tốc độ nào. Mở <Link className="link" href="/may">Danh sách máy</Link> → hồ sơ dây chuyền → tab Tốc độ & dải hoạt động.</Empty></div>}
       {ops.map(([op, name]) => (
         <section key={op} className="card mb-4 overflow-x-auto">
-          <div className="card-h">{op} · {name}<span className="text-[13px] font-normal text-muted">m/ph</span></div>
+          <div className="card-h">{op} · {name}<span className="text-[13px] font-normal text-muted">{op === 'CD0' ? 'kg hỗn hợp/giờ' : 'm/ph'}</span></div>
           <table className="tbl">
-            <thead><tr><th>Dây chuyền</th><th>Áp dụng cho</th><th className="num">Chuẩn (m/ph)</th><th className="num">Đổi máy (phút/lô)</th><th>Tình trạng</th><th /></tr></thead>
+            <thead><tr><th>Dây chuyền</th><th>Áp dụng cho</th><th className="num">Chuẩn</th><th className="num">Đổi máy (phút/lô)</th><th>Tình trạng</th><th /></tr></thead>
             <tbody>
               {rows.filter((r) => r.op_code === op).map((s) => (
                 <tr key={s.id} className={s.status === 'OBSOLETE' ? 'opacity-50' : ''}>

@@ -677,7 +677,9 @@ a.tbtn { text-decoration: none; color: inherit; }
     { id: 'TW800-01', step: 'Xoắn, bó băng', kind: 'tw', state: 'run', wo: 'LSX-2610-003', prod: 'Xoắn 2 lõi 1,5 mm², bó băng PET', target: 60, max: 100, plan: 40000, kw: 30, reel: 'Bobin 800 · BB-800-0105',
       zones: [], extra: [['Bước xoắn', '60 mm'], ['Bobin thu', '800 mm']] },
     { id: 'EXT-01', step: 'Đùn vỏ', kind: 'tp', state: 'run', wo: 'LSX-2610-004', prod: 'CFR-2C-1p5 · vỏ LSZH', target: 40, max: 60, plan: 40000, kw: 95, od: 6.94, tol: 0.10, reel: 'Cuộn 500 m · số 37', fin: true,
-      zones: [['Xi lanh Z1', 135], ['Z2', 145], ['Z3', 155], ['Z4', 160], ['Đầu đùn', 165]], lim: [175, 175, 175, 180, 185] }
+      zones: [['Xi lanh Z1', 135], ['Z2', 145], ['Z3', 155], ['Z4', 160], ['Đầu đùn', 165]], lim: [175, 175, 175, 180, 185] },
+    { id: 'PACK-01', step: 'Đóng gói', kind: 'pk', state: 'run', wo: 'LSX-2610-004', prod: 'CFR-2C-1P5 · bobin gỗ 500 m', target: 150, max: 200, plan: 20000, kw: 5.5, reel: 'Bobin gỗ 500 m · cuộn 18/40',
+      zones: [], extra: [['Quy cách', 'Bobin gỗ 500 m / 305 m'], ['Giá xả', 'Bobin thép từ đùn vỏ EXT-01'], ['Tốc độ cuốn', '50–200 m/phút']] }
   ];
   var byId = {};
   M.forEach(function (m) {
@@ -706,7 +708,7 @@ a.tbtn { text-decoration: none; color: inherit; }
     CHILLER: { on: true, sup: 12.0, ret: 16.6, kw: 22 },
     COOLING: { on: true, sup: 30.4, ret: 35.1, kw: 7.5 },
     AIR: { on: true, bar: 6.8, kw: 18.5 },
-    MIXER: { on: false, kw: 0 },
+    MIXER: { on: true, kw: 18.5, kgh: 32, batch: 'SIL-9710G + DCBP-50 + hạt màu đỏ' },
     out: 24.5, outH: 82
   };
   var LAMPS = [
@@ -837,7 +839,7 @@ a.tbtn { text-decoration: none; color: inherit; }
       line: function () { return fit([4.5, 0.8, 52, 25.2], -1.12, 0.72, 1.06); },
       qc: function () { return { theta: -1.0, phi: 0.87, scale: 9.2, target: [64.35, 9.775, 0.5] }; },
       cold: function () { return fit([-0.2, -1.8, 8, 8.6], -1.05, 0.85, 1.15); },
-      kho: function () { return fit([25.5, 28, 64.5, 36.2], -1.1, 0.78, 1.1); }
+      kho: function () { return fit([25.5, 21, 67.6, 36.2], -1.1, 0.78, 1.1); }
     };
     function angDiff(a, b) { var d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; }
     function goTo(c, ms) {
@@ -1065,12 +1067,14 @@ a.tbtn { text-decoration: none; color: inherit; }
     if (forceCrit || (r < 0.35 && stopped < 2)) {
       var opts = { si: [['E-205', 'Nhiệt độ lò lưu hóa M5–8 mất kiểm soát, line đã dừng'], ['E-201', 'Đứt dây tại máng làm mát, line đã dừng']],
         tp: [['E-305', 'Quá dòng động cơ trục vít, line đã dừng'], ['E-311', 'Hết cuộn thu, chưa thay bobin']],
-        bun: [['E-410', 'Đứt sợi đồng tại giá xả, máy đã dừng']], tw: [['E-520', 'Mất lực căng dây, máy đã dừng']] }[m.kind];
+        bun: [['E-410', 'Đứt sợi đồng tại giá xả, máy đã dừng']], tw: [['E-520', 'Mất lực căng dây, máy đã dừng']],
+        pk: [['E-610', 'Đứt dây tại tay dancer, máy cuốn đã dừng']] }[m.kind];
       var o = opts[Math.floor(Math.random() * opts.length)]; stopMachine(m, o[0], o[1]);
     } else if (r < 0.45) {
       commLoss(m);
-    } else if (r < 0.65 && (m.kind === 'tw' || m.kind === 'bun')) {
-      m.state = 'idle'; m.idleWhy = 'Thay bobin thu'; m.idleUntil = Date.now() + 45e3; m.idleAl = addAlarm('info', m.id, 'I-' + (m.kind === 'tw' ? 520 : 420), 'Dừng có kế hoạch: thay bobin thu');
+    } else if (r < 0.65 && (m.kind === 'tw' || m.kind === 'bun' || m.kind === 'pk')) {
+      var gw = m.kind === 'pk' ? 'Thay bobin gỗ' : 'Thay bobin thu';
+      m.state = 'idle'; m.idleWhy = gw; m.idleUntil = Date.now() + 45e3; m.idleAl = addAlarm('info', m.id, 'I-' + (m.kind === 'tw' ? 520 : m.kind === 'pk' ? 620 : 420), 'Dừng có kế hoạch: ' + gw.toLowerCase());
     } else if (m.zones.length && m.hot == null) {
       var zi = Math.floor(Math.random() * m.zones.length); m.hot = zi; m.hotBy = m.kind === 'si' && zi > 3 ? 32 : 18; m.hotUntil = Date.now() + 40e3;
       m.hotAl = addAlarm('warn', m.id, 'W-' + (m.kind === 'si' ? 230 : 330), 'Nhiệt độ ' + m.zones[zi][0] + ' cao hơn đặt ' + m.hotBy + ' °C');
@@ -1114,7 +1118,7 @@ a.tbtn { text-decoration: none; color: inherit; }
           : m.state === 'run' ? '<span class="v">' + fmt(m.speed, 0) + '</span><span class="muted">m/ph</span>' : m.state === 'off' ? '<span class="muted">Mất kết nối · số liệu lúc ' + hms(m.lastTs) + '</span>' : '<span class="muted">' + esc(m.idleWhy || ST[m.state]) + '</span>');
       } else if (L.type === 'u') {
         var id = L.a.id, txt = id === 'CHILLER' ? 'Chiller · ' + fmt(UT.CHILLER.sup, 1) + '/' + fmt(UT.CHILLER.ret, 1) + ' °C' : id === 'COOLING' ? 'Tháp giải nhiệt · ' + fmt(UT.COOLING.sup, 1) + '/' + fmt(UT.COOLING.ret, 1) + ' °C'
-          : id === 'AIR' ? 'Khí nén · ' + fmt(UT.AIR.bar, 1) + ' bar' : id === 'MDB' ? 'Tủ điện tổng · ' + fmt(UT.kw || 0) + ' kW' : 'Máy trộn silicone · ' + (UT.MIXER.on ? 'chạy' : 'nghỉ');
+          : id === 'AIR' ? 'Khí nén · ' + fmt(UT.AIR.bar, 1) + ' bar' : id === 'MDB' ? 'Tủ điện tổng · ' + fmt(UT.kw || 0) + ' kW' : 'Máy trộn silicone · ' + (UT.MIXER.on ? fmt(UT.MIXER.kgh, 0) + ' kg/giờ' : 'nghỉ');
         var on = id === 'MDB' ? 'run' : id === 'MIXER' ? (UT.MIXER.on ? 'run' : 'idle') : (UT[id].on ? 'run' : 'off');
         L.el.innerHTML = '<span class="dot ' + on + '"></span><span>' + txt + '</span>';
         L.el.classList.toggle('sel', id === selId);
@@ -1140,7 +1144,7 @@ a.tbtn { text-decoration: none; color: inherit; }
       b.querySelector('[data-f="st"]').textContent = m.state === 'stop' ? 'Dừng ' + dur((now - m.stopAt) / 1000) : m.state === 'off' ? 'Mất kết nối' : m.state === 'idle' ? 'Chờ · ' + (m.idleWhy || '').toLowerCase() : 'Đang chạy';
       b.querySelector('[data-f="sp"]').textContent = fmt(m.speed, 0);
       b.querySelector('[data-f="pc"]').textContent = fmt(clamp(m.done / m.plan, 0, 1) * 100, 0) + '% kế hoạch';
-      var key = m.od ? 'OD ' + fmt(m.odNow, 2) + ' mm' : m.kind === 'bun' ? '1.800 vòng/ph' : 'bước xoắn 60 mm';
+      var key = m.od ? 'OD ' + fmt(m.odNow, 2) + ' mm' : m.kind === 'bun' ? '1.800 vòng/ph' : m.kind === 'pk' ? 'bobin gỗ 500 m' : 'bước xoắn 60 mm';
       var hot = m.kind === 'si' ? ' · lò ' + fmt(Math.max.apply(null, m.temps.slice(4)), 0) + ' °C' : m.kind === 'tp' ? ' · đầu đùn ' + fmt(m.temps[m.temps.length - 1], 0) + ' °C' : '';
       var ln = b.querySelector('[data-f="ln"]'); ln.textContent = m.step + ' · ' + key + hot + ' · ' + fmt(m.kwNow, 0) + ' kW · ' + hms(m.lastTs); ln.title = ln.textContent;
       b.title = m.id + ' · ' + m.prod;
@@ -1221,7 +1225,7 @@ a.tbtn { text-decoration: none; color: inherit; }
       if (a.id === 'COOLING') live = row('Nước cấp / hồi', fmt(UT.COOLING.sup, 1) + ' / ' + fmt(UT.COOLING.ret, 1) + ' °C') + row('Phục vụ', 'EXT-01, EXT-02') + row('Công suất', fmt(UT.COOLING.kw, 1) + ' kW');
       if (a.id === 'AIR') live = row('Áp suất khí nén', fmt(UT.AIR.bar, 1) + ' bar') + row('Công suất', fmt(UT.AIR.kw, 1) + ' kW');
       if (a.id === 'MDB') live = row('Công suất đang dùng', fmt(UT.kw || 0) + ' kW') + row('Tải MBA 500 kVA', fmt((UT.kva || 0) / 5, 0) + '%') + row('Đèn highbay', LAMPS.filter(function (l) { return l.on; }).length + '/6 hàng bật');
-      if (a.id === 'MIXER') live = row('Trạng thái', UT.MIXER.on ? 'Đang trộn' : 'Nghỉ, chờ mẻ trộn tiếp');
+      if (a.id === 'MIXER') live = row('Trạng thái', UT.MIXER.on ? 'Đang trộn' : 'Nghỉ, chờ mẻ trộn tiếp') + row('Năng suất', (UT.MIXER.on ? fmt(UT.MIXER.kgh, 0) : '0') + ' kg/giờ (máy 10–50 kg/giờ)') + row('Mẻ đang trộn', esc(UT.MIXER.batch)) + row('Cấp cho', 'SIL-01, SIL-02 (silicone phải qua máy trộn)') + row('Mã trên MES', 'SIL-MIX · công đoạn CD0');
       if (a.kind === 'lighting') { var li = LAMPS.find(function (l) { return l.id === a.id; }); live = row('Trạng thái', li && li.on ? 'Bật' : 'Tắt') + row('Số đèn', (a.fixture_count || 3) + ' đèn') + (a.control_group ? row('Nhóm điều khiển', esc(a.control_group)) : ''); }
       var sn = bySens[a.id]; if (sn) live = row('Nhiệt độ', fmt(sn.t, 1) + ' °C (ngưỡng ≤ ' + sn.tMax + ')') + row('Độ ẩm', fmt(sn.h, 0) + '% (ngưỡng ≤ ' + sn.hMax + ')') + live;
       if (live) h += '<div class="sec-t">Số liệu mô phỏng</div>' + live;
@@ -1243,6 +1247,7 @@ a.tbtn { text-decoration: none; color: inherit; }
     'E-305': ['Giảm tốc trục vít, kiểm tra nhiệt xi lanh và lưới lọc', 'Bảo trì'],
     'E-311': ['Thay bobin thu, kiểm tra cảm biến đầy cuộn', 'Vận hành máy'],
     'E-520': ['Kiểm tra cơ cấu căng dây và phanh bobin xả', 'Bảo trì'],
+    'E-610': ['Nối lại dây, kiểm tra lực căng tay dancer và phanh giá xả, cắt đoạn lỗi trên bobin', 'Vận hành máy'],
     'W-120': ['Chỉnh tốc độ capstan hoặc áp đùn, đánh dấu đoạn lệch để QC cắt', 'Vận hành máy'],
     'W-230': ['Kiểm tra bộ điều khiển nhiệt vùng', 'Vận hành máy'],
     'W-330': ['Kiểm tra bộ điều khiển nhiệt vùng', 'Vận hành máy'],

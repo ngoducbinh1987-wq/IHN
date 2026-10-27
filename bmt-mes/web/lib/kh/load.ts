@@ -49,7 +49,7 @@ export async function loadConfig(db: Db) {
     })) as Config['speeds'],
     plc_speeds: ((c.plc_speeds ?? []) as Record<string, unknown>[]).map((x) => ({ ...x, meters: Number(x.meters), run_min: Number(x.run_min) })) as Config['plc_speeds'],
   } as Config;
-  const ORDER = ['BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02'];
+  const ORDER = ['SIL-MIX', 'BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02', 'PACK-01'];
   const machines = ((m ?? []) as MachineInfo[]).map((x) => ({ ...x, tag_count: Number(x.tag_count) }))
     .sort((a, b) => (ORDER.indexOf(a.code) + 1 || 99) - (ORDER.indexOf(b.code) + 1 || 99) || a.code.localeCompare(b.code));
   return { cfg, machines, operators: (o ?? []) as OperatorInfo[], updated_at: c.updated_at as string | null };
@@ -60,17 +60,19 @@ type LineRow = {
   product_code: string; product_name: string; group_code: string; cores: number; insulation: string | null; shield: boolean | null;
   sheath_color: string | null; single_color: string | null; core_colors: string[] | null; route: string[] | null; size_mm2: number;
   so_no: string | null; spec_status: string; plan_no: string; plan_status: string; sched_start: string | null;
-  product_id: string | null; core_code: string | null;
+  product_id: string | null; core_code: string | null; mix_kg_km?: number | null;
   committed_date?: string | null; committed_note?: string | null; committed_by_name?: string | null;
   lot_approved_at?: string | null; lot_approved_by_name?: string | null; eta_date?: string | null; adjustment_id?: string | null;
 };
 export type OrderMeta = {
   group: string; size: number; cores: string[]; sheath: string | null; sil: boolean; shield: boolean; route: Op[];
-  product_id?: string | null; core?: string | null;
+  product_id?: string | null; core?: string | null; mix?: number | null;
 };
 
 export function orderFrom(r: Omit<LineRow, 'plan_id' | 'plan_no' | 'plan_status' | 'sched_start' | 'line_no' | 'qty_m' | 'due_date' | 'priority' | 'change_request_id' | 'so_no' | 'id'> & Partial<LineRow>, label: string): Order {
-  const route = ((r.route ?? []) as string[]).filter((x): x is Op => (OPS as string[]).includes(x));
+  // Trộn silicone chỉ xếp khi BOM có hỗn hợp cần trộn (kg/km cáp)
+  const mix = Number(r.mix_kg_km) || 0;
+  const route = ((r.route ?? []) as string[]).filter((x): x is Op => (OPS as string[]).includes(x) && (x !== 'CD0' || mix > 0));
   const n = Math.max(1, Number(r.cores) || 1);
   let cores = (r.core_colors ?? []).filter(Boolean);
   if (n === 1 && r.single_color) cores = [r.single_color];
@@ -81,11 +83,11 @@ export function orderFrom(r: Omit<LineRow, 'plan_id' | 'plan_no' | 'plan_status'
     sil: (r.insulation ?? '').toUpperCase().startsWith('SIL'), shield: Boolean(r.shield), route,
     qty: Number(r.qty_m) || 0, due: r.due_date ?? null, commit: r.committed_date ?? null, prio: Number(r.priority ?? 1),
     source: r.so_no ?? (r.change_request_id ? 'Đơn phát sinh' : r.adjustment_id ? 'Phiếu điều chỉnh' : 'Kế hoạch tháng'),
-    product_id: r.product_id ?? null, core: r.core_code ?? null,
+    product_id: r.product_id ?? null, core: r.core_code ?? null, mix: mix || null,
   };
 }
 export const metaOf = (o: Order): OrderMeta => ({
-  group: o.group, size: o.size, cores: o.cores, sheath: o.sheath, sil: o.sil, shield: o.shield, route: o.route, product_id: o.product_id ?? null, core: o.core ?? null,
+  group: o.group, size: o.size, cores: o.cores, sheath: o.sheath, sil: o.sil, shield: o.shield, route: o.route, product_id: o.product_id ?? null, core: o.core ?? null, mix: o.mix ?? null,
 });
 // Dấu vân tay tốc độ khai báo theo máy: đổi (duyệt, thêm, bỏ) thì lịch đang dùng cần xếp lại
 export const speedSig = (cfg: Pick<Config, 'speeds'>) => (cfg.speeds ?? [])
@@ -133,8 +135,8 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
       return {
         id: String(r.plan_line_id), label: String(r.label), product_code: String(r.product_code), product_name: String(r.product_name ?? ''),
         group: String(r.group_code ?? m.group ?? ''), size: Number(m.size ?? 0), cores: m.cores ?? [], sheath: m.sheath ?? null,
-        sil: Boolean(m.sil), shield: Boolean(m.shield), route: (m.route ?? []) as Op[], qty: Number(r.qty_m), due: (r.due_date as string) ?? null,
-        prio: Number(r.priority ?? 1), source: String(r.source ?? ''), product_id: m.product_id ?? null, core: m.core ?? null,
+        sil: Boolean(m.sil), shield: Boolean(m.shield), route: ((m.route ?? []) as Op[]).filter((x) => x !== 'CD0' || Number(m.mix) > 0), qty: Number(r.qty_m), due: (r.due_date as string) ?? null,
+        prio: Number(r.priority ?? 1), source: String(r.source ?? ''), product_id: m.product_id ?? null, core: m.core ?? null, mix: m.mix ?? null,
       } as Order;
     }).sort((a, b) => a.label.localeCompare(b.label));
   }

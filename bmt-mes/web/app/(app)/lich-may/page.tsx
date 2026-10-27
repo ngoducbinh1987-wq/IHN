@@ -429,7 +429,7 @@ function SlotDetail({ kh, view, sel, canPlan }: { kh: Kh; view: View; sel: Slot;
 
 // ----------------------------------------------------------------- Tiến độ
 function Progress({ kh, view }: { kh: Kh; view: View }) {
-  const ops: Op[] = ['CD1', 'CD2', 'CD3', 'CD5'];
+  const ops = (['CD0', 'CD1', 'CD2', 'CD3', 'CD5', 'CD6'] as Op[]).filter((op) => kh.orders.some((o) => o.route.includes(op)));
   const sh = (t: number) => { const s = Math.floor(t / view.sch.S); const d = shiftDate(kh.cal, s); return `${dd(d)}${kh.cal.SPD > 1 ? ' ' + shiftCode(kh.cal, s) : ''}`; };
   return (
     <section className="card">
@@ -454,7 +454,7 @@ function Progress({ kh, view }: { kh: Kh; view: View }) {
           );
         })}</tbody>
       </table></div>
-      <p className="px-4 py-3 text-[12.5px] text-muted">Gạch ngang: đã xong · nền xanh: đang chạy. Dự kiến xong = công đoạn cuối xong + 1 ca kiểm tra, đóng gói. Tính lại sau mỗi lần xếp lại lịch.</p>
+      <p className="px-4 py-3 text-[12.5px] text-muted">Gạch ngang: đã xong · nền xanh: đang chạy. Dự kiến xong = đóng gói xong trên máy cuốn bobin (mã chưa có công đoạn đóng gói: công đoạn cuối xong + 1 ca kiểm tra, đóng gói). Tính lại sau mỗi lần xếp lại lịch.</p>
     </section>
   );
 }
@@ -478,9 +478,9 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
           <div className="card-h"><h2>Đầu vào hệ thống dùng để xếp</h2></div>
           <div className="overflow-x-auto"><table className="tbl"><tbody>
             <tr><td className="w-[160px]"><b>Kế hoạch tháng</b></td><td>{kh.planNo}: {kh.orders.length} dòng, số mét, hạn giao và mức ưu tiên do Giám đốc đặt</td></tr>
-            <tr><td><b>Đường đi công đoạn</b></td><td>Theo nhóm sản phẩm. Cách điện silicone chạy line silicone; HDPE/PVC chạy line vỏ. Cáp chống nhiễu: xoắn và quấn AL/PET liền dây trên máy xoắn</td></tr>
-            <tr><td><b>Tốc độ</b></td><td>{(c.speeds ?? []).length ? `Khai báo theo máy: ${[...new Set((c.speeds ?? []).map((x) => x.machine_code))].join(', ')}${(c.speeds ?? []).some((x) => x.status !== 'APPROVED') ? ' (có dòng chờ TP Kỹ thuật/QA duyệt)' : ''}. ` : 'Chưa máy nào khai báo tốc độ riêng. '}Mặc định theo công đoạn (cỡ &lt; 2,5 mm²): bện {r('CD1')?.rate_small}, bọc cách điện {r('CD2')?.rate_small}, xoắn {r('CD3')?.rate_small}, AL/PET {r('CD4')?.rate_small}, vỏ {r('CD5')?.rate_small} m/phút{c.rates.some((x) => !x.confirmed) ? ' · còn số giả định chưa ban hành' : ''}</td></tr>
-            <tr><td><b>Phút đổi máy</b></td><td>Màu sáng → tối {co('INS_UP')}′, tối → sáng {co('INS_DOWN')}′, đổi cỡ {co('INS_SIZE')}′, đổi màu vỏ {co('SH_COLOR')}′, đổi mã vỏ {co('SH_CODE')}′, bện đổi cỡ {co('BUN_SIZE')}′, xoắn đổi mã {co('TWS_CODE')}′</td></tr>
+            <tr><td><b>Đường đi công đoạn</b></td><td>Theo nhóm sản phẩm. Silicone trộn trên máy trộn trong phòng lạnh (năng lực kg/giờ, đổi ra mét cáp theo kg hỗn hợp/km trong BOM) trước khi bọc; cách điện silicone chạy line silicone; HDPE/PVC chạy line vỏ. Cáp chống nhiễu: xoắn và quấn AL/PET liền dây trên máy xoắn. Đóng gói trên máy cuốn bobin gỗ 500/305 m</td></tr>
+            <tr><td><b>Tốc độ</b></td><td>{(c.speeds ?? []).length ? `Khai báo theo máy: ${[...new Set((c.speeds ?? []).map((x) => x.machine_code))].join(', ')}${(c.speeds ?? []).some((x) => x.status !== 'APPROVED') ? ' (có dòng chờ TP Kỹ thuật/QA duyệt)' : ''}. ` : 'Chưa máy nào khai báo tốc độ riêng. '}Mặc định theo công đoạn (cỡ &lt; 2,5 mm²): bện {r('CD1')?.rate_small}, bọc cách điện {r('CD2')?.rate_small}, xoắn {r('CD3')?.rate_small}, AL/PET {r('CD4')?.rate_small}, vỏ {r('CD5')?.rate_small}{r('CD6') ? `, đóng gói ${r('CD6')?.rate_small}` : ''} m/phút{r('CD0') ? `, trộn silicone ${r('CD0')?.rate_small} kg/giờ` : ''}{c.rates.some((x) => !x.confirmed) ? ' · còn số giả định chưa ban hành' : ''}</td></tr>
+            <tr><td><b>Phút đổi máy</b></td><td>Màu sáng → tối {co('INS_UP')}′, tối → sáng {co('INS_DOWN')}′, đổi cỡ {co('INS_SIZE')}′, đổi màu vỏ {co('SH_COLOR')}′, đổi mã vỏ {co('SH_CODE')}′, bện đổi cỡ {co('BUN_SIZE')}′, xoắn đổi mã {co('TWS_CODE')}′, trộn đổi công thức {co('MIX_CODE')}′, đóng gói đổi mã {co('PK_CODE')}′</td></tr>
             <tr><td><b>Ca làm việc</b></td><td>{cal.shifts.map((s) => `Ca ${s.code} ${s.start_time}–${s.end_time}, nghỉ ${s.break_min}′`).join('; ')} · nghỉ Chủ nhật</td></tr>
             <tr><td><b>Người và tay nghề</b></td><td>{kh.operators.filter((w) => w.skills.length).map((w) => `${w.code}: ${w.skills.join(', ')}`).join(' · ')} · mỗi người đứng {c.machines_per_operator} máy cùng lúc</td></tr>
             <tr><td><b>Tỷ lệ xếp lịch</b></td><td>{c.fill_pct}% → mỗi ca xếp {cal.S} trên {cal.RUN} phút, giữ {100 - c.fill_pct}% cho sự cố, mẫu đầu ca, chạy lại</td></tr>
@@ -496,7 +496,7 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
               : <>đang tắt (khung gom 0 ngày): chạy đúng thứ tự hạn giao.</>}</li>
             <li>Màu <b>sáng chạy trước, tối sau</b>; lô đầu tiên của máy chọn màu sáng nhất.</li>
             <li>Mỗi việc vào <b>máy cùng loại có người đủ tay nghề rảnh sớm nhất</b>, đã tính phút đổi máy. Tốc độ: máy chế độ <b>Nhập tay</b> dùng <b>bảng tốc độ tự nhập</b> của máy theo chủng loại × cỡ ruột (Quản lý máy → Tốc độ); máy chế độ <b>Tự động</b> dùng <b>tốc độ thực tế đo từ PLC</b> 30 ngày gần nhất (cần ít nhất 120 phút chạy cùng mã / cùng cỡ, chưa đủ thì dùng bảng tự nhập); chưa khai báo thì dùng tốc độ mặc định theo công đoạn.</li>
-            <li><b>Gối đầu công đoạn:</b> công đoạn sau bắt đầu khi công đoạn trước đã chạy ít nhất 1 ca và không xong trước công đoạn trước.</li>
+            <li><b>Gối đầu công đoạn:</b> công đoạn sau bắt đầu khi công đoạn trước đã chạy ít nhất 1 ca và không xong trước công đoạn trước. Bọc cách điện silicone chờ cả bện và trộn silicone; bện không chờ trộn.</li>
             <li>Mỗi ca chỉ xếp <b>{c.fill_pct}%</b> thời gian chạy.</li>
             <li>Khi xếp lại: <b>phần đã chạy và vùng khóa {c.frozen_days} ngày giữ nguyên</b>. Chen vào vùng khóa phải qua đơn phát sinh mức C.</li>
             <li>Ngày xong lệnh = công đoạn cuối xong <b>+ 1 ca kiểm tra, đóng gói</b> (NV3, NV4; NV3 giữ kho thành phẩm).</li>

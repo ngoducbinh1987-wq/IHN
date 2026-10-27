@@ -5,9 +5,11 @@
 // Tốc độ: máy chế độ Tự động (PLC) dùng tốc độ thực tế đo từ PLC (30 ngày, đủ ≥ PLC_MIN_RUN phút chạy);
 // chế độ Nhập tay/Song song (hoặc PLC chưa đủ dữ liệu) dùng bảng tốc độ tự nhập của máy (master.machine_speeds);
 // máy chưa khai báo dùng tốc độ mặc định theo công đoạn.
+// Trộn silicone (CD0, máy trộn trong phòng lạnh) khai báo năng lực theo kg/giờ: đổi ra mét cáp/phút theo kg hỗn hợp/km cáp (BOM CD0);
+// trộn chỉ là tiền đề của bọc cách điện, bện không phải chờ trộn. Đóng gói (CD6) trên máy cuốn bobin gỗ là công đoạn cuối.
 
-export type Op = 'CD1' | 'CD2' | 'CD3' | 'CD5';
-export const OPS: Op[] = ['CD1', 'CD2', 'CD3', 'CD5'];
+export type Op = 'CD0' | 'CD1' | 'CD2' | 'CD3' | 'CD5' | 'CD6';
+export const OPS: Op[] = ['CD0', 'CD1', 'CD2', 'CD3', 'CD5', 'CD6'];
 
 export type ShiftCfg = { code: string; start_time: string; end_time: string; break_min: number; active: boolean };
 export type RateCfg = { op_code: string; label: string; unit: string; rate_small: number; rate_large: number; confirmed: boolean; sort: number };
@@ -50,6 +52,7 @@ export type Order = {
   source: string;
   product_id?: string | null; // để chọn tốc độ khai báo riêng theo mã sản phẩm
   core?: string | null;       // mã lõi của spec (tốc độ riêng theo lõi)
+  mix?: number | null;        // kg hỗn hợp silicone cần trộn / km cáp (BOM công đoạn CD0)
 };
 
 export type Task = {
@@ -129,13 +132,23 @@ export function colorHex(c: string | null | undefined): string {
 }
 
 // ---------------- Máy và công đoạn ----------------
-export const OP_NAME: Record<Op, string> = { CD1: 'Bện ruột dẫn', CD2: 'Bọc cách điện', CD3: 'Xoắn / ghép lõi', CD5: 'Bọc vỏ' };
-export const OP_SHORT: Record<Op, string> = { CD1: 'Bện', CD2: 'Bọc cách điện', CD3: 'Xoắn (+ AL/PET)', CD5: 'Bọc vỏ' };
-export const UNIT: Record<Op, string> = { CD1: 'm lõi', CD2: 'm lõi', CD3: 'm cáp', CD5: 'm cáp' };
-export const BOBBIN: Record<Op, number> = { CD1: 10000, CD2: 10000, CD3: 5000, CD5: 5000 }; // giả định m/bobin
+export const OP_NAME: Record<Op, string> = { CD0: 'Trộn silicone', CD1: 'Bện ruột dẫn', CD2: 'Bọc cách điện', CD3: 'Xoắn / ghép lõi', CD5: 'Bọc vỏ', CD6: 'Đóng gói' };
+export const OP_SHORT: Record<Op, string> = { CD0: 'Trộn silicone', CD1: 'Bện', CD2: 'Bọc cách điện', CD3: 'Xoắn (+ AL/PET)', CD5: 'Bọc vỏ', CD6: 'Đóng gói' };
+export const UNIT: Record<Op, string> = { CD0: 'm cáp', CD1: 'm lõi', CD2: 'm lõi', CD3: 'm cáp', CD5: 'm cáp', CD6: 'm cáp' };
+export const BOBBIN: Record<Op, number> = { CD0: 5000, CD1: 10000, CD2: 10000, CD3: 5000, CD5: 5000, CD6: 500 }; // giả định m/bobin (đóng gói: bobin gỗ 500 m)
 export const opName = (op: Op, o: Pick<Order, 'shield' | 'sil'>) =>
   op === 'CD3' && o.shield ? 'Xoắn + quấn AL/PET' : op === 'CD2' ? (o.sil ? 'Bọc cách điện silicone' : 'Bọc cách điện (line vỏ)') : OP_NAME[op];
-export const MACHINE_OPS: Record<string, Op[]> = { BUNCHER: ['CD1'], EXTRUDER_SI: ['CD2'], TWISTER: ['CD3'], EXTRUDER_TP: ['CD2', 'CD5'] };
+export const MACHINE_OPS: Record<string, Op[]> = { MIXER: ['CD0'], BUNCHER: ['CD1'], EXTRUDER_SI: ['CD2'], TWISTER: ['CD3'], EXTRUDER_TP: ['CD2', 'CD5'], PACKER: ['CD6'] };
+// Kg hỗn hợp trộn (kg/giờ) → mét cáp/phút theo kg/km cáp của mã
+export const mixMpm = (kgh: number, o: Pick<Order, 'mix'>) => (Number(o.mix) > 0 ? (kgh / 60) / (Number(o.mix) / 1000) : 0);
+// Công đoạn phải chạy trước (gối đầu): bọc cách điện chờ bện và trộn; công đoạn khác chờ công đoạn liền trước (bỏ qua trộn)
+export function predOps(route: Op[], k: number): Op[] {
+  const op = route[k];
+  if (op === 'CD0') return [];
+  if (op === 'CD2') return route.slice(0, k).filter((x) => x === 'CD1' || x === 'CD0');
+  for (let j = k - 1; j >= 0; j--) if (route[j] !== 'CD0') return [route[j]];
+  return [];
+}
 export function canRun(machineType: string, t: Pick<Task, 'op' | 'order'>): boolean {
   if (t.op === 'CD2') return t.order.sil ? machineType === 'EXTRUDER_SI' : machineType === 'EXTRUDER_TP';
   return (MACHINE_OPS[machineType] ?? []).includes(t.op);
@@ -146,8 +159,9 @@ const defRate = (cfg: Pick<Config, 'rates'>, code: string, o: Pick<Order, 'size'
   const x = cfg.rates.find((y) => y.op_code === code);
   return x ? Number(o.size >= 2.5 ? x.rate_large : x.rate_small) : 50;
 };
-export function speedOf(cfg: Pick<Config, 'rates'>, op: Op, o: Pick<Order, 'size' | 'shield'>): number {
+export function speedOf(cfg: Pick<Config, 'rates'>, op: Op, o: Pick<Order, 'size' | 'shield' | 'mix'>): number {
   if (op === 'CD3' && o.shield) return Math.min(defRate(cfg, 'CD3', o), defRate(cfg, 'CD4', o));
+  if (op === 'CD0') return mixMpm(defRate(cfg, 'CD0', o), o);
   return defRate(cfg, op, o);
 }
 
@@ -188,7 +202,13 @@ export function plcSpeed(cfg: Pick<Config, 'plc_speeds'>, machine: string, op: O
 // Tốc độ chạy một công đoạn trên một máy theo chế độ nhập dữ liệu của máy.
 // Bảng tự nhập: xoắn có quấn AL/PET liền dây lấy tốc độ chậm hơn của hai bước.
 export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds'>, machine: string, op: Op,
-  o: Pick<Order, 'size' | 'shield' | 'product_id' | 'group' | 'core'>, mode = 'MANUAL'): Speed {
+  o: Pick<Order, 'size' | 'shield' | 'product_id' | 'group' | 'core' | 'mix'>, mode = 'MANUAL'): Speed {
+  if (op === 'CD0') {
+    // Máy trộn: bảng tốc độ khai báo theo kg/giờ (không lấy PLC)
+    const s = machineSpeed(cfg, machine, 'CD0', o) ?? { v: defRate(cfg, 'CD0', o), src: 'MD' as const, pending: false };
+    const kgh = Math.round(s.v * 10) / 10, mix = Math.round(Number(o.mix) * 10) / 10;
+    return { ...s, v: mixMpm(s.v, o), note: `trộn ${kgh} kg/giờ ÷ ${mix} kg hỗn hợp/km cáp` };
+  }
   if (mode === 'PLC') {
     const p = plcSpeed(cfg, machine, op, o);
     if (p) return p;
@@ -243,6 +263,8 @@ function changeover(cfg: Pick<Config, 'changeovers'>, prev: Prev, t: { order: Or
     return [P('SH_CODE'), 'đổi mã, thay khuôn và chỉnh in'];
   }
   if (t.op === 'CD1') return prev.order.size === t.order.size ? [0, ''] : [P('BUN_SIZE'), 'đổi cỡ ruột'];
+  if (t.op === 'CD0') return prev.order.product_code === t.order.product_code ? [0, ''] : [P('MIX_CODE'), 'đổi công thức trộn, vệ sinh trục cán'];
+  if (t.op === 'CD6') return prev.order.product_code === t.order.product_code ? [0, ''] : [P('PK_CODE'), 'đổi mã, đổi bobin gỗ và nhãn'];
   return prev.order.product_code === t.order.product_code ? [0, ''] : [P('TWS_CODE'), 'đổi mã sản phẩm'];
 }
 
@@ -328,12 +350,13 @@ export function schedule(
 
   // Công đoạn trước đã chạy ≥ 1 ca và công đoạn này không xong trước công đoạn trước (run: phút chạy trên máy đang xét)
   const ready = (t: Task, run: number): number | null => {
-    if (t.k === 0) return 0;
-    const prevOp = t.order.route[t.k - 1];
-    const p = opDone.get(key(t.order.id, prevOp))!;
-    if (p.left > 0) return null;
-    if (p.end === 0) return 0;
-    return Math.max(p.start + S, p.end + S - run);
+    let r = 0;
+    for (const prevOp of predOps(t.order.route, t.k)) {
+      const p = opDone.get(key(t.order.id, prevOp))!;
+      if (p.left > 0) return null;
+      if (p.end > 0) r = Math.max(r, p.start + S, p.end + S - run);
+    }
+    return r;
   };
   const spMemo = new Map<string, Speed>();
   const modeOf = new Map(ctx.machines.map((m) => [m.code, m.data_mode]));
@@ -394,7 +417,8 @@ export function schedule(
       .sort((a, b) => byPrio(a.t.order, b.t.order) || a.rs - b.rs)[0];
     const { m, t, ln, sp, run, lead } = best;
     const [su, why] = changeover(cfg, m.last, t);
-    const prevOp = t.k > 0 ? t.order.route[t.k - 1] : null;
+    const preds = predOps(t.order.route, t.k);
+    const prevOp = preds.length ? preds.reduce((a, b) => (opDone.get(key(t.order.id, b))!.end > opDone.get(key(t.order.id, a))!.end ? b : a)) : null;
     // Tránh khối giữ chỗ của lô đã duyệt (máy và người): dời đến sau khối nếu chồng lên
     let st0 = best.st;
     for (let moved = true, g = 0; moved && g < 100; g++) {
@@ -413,7 +437,7 @@ export function schedule(
     const v1 = Math.round(sp.v * 10) / 10;
     if (sp.src === 'PLC') reason += ` · Tốc độ ${v1} m/phút thực tế PLC 30 ngày (${sp.note})`;
     else if (sp.src === 'MAY') reason += ` · Tốc độ ${v1} m/phút theo bảng tự nhập của máy${sp.pending ? ' (chưa duyệt)' : ''}${sp.note ? ', ' + sp.note : ''}`;
-    else if (sp.note) reason += ` · Tốc độ mặc định theo công đoạn, ${sp.note}`;
+    else if (sp.note) reason += ` · Tốc độ ${v1} m/phút mặc định theo công đoạn, ${sp.note}`;
     const end = st0 + su + run;
     m.slots.push({
       key: t.key, lineId: t.order.id, op: t.op, color: t.color, machine: m.code, operator: ln.w.code, lane: ln.li,
@@ -438,7 +462,8 @@ export function finishInfo(sch: Pick<Schedule, 'opDone' | 'S' | 'SPD'>, cal: Cal
     const last = o.route[o.route.length - 1];
     const d = sch.opDone.get(o.id + '|' + last);
     if (!d || d.end === 0 || d.left > 0) { out.set(o.id, { end: 0, finS: -1, finDate: null, slack: null, placed: false }); continue; }
-    const finS = Math.floor((d.end + sch.S) / sch.S); // + 1 ca kiểm tra, đóng gói
+    // Đóng gói đã xếp trên máy cuốn bobin: xong ở ca kết thúc đóng gói; chưa có công đoạn đóng gói thì + 1 ca kiểm tra, đóng gói
+    const finS = last === 'CD6' ? Math.floor(Math.max(0, d.end - 1e-6) / sch.S) : Math.floor((d.end + sch.S) / sch.S);
     const di = Math.floor(finS / sch.SPD);
     const finDate = di < cal.days.length ? cal.days[di] : null;
     out.set(o.id, { end: d.end, finS, finDate, slack: o.due && finDate ? dayDiff(o.due, finDate) : null, placed: true });

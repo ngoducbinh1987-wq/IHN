@@ -26,7 +26,7 @@ type Hu = { hu_no: string; carrier_code: string | null; lot_no: string; qty: num
 
 // Máy hợp lệ theo công đoạn (bọc PVC/HDPE chạy line vỏ; xoắn + AL/PET cùng máy xoắn)
 const MACHINE_TYPES: Record<string, string[]> = {
-  CD0: ['MIXER'], CD1: ['BUNCHER'], CD2: ['EXTRUDER_SI', 'EXTRUDER_TP'], CD3: ['TWISTER'], CD4: ['TWISTER'], CD5: ['EXTRUDER_TP'], CD6: [],
+  CD0: ['MIXER'], CD1: ['BUNCHER'], CD2: ['EXTRUDER_SI', 'EXTRUDER_TP'], CD3: ['TWISTER'], CD4: ['TWISTER'], CD5: ['EXTRUDER_TP'], CD6: ['PACKER'],
 };
 const vnNow = () => new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 16).replace(' ', 'T');
 

@@ -254,6 +254,7 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
   const opName = new Map((ops ?? []).map((o) => [o.code, o.name]));
   const myOps = MACHINE_OPS[machineType ?? ''] ?? [];
   const multiOp = myOps.length > 1;
+  const U = machineType === 'MIXER' ? 'kg/giờ' : 'm/ph'; // máy trộn khai báo năng lực theo kg hỗn hợp/giờ
   const rg = ranges?.[0];
   const sizeText = (core: string | null) => core ? `Cỡ ${nf(mm2.get(core) ?? 0, 2)} mm² (${core})` : null;
   const rows = [...(speeds ?? [])].sort((x, y) => String(x.op_code).localeCompare(String(y.op_code))
@@ -276,9 +277,9 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
       </section>
 
       <section className="card overflow-x-auto">
-        <div className="card-h">Tốc độ chuẩn (m/ph)<span className="text-[13px] font-normal text-muted">Lịch máy chọn: riêng mã SP → theo cỡ ruột → mặc định của máy</span></div>
+        <div className="card-h">Tốc độ chuẩn ({U})<span className="text-[13px] font-normal text-muted">Lịch máy chọn: riêng mã SP → theo cỡ ruột → mặc định của máy</span></div>
         <table className="tbl">
-          <thead><tr>{multiOp && <th>Công đoạn</th>}<th>Áp dụng cho</th><th className="num">Chuẩn (m/ph)</th><th className="num">Đổi máy (phút/lô)</th><th>Tình trạng</th><th /></tr></thead>
+          <thead><tr>{multiOp && <th>Công đoạn</th>}<th>Áp dụng cho</th><th className="num">Chuẩn ({U})</th><th className="num">Đổi máy (phút/lô)</th><th>Tình trạng</th><th /></tr></thead>
           <tbody>
             {rows.map((s) => (
               <tr key={s.id}>
@@ -309,14 +310,14 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
               : <input type="hidden" name="op_code" value={myOps[0]} />}
             <label className="lbl">Cỡ ruột<select name="core_code" className="inp" defaultValue=""><option value="">Mọi cỡ</option>{coreList.map(([c, v]) => <option key={c} value={c}>{nf(v, 2)} mm² ({c})</option>)}</select></label>
             <label className="lbl">Riêng một mã SP<select name="product_id" className="inp" defaultValue=""><option value="">Không</option>{(products ?? []).map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}</select></label>
-            <label className="lbl"><span className="req">Chuẩn (m/ph)</span><input name="std_mpm" className="inp" inputMode="decimal" required /></label>
+            <label className="lbl"><span className="req">Chuẩn ({U})</span><input name="std_mpm" className="inp" inputMode="decimal" required /></label>
             <label className="lbl">Đổi máy (phút/lô)<input name="setup_min" className="inp" inputMode="decimal" defaultValue="0" /></label>
             <SubmitButton>Thêm tốc độ</SubmitButton>
           </form>
         )}
       </section>
 
-      {(plc.length > 0 || line?.data_mode !== 'MANUAL') && (
+      {(plc.length > 0 || (line?.data_mode !== 'MANUAL' && machineType !== 'MIXER')) && (
         <section className="card mt-4 overflow-x-auto">
           <div className="card-h">Tốc độ thực tế đo từ PLC (30 ngày)<span className="text-[13px] font-normal text-muted">
             {line?.data_mode === 'PLC' ? 'Máy chạy chế độ Tự động: lịch máy dùng số này (cần ≥ 120 phút chạy cùng mã hoặc cùng cỡ ruột)' : 'Để so sánh với tốc độ chuẩn ở trên'}</span></div>
