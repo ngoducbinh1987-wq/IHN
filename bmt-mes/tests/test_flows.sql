@@ -102,16 +102,14 @@ insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_pe
 select pp.id, p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from plan.production_plans pp, master.products p
  where pp.plan_no = 'KH-SFR' and p.code = 'SFR-2P-1';
 select pg_temp.fails($$select plan.run_mrp((select id from plan.production_plans where plan_no = 'KH-SFR'))$$, 'Spec chưa phát hành', 'MRP chính thức chặn spec chưa phát hành');
-select pg_temp.fails($$select wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'KH-2611-01'), 'KH-2611-01')$$,
-  'cần vai trò', 'Chỉ Giám đốc gửi duyệt kế hoạch tháng');
 select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k='run1'))$$, 'được phê duyệt', 'Chưa duyệt kế hoạch thì không sinh PR');
-select pg_temp.as_user('U_BGD');
+-- Quy trình final 27/10/2026: TP SX lập kế hoạch tháng, Chủ tịch HĐQT duyệt (không còn bước Quản lý SX tự xác nhận)
+select pg_temp.as_user('U_SXTP');
 insert into t select 'req_plan', wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'KH-2611-01'), 'KH-2611-01');
-select pg_temp.as_user('U_SXTP'); select wf.act((select v from t where k='req_plan'), 'APPROVE', 'Đủ năng lực');
 select pg_temp.as_user('U_BGD');
 select pg_temp.fails($$select wf.act((select v from t where k='req_plan'), 'APPROVE')$$, 'cần vai trò', 'Bước Chủ tịch HĐQT: Giám đốc không duyệt thay');
 select pg_temp.as_user('U_CT');   select wf.act((select v from t where k='req_plan'), 'APPROVE');
-select pg_temp.ok((select status from plan.production_plans where plan_no = 'KH-2611-01') = 'APPROVED', 'Kế hoạch tháng: Giám đốc lập → Quản lý SX xác nhận → Chủ tịch HĐQT phê duyệt');
+select pg_temp.ok((select status from plan.production_plans where plan_no = 'KH-2611-01') = 'APPROVED', 'Kế hoạch tháng: TP SX lập → Chủ tịch HĐQT phê duyệt');
 select pg_temp.as_user('U_SXKH');
 insert into t select 'pr1', plan.create_pr_from_mrp((select v from t where k='run1'));
 select pg_temp.ok((select count(*) from purchase.pr_lines where pr_id = (select v from t where k='pr1')) > 5, 'Sinh PR từ MRP sau khi BGĐ duyệt kế hoạch');
@@ -208,12 +206,23 @@ select pg_temp.fails($$select mfg.release_wo((select id from mfg.work_orders whe
 select pg_temp.as_user('U_TT');
 create function pg_temp.op(p_code text) returns uuid language sql as $$
   select o.id from mfg.wo_operations o join mfg.work_orders w on w.id = o.wo_id where w.wo_no = 'LSX-T1' and o.op_code = p_code $$;
+-- Quy trình final (3300): bobin BTP vào Chờ QC; QC ký PASS rồi mới lắp vào công đoạn sau
+create function pg_temp.qc_pass(p_key text) returns void language plpgsql as $$
+begin
+  perform pg_temp.as_user('U_QC');
+  perform qa.release_lot((select v from t where k = p_key), 'PASS', null, '[]');
+  perform pg_temp.as_user('U_TT');
+end $$;
 insert into t select 'cb', mfg.record_output(pg_temp.op('CD1'), 'CB-T1', 7200, 89.2, jsonb_build_array(jsonb_build_object('lot_id', (select id from inv.lots where lot_no = 'CU24-T1'), 'qty', 100)));
+select pg_temp.qc_pass('cb');
 insert into t select 'lbn', mfg.record_output(pg_temp.op('CD2'), 'LB-T1N', 3600, null, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k='cb'), 'qty', 3600)), 'Nâu');
 insert into t select 'lbt', mfg.record_output(pg_temp.op('CD2'), 'LB-T1T', 3600, null, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k='cb'), 'qty', 3600)), 'Trắng');
+select pg_temp.qc_pass('lbn'); select pg_temp.qc_pass('lbt');
 insert into t select 'bl', mfg.record_output(pg_temp.op('CD3'), 'BL-T1', 3500, null, jsonb_build_array(
   jsonb_build_object('lot_id', (select v from t where k='lbn'), 'qty', 3500), jsonb_build_object('lot_id', (select v from t where k='lbt'), 'qty', 3500)));
+select pg_temp.qc_pass('bl');
 insert into t select 'cv', mfg.record_output(pg_temp.op('CD5'), 'CV-T1', 3500, null, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k='bl'), 'qty', 3500)));
+select pg_temp.qc_pass('cv');
 insert into t select 'bb', mfg.record_output(pg_temp.op('CD6'), 'BB-T1-001', 500, 31.2, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k='cv'), 'qty', 500)));
 select pg_temp.ok((select item_kind = 'FG' and qc_status = 'PENDING' from inv.lots where lot_no = 'BB-T1-001'), 'Bobin TP tạo ở CĐ6, trạng thái Chờ QC');
 select pg_temp.ok(exists (select 1 from mfg.trace_back((select v from t where k='bb')) where lot_no = 'CU24-T1' and depth = 5),

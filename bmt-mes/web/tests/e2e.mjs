@@ -191,8 +191,10 @@ await page.selectOption('select[name=m_per_pack]', '500');
 await clickNav(page, 'button:has-text("Lưu")');
 await clickNav(page, 'button:has-text("Chạy MRP")');
 if (await page.locator('#mrp-stale').count()) fail('Chạy lại MRP phải hết cảnh báo');
-if (await page.locator('button:has-text("Gửi duyệt kế hoạch")').count()) fail('Chỉ Giám đốc thấy nút gửi duyệt kế hoạch tháng');
-ok('Chạy lại MRP: hết cảnh báo; Kế hoạch SX không thấy nút gửi duyệt (chỉ Giám đốc)');
+if (!(await page.locator('button:has-text("Gửi duyệt kế hoạch")').first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false))) {
+  fail('Kế hoạch SX (TP SX) phải thấy nút gửi duyệt kế hoạch tháng');
+}
+ok('Chạy lại MRP: hết cảnh báo; Kế hoạch SX thấy nút gửi duyệt (quy trình final: TP SX lập)');
 {
   const [c, p] = await ctxFor();
   await login(p, 'sx.kh@bmt.test');
@@ -204,12 +206,11 @@ ok('Chạy lại MRP: hết cảnh báo; Kế hoạch SX không thấy nút gử
 }
 await ctx.close();
 [ctx, page] = await ctxFor();
-await login(page, 'bgd@bmt.test');
+await login(page, 'sx.tp@bmt.test');
 await page.goto(planUrl);
 await clickNav(page, 'button:has-text("Gửi duyệt kế hoạch")');
-await expectOk(page, 'Giám đốc gửi duyệt kế hoạch tháng');
+await expectOk(page, 'TP SX gửi duyệt kế hoạch tháng');
 await ctx.close();
-await approveAs('sx.tp@bmt.test', planNo, 'QL SX');
 await approveAs('ct@bmt.test', planNo, 'Chủ tịch HĐQT');
 {
   const [c, p] = await ctxFor();
@@ -410,17 +411,18 @@ await ctx.close();
 await login(page, 'admin@bmt.test', 'Admin@12345');
 await page.goto(`${BASE}/quan-tri/quy-trinh?f=PLAN`);
 const flowText = await page.textContent('main');
-if (!flowText.includes('Giám đốc lập kế hoạch') || !flowText.includes('Chủ tịch HĐQT phê duyệt')) fail('Trang cài đặt phải hiện luồng Giám đốc lập → Quản lý SX xác nhận → Chủ tịch HĐQT phê duyệt');
-const step1 = page.locator('form:has(input[name=seq][value="1"])');
+if (!flowText.includes('TP SX lập kế hoạch tháng') || !flowText.includes('Chủ tịch HĐQT phê duyệt')) fail('Trang cài đặt phải hiện luồng TP SX lập → Chủ tịch HĐQT phê duyệt');
+// Quy trình final: bước Quản lý SX xác nhận (seq 1) đã tắt; chỉnh bước Chủ tịch HĐQT (seq 2)
+const step1 = page.locator('form:has(input[name=seq][value="2"])');
 await step1.locator('input[name=sla_hours]').fill('8');
 await step1.locator('input[name=warn_hours]').fill('2');
-await step1.locator('label:has-text("Đỗ Văn Khánh") input').check();
-await clickNav(page, 'form:has(input[name=seq][value="1"]) button:has-text("Lưu bước")');
-await expectOk(page, 'Lưu bước Duyệt: giao Đỗ Văn Khánh, hạn 8 giờ, nhắc trước 2 giờ');
+await step1.locator('label:has-text("Chủ Tịch Thử") input').check();
+await clickNav(page, 'form:has(input[name=seq][value="2"]) button:has-text("Lưu bước")');
+await expectOk(page, 'Lưu bước Chủ tịch HĐQT: giao Chủ tịch, hạn 8 giờ, nhắc trước 2 giờ');
 if (!(await page.locator('ol[aria-label="Các giai đoạn duyệt"]').innerText()).includes('8 giờ')) fail('Sơ đồ quy trình phải cập nhật thời hạn');
 await page.screenshot({ path: `${SHOTS}/12-cai-dat-quy-trinh.png`, fullPage: true });
 await step1.locator('input[name=warn_hours]').fill('9');
-await clickNav(page, 'form:has(input[name=seq][value="1"]) button:has-text("Lưu bước")');
+await clickNav(page, 'form:has(input[name=seq][value="2"]) button:has-text("Lưu bước")');
 if (!(await flash(page)).includes('Nhắc trước hạn')) fail('Phải chặn nhắc trước hạn ≥ thời hạn');
 ok('Chặn cấu hình sai: nhắc trước hạn ≥ thời hạn');
 await page.goto(`${BASE}/quan-tri/quy-trinh?f=PO`);
@@ -455,13 +457,23 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   await login(page, email, pw);
   const pages = ['/kho', '/kho/ton', '/kho/phieu', '/kho/quet', '/kho/cap-phat', '/kho/kiem-ke', '/kho/nhan-hang', '/kho/so-cai', '/kho/cai-dat',
     '/lich-may', '/lenh-ngay', '/ghi-nhan-ca', '/kh-thuc-te', '/tham-so', '/may', '/may/checklist', '/may/bao-duong', '/may/toc-do',
-    '/may/kiem-tra', '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut'];
+    '/may/kiem-tra', '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut', '/phieu-hoan-thanh', '/kho/qc'];
   for (const u of pages) {
     const res = await page.goto(`${BASE}${u}`);
     const body = await page.innerText('body');
     if (res.status() !== 200 || /Application error|Internal Server Error|does not exist|permission denied|PGRST/i.test(body)) fail(`${email} mở ${u} lỗi: ${res.status()} ${body.slice(0, 200)}`);
   }
   ok(`${email.split('@')[0]} mở được ${pages.length} màn hình Kho, Kế hoạch SX, Quản lý máy`);
+  // Phiếu hoàn thành bobin: có lệnh SX đang chạy thì mở form nhập và bản in phiếu trống
+  await page.goto(`${BASE}/phieu-hoan-thanh`);
+  const muc = await page.locator('a[href*="/phieu-hoan-thanh?muc="]').first().getAttribute('href').catch(() => null);
+  if (muc) {
+    await page.goto(`${BASE}${muc}`);
+    if (!(await page.locator('input[name=gross_kg]').count())) fail(`${email}: form phiếu hoàn thành không hiện`);
+    const res = await page.goto(`${BASE}/in/phieu-hoan-thanh?${muc.split('?')[1]}&n=2`);
+    if (res.status() !== 200 || !(await page.innerText('body')).includes('PHIẾU HOÀN THÀNH BOBIN')) fail(`${email}: bản in phiếu hoàn thành lỗi`);
+    ok(`${email.split('@')[0]}: form nhập phiếu hoàn thành + bản in phiếu trống mở được`);
+  }
   await ctx.close();
 }
 

@@ -9,12 +9,14 @@ import { signOut } from '../login/actions';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   // Hồ sơ người dùng và các số đếm trên menu chạy song song (một lượt hỏi database thay vì hai)
-  const [me, { count: myTurn }, { count: unread }, { count: maintAll }] = await Promise.all([
+  const [me, { count: myTurn }, { count: unread }, { count: maintAll }, { count: qcWait }] = await Promise.all([
     requireMe(),
     supabase.schema('app').from('v_approvals').select('id', { count: 'exact', head: true }).eq('my_turn', true),
     supabase.schema('app').from('v_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
     // Việc bảo dưỡng quá hạn chưa có phiếu (RLS chỉ trả dòng cho người có quyền xem máy)
     supabase.schema('app').from('v_maint_plans').select('id', { count: 'exact', head: true }).eq('active', true).eq('state', 'OVERDUE').is('open_wo', null),
+    // Bobin, lô chờ QC (RLS: chỉ người xem được kho)
+    supabase.schema('inv').from('lots').select('id', { count: 'exact', head: true }).eq('qc_status', 'PENDING'),
   ]);
   const maintDue = can(me, 'machine', 'view') ? maintAll : 0;
 
@@ -32,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       { href: '/lich-may', label: 'Lịch máy', icon: 'calendar', group: 'Sản xuất' },
       { href: '/lenh-ngay', label: 'Lệnh SX ngày', icon: 'order', group: 'Sản xuất' },
       { href: '/ghi-nhan-ca', label: 'Ghi nhận ca', icon: 'shift', group: 'Sản xuất' },
+      { href: '/phieu-hoan-thanh', label: 'Phiếu hoàn thành bobin', icon: 'checklist', group: 'Sản xuất' },
       { href: '/kh-thuc-te', label: 'Kế hoạch – Thực tế', icon: 'chart', group: 'Sản xuất' },
       { href: '/tham-so', label: 'Máy, người & tham số', icon: 'sliders', group: 'Sản xuất' },
     );
@@ -54,6 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (can(me, 'production', 'view') || inv || can(me, 'cost', 'view')) items.push({ href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: 'chart', group: 'Báo cáo' });
   if (inv && office) items.push({ href: '/kho/so-cai', label: 'Nhập – xuất – tồn', icon: 'ledger', group: 'Báo cáo' });
   if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
+  if (can(me, 'quality', 'view')) items.push({ href: '/kho/qc', label: 'QC bobin, lô hàng', icon: 'checklist', group: 'Kỹ thuật / QA', badge: qcWait ?? 0 });
   if (can(me, 'machine', 'view')) {
     items.push({ href: '/may', label: 'Danh sách máy', icon: 'machine', group: 'Quản lý máy' });
     items.push({ href: '/may/checklist', label: 'Checklist đầu ca', icon: 'checklist', group: 'Quản lý máy' });

@@ -6,10 +6,9 @@ import { after } from 'next/server';
 import { parseNum } from '@/lib/format';
 import { errText, withMsg } from '@/lib/kho';
 import { flushEmailOutbox } from '@/lib/notify';
+import { qcTestsFor } from '@/lib/qc';
 import { createClient } from '@/lib/supabase/server';
 import { str } from '../util';
-
-const TESTS: Record<string, string> = { WIRE_DIA: 'mm', DENSITY: 'g/cm³', RDC: 'Ω/km', OD: 'mm', INS_THK: 'mm', SHEATH_THK: 'mm', KGKM: 'kg/km' };
 
 export async function passLot(form: FormData) { await releaseLot(form, 'PASS'); }
 export async function failLot(form: FormData) { await releaseLot(form, 'FAIL'); }
@@ -17,18 +16,24 @@ export async function rejectLot(form: FormData) { await releaseLot(form, 'REJECT
 
 async function releaseLot(form: FormData, result: 'PASS' | 'FAIL' | 'REJECT') {
   const back = str(form, 'back') || '/kho/qc';
+  // Chỉ tiêu theo công đoạn của lô (lib/qc.ts): số đo, Đạt/Không đạt, ghi chữ
   const tests: Record<string, unknown>[] = [];
-  for (const [code, unit] of Object.entries(TESTS)) {
-    const raw = str(form, `t_${code}`);
+  for (const t of qcTestsFor(str(form, 'item_kind'), str(form, 'wip_stage') || null)) {
+    const raw = str(form, `t_${t.code}`);
     if (!raw) continue;
-    const v = parseNum(raw);
-    if (v === null || Number.isNaN(v)) redirect(withMsg(back, 'err', `Giá trị đo ${code} không hợp lệ`));
-    tests.push({ test_code: code, value_num: v, unit });
+    if (t.kind === 'num') {
+      const v = parseNum(raw);
+      if (v === null || Number.isNaN(v)) redirect(withMsg(back, 'err', `Giá trị "${t.label}" không hợp lệ`));
+      tests.push({ test_code: t.code, value_num: v, unit: t.unit ?? null });
+    } else if (t.kind === 'pf') {
+      tests.push({ test_code: t.code, value_text: raw === 'PASS' ? 'Đạt' : 'Không đạt', pass: raw === 'PASS' });
+    } else {
+      tests.push({ test_code: t.code, value_text: raw });
+    }
   }
-  const hv = str(form, 't_HV');
-  if (hv) tests.push({ test_code: 'HV', value_text: hv === 'PASS' ? 'Đạt' : 'Không đạt', pass: hv === 'PASS' });
-  const visual = str(form, 't_VISUAL');
-  if (visual) tests.push({ test_code: 'VISUAL', value_text: visual });
+  if (result === 'PASS' && tests.some((t) => t.pass === false)) {
+    redirect(withMsg(back, 'err', 'Có chỉ tiêu Không đạt: chọn "Không đạt – cách ly" và ghi lỗi'));
+  }
   const supabase = await createClient();
   const { error } = await supabase.schema('qa').rpc('release_lot', {
     p_lot: str(form, 'lot_id'), p_result: result, p_note: str(form, 'note') || null, p_tests: tests,
@@ -36,5 +41,5 @@ async function releaseLot(form: FormData, result: 'PASS' | 'FAIL' | 'REJECT') {
   if (error) redirect(withMsg(back, 'err', errText(error.message)));
   after(async () => { await flushEmailOutbox(); });
   revalidatePath('/kho/qc');
-  redirect(withMsg(back, 'ok', `${str(form, 'lot_no')}: ${result === 'PASS' ? 'Đạt – lô được dùng' : result === 'FAIL' ? 'Không đạt – đã cách ly, mở NCR' : 'Không nhận – chờ trả NCC/hủy'}`));
+  redirect(withMsg(back, 'ok', `${str(form, 'lot_no')}: ${result === 'PASS' ? 'Đạt – dán tem QC PASS, được dùng ở công đoạn sau' : result === 'FAIL' ? 'Không đạt – dán tem đỏ, cách ly, đã mở phiếu xử lý (NCR)' : 'Không nhận – chờ trả NCC/hủy'}`));
 }

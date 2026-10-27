@@ -60,6 +60,8 @@ select p.id, u.role from core.profiles p join (values ('Q_ADM','ADMIN'),('Q_BGD'
   ('Q_KHONV','KHO_NV'),('Q_KTTP','KT_TP'),('Q_KTTP','QC'),('Q_KTTP2','KT_TP')) u(code, role) on u.code = p.employee_code;
 -- Bước Chủ tịch HĐQT của kế hoạch tháng giao đích danh Q_CT
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('Q_CT')] where doc_type = 'PLAN' and seq = 2;
+-- Máy duyệt cần quy trình 2 bước: bật lại bước Quản lý SX của kế hoạch tháng trong giao dịch thử (từ 3300 bước này tắt)
+update wf.approval_steps set enabled = true where doc_type = 'PLAN' and seq = 1;
 
 -- ================================================================ 0. Quản trị làm được mọi khâu
 select pg_temp.as_user('Q_ADM');

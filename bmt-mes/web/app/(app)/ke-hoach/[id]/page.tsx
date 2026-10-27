@@ -46,8 +46,9 @@ export default async function PlanDetail({ params, searchParams }:
   ]);
   const stages: Stage[] = req?.steps ?? [{ seq: 0, label: flowHead?.submit_label ?? 'Lập kế hoạch', state: 'current' }, ...(flow ?? []).map((s) => ({ seq: s.seq, label: s.level_label, state: 'todo' as const }))];
   const draft = plan.status === 'DRAFT';
-  // Gửi duyệt: đúng người/vai trò được cấu hình ở bước lập (mặc định: Ban giám đốc)
-  const canSubmit = (!flowHead?.submit_role || me.roles.includes(flowHead.submit_role))
+  // Gửi duyệt: đúng người/vai trò được cấu hình ở bước lập; không cấu hình thì người có quyền lập kế hoạch
+  // (quy trình final 27/10/2026: TP SX lập, Chủ tịch HĐQT duyệt; database kiểm lại bằng wf.can_submit)
+  const canSubmit = (flowHead?.submit_role ? me.roles.includes(flowHead.submit_role) : can(me, 'plan', 'create') || me.roles.includes('BGD'))
     && (!(flowHead?.submit_user_ids?.length) || flowHead.submit_user_ids.includes(me.id));
   const canMakePr = can(me, 'plan', 'create') || can(me, 'purchase', 'create');
   const editable = draft && can(me, 'plan', 'edit');

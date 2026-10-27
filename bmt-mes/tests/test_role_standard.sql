@@ -262,13 +262,13 @@ insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_pe
 select pp.id, p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from plan.production_plans pp, master.products p
  where pp.plan_no = 'R-KH-1' and p.code = 'PFR-2C-1P5';
 insert into t select 'run', plan.run_mrp((select id from plan.production_plans where plan_no = 'R-KH-1'));
-select pg_temp.fails($$select wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'R-KH-1'), 'R-KH-1')$$, 'cần vai trò Ban giám đốc', 'Kế hoạch tháng chỉ Giám đốc gửi duyệt');
 select pg_temp.as_user('R_MUANV');
+select pg_temp.fails($$select wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'R-KH-1'), 'R-KH-1')$$, 'quyền', 'NV mua hàng không gửi duyệt kế hoạch tháng');
 select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k = 'run'))$$, 'được phê duyệt', 'NV mua hàng có quyền sinh PR (chờ kế hoạch được duyệt)');
-select pg_temp.as_user('R_BGD');
+-- Quy trình final 27/10/2026: TP SX (Kế hoạch SX) lập kế hoạch tháng, Chủ tịch HĐQT duyệt
+select pg_temp.as_user('R_SXKH');
 insert into t select 'plan_req', wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'R-KH-1'), 'R-KH-1');
-select pg_temp.ok(pg_temp.steps((select v from t where k = 'plan_req')) = 'Quản lý SX xác nhận năng lực | Chủ tịch HĐQT phê duyệt', 'Kế hoạch tháng: Quản lý SX xác nhận → Chủ tịch HĐQT phê duyệt');
-select pg_temp.as_user('R_SXTP'); select wf.act((select v from t where k = 'plan_req'), 'APPROVE');
+select pg_temp.ok(pg_temp.steps((select v from t where k = 'plan_req')) = 'Chủ tịch HĐQT phê duyệt', 'Kế hoạch tháng: TP SX lập → Chủ tịch HĐQT phê duyệt');
 select pg_temp.as_user('R_CT');   select wf.act((select v from t where k = 'plan_req'), 'APPROVE');
 select pg_temp.as_user('R_MUANV');
 insert into t select 'pr_mrp', plan.create_pr_from_mrp((select v from t where k = 'run'));

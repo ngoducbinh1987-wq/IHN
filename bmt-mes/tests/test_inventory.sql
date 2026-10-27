@@ -204,19 +204,32 @@ select pg_temp.ok((select review_status = 'CONFIRMED' from inv.stock_docs where 
 select pg_temp.as_user('NV1');
 create function pg_temp.op(p_code text) returns uuid language sql as $$
   select o.id from mfg.wo_operations o join mfg.work_orders w on w.id = o.wo_id where w.wo_no = 'LSX-K1' and o.op_code = p_code $$;
+-- Quy trình final (3300): mọi bobin BTP vào Chờ QC; QC (TPKT) ký PASS rồi mới lắp vào công đoạn sau
+create function pg_temp.qc_pass(p_key text, p_back text) returns void language plpgsql as $$
+begin
+  perform pg_temp.as_user('TPKT');
+  perform qa.release_lot((select v from t where k = p_key), 'PASS', null, '[]');
+  perform pg_temp.as_user(p_back);
+end $$;
 insert into t select 'cb', mfg.record_output(pg_temp.op('CD1'), 'CB-K1', 2000, 25.0,
   jsonb_build_array(jsonb_build_object('lot_id', (select lot_id from inv.handling_units where id = (select v from t where k = 'hu1')), 'qty', 27.5)));
 select pg_temp.ok((select sum(b.qty) = 2000 from inv.stock_balances b where b.lot_id = (select v from t where k = 'cb') and b.warehouse_id = inv.wh('KBTP')),
   'Lõi đồng bện CB nhập kho BTP 2.000 m');
+select pg_temp.ok((select qc_status = 'PENDING' from inv.lots where id = (select v from t where k = 'cb')), 'Bobin BTP vừa ghi nhận ở trạng thái Chờ QC');
+select pg_temp.fails($$select mfg.record_output(pg_temp.op('CD2'), 'LB-X', 100, null, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k = 'cb'), 'qty', 100)))$$,
+  'QC PASS', 'Bobin chưa QC PASS không được lắp vào công đoạn sau');
+select pg_temp.qc_pass('cb', 'NV1');
 insert into t select 'lb1', mfg.record_output(pg_temp.op('CD2'), 'LB-K1N', 1000, null, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k = 'cb'), 'qty', 1000)), 'Nâu');
 insert into t select 'lb2', mfg.record_output(pg_temp.op('CD2'), 'LB-K1T', 1000, null, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k = 'cb'), 'qty', 1000)), 'Trắng');
 select pg_temp.ok((select qc_status = 'CONSUMED' from inv.lots where id = (select v from t where k = 'cb')), 'Lõi CB dùng hết → lô Hết');
+select pg_temp.qc_pass('lb1', 'NV1'); select pg_temp.qc_pass('lb2', 'NV1');
 select pg_temp.fails($$select mfg.record_output(pg_temp.op('CD3'), 'BL-X', 1000, null, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k='lb1'), 'qty', 1200)))$$,
   'không đủ', 'Công đoạn sau không lấy quá số BTP còn');
 insert into t select 'bl', mfg.record_output(pg_temp.op('CD3'), 'BL-K1', 1000, null, jsonb_build_array(
   jsonb_build_object('lot_id', (select v from t where k = 'lb1'), 'qty', 1000), jsonb_build_object('lot_id', (select v from t where k = 'lb2'), 'qty', 1000)));
+select pg_temp.qc_pass('bl', 'NV1');
 insert into t select 'cv', mfg.record_output(pg_temp.op('CD5'), 'CV-K1', 1000, null, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k = 'bl'), 'qty', 1000)));
-select pg_temp.as_user('NV5');
+select pg_temp.qc_pass('cv', 'NV5');
 insert into t select 'bb1', mfg.record_output(pg_temp.op('CD6'), 'BB-K1-01', 505, 32.1, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k = 'cv'), 'qty', 505)), null, 3.5);
 insert into t select 'bb2', mfg.record_output(pg_temp.op('CD6'), 'BB-K1-02', 480, 30.2, jsonb_build_array(jsonb_build_object('lot_id', (select v from t where k = 'cv'), 'qty', 480)));
 select pg_temp.ok((select h.location_id = inv.loc('KTP-QC') and h.gross_kg = 35.6 from inv.handling_units h where h.lot_id = (select v from t where k = 'bb1')),

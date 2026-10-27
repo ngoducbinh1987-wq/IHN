@@ -9,6 +9,8 @@ end $$;
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text, last_sign_in_at timestamptz);
 alter table auth.users add column if not exists last_sign_in_at timestamptz;
+-- Phiên đăng nhập (đặt lại mật khẩu có đăng xuất xóa phiên: migration 20261026002700)
+create table if not exists auth.sessions (id uuid primary key, user_id uuid references auth.users(id) on delete cascade, created_at timestamptz default now());
 create or replace function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;

@@ -2,6 +2,7 @@ import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
 import { df, nf } from '@/lib/format';
 import { KIND_NAMES, QC_STATUS, hasRole } from '@/lib/kho';
+import { STAGE_NAMES, qcTestsFor } from '@/lib/qc';
 import { can, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { failLot, passLot, rejectLot } from './actions';
@@ -13,7 +14,12 @@ type Lot = {
   created_at: string; weight_kg: number | null; item_code: string; item_name: string; uom: string; requires_coa: boolean | null; supplier_name: string | null;
   wo_no: string | null; op_code: string | null; qty: number; hu_count: number; ncr_no: string | null; ncr_text: string | null;
   total_kgkm: number | null; rdc_limit: number | null; od_mm: number | null;
+  wip_stage: string | null; slip_no: string | null; operator_code: string | null; machine_code: string | null; carrier_code: string | null;
+  net_kg: number | null; qty_estimated: boolean | null; readings: { spark_faults?: number; od_mm?: number } | null; made_at: string | null; wait_min: number;
 };
+
+const QC_LIMIT_MIN = 120;
+const waitText = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} giờ ${m % 60} phút` : `${m} phút`);
 
 export default async function QcPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; tab?: string }> }) {
   const sp = await searchParams;
@@ -37,7 +43,8 @@ export default async function QcPage({ searchParams }: { searchParams: Promise<{
       ]} />
       <Flash ok={sp.ok} err={sp.err} />
       <p className="mb-3 text-[13px] text-muted">
-        TP Kỹ thuật/QA quyết định nhận hay trả lô (Quy chuẩn mục 2). Lô Chờ QC và Cách ly không cấp cho sản xuất, không giao bán.
+        QC lấy mẫu từng bobin sau mỗi công đoạn, trả kết quả trong 2 giờ: Đạt thì dán tem xanh QC PASS (chỉ bobin này được lắp vào máy sau),
+        Không đạt thì dán tem đỏ, đưa vào ô cách ly, TP Kỹ thuật/QA quyết định sửa, hạ cấp hay phế. Không ai tự ký QC PASS cho bobin mình làm.
         {tab === 'cach-ly' && ' Lô cách ly: chỉ TP Kỹ thuật/QA được chuyển Đạt (nhận có điều kiện) hoặc Không nhận.'}
       </p>
       {rows.length === 0 ? <div className="card"><Empty>{tab === 'cho' ? 'Không có lô chờ kiểm tra.' : 'Không có lô cách ly.'}</Empty></div> : (
@@ -50,7 +57,11 @@ export default async function QcPage({ searchParams }: { searchParams: Promise<{
                 <span><span className="mono">{l.item_code}</span> · {l.item_name}</span>
                 <span className="text-muted">{nf(l.qty, 2)} {l.uom} · {l.hu_count} đơn vị</span>
                 {l.supplier_name && <span className="text-muted">{l.supplier_name}{l.supplier_lot ? ` · lô ${l.supplier_lot}` : ''}</span>}
-                {l.wo_no && <span className="text-muted">Lệnh {l.wo_no} · {l.op_code}</span>}
+                {l.wo_no && <span className="text-muted">Lệnh {l.wo_no} · {STAGE_NAMES[l.item_kind === 'FG' ? 'FG' : l.wip_stage ?? ''] ?? l.op_code}</span>}
+                {l.carrier_code && <span className="text-muted">bobin {l.carrier_code}</span>}
+                {l.qc_status === 'PENDING' && l.item_kind !== 'MAT' && (
+                  <Pill tone={l.wait_min > QC_LIMIT_MIN ? 'bad' : 'warn'}>chờ {waitText(l.wait_min)}</Pill>
+                )}
                 {l.exp_date && <span className="text-muted">HSD {df(l.exp_date)}</span>}
                 <span className="ml-auto text-[12.5px] text-muted">nhận {df(l.created_at, true)}</span>
                 <StatusPill map={QC_STATUS} value={l.qc_status} />
@@ -62,22 +73,26 @@ export default async function QcPage({ searchParams }: { searchParams: Promise<{
                     {l.weight_kg ? ` · bobin thực ${nf(l.weight_kg, 2)} kg` : ''}</p>
                 )}
                 {l.requires_coa && <p className="mb-3 text-[13px] text-warn">Vật tư cần COA: đối chiếu COA trước khi giải phóng.</p>}
+                {l.slip_no && (
+                  <p className="mb-3 text-[13px] text-muted">
+                    Phiếu {l.slip_no} · máy {l.machine_code ?? '—'} · người làm {l.operator_code} · {nf(l.net_kg, 2)} kg tịnh
+                    {l.qty_estimated ? ' · mét ước tính từ kg (mét thật lấy ở line đùn)' : ''}
+                    {l.made_at ? ` · xong ${df(l.made_at, true)}` : ''}
+                    {l.readings && (l.readings.spark_faults != null || l.readings.od_mm != null) &&
+                      ` · số đọc trên chuyền: cao áp ${l.readings.spark_faults ?? '—'} lần báo lỗi, OD ${l.readings.od_mm ?? '—'} mm`}
+                  </p>
+                )}
                 {canAct && (l.qc_status === 'PENDING' || tp) ? (
                   <form action={passLot} className="grid gap-3 md:grid-cols-4">
                     <input type="hidden" name="lot_id" value={l.lot_id} /><input type="hidden" name="lot_no" value={l.lot_no} /><input type="hidden" name="back" value={back} />
-                    {l.item_kind === 'MAT' ? (
-                      <>
-                        <label className="lbl">Ø sợi đo (mm)<input className="inp" name="t_WIRE_DIA" inputMode="decimal" /></label>
-                        <label className="lbl">Tỷ trọng (g/cm³)<input className="inp" name="t_DENSITY" inputMode="decimal" /></label>
-                      </>
-                    ) : (
-                      <>
-                        <label className="lbl">Rdc đo (Ω/km)<input className="inp" name="t_RDC" inputMode="decimal" /></label>
-                        <label className="lbl">OD (mm)<input className="inp" name="t_OD" inputMode="decimal" /></label>
-                        <label className="lbl">Cao áp<select className="inp" name="t_HV" defaultValue=""><option value="">—</option><option value="PASS">Đạt</option><option value="FAIL">Không đạt</option></select></label>
-                      </>
-                    )}
-                    <label className="lbl">Ngoại quan<input className="inp" name="t_VISUAL" placeholder="Đạt / mô tả lỗi" /></label>
+                    <input type="hidden" name="item_kind" value={l.item_kind} /><input type="hidden" name="wip_stage" value={l.wip_stage ?? ''} />
+                    {qcTestsFor(l.item_kind, l.wip_stage).map((t) => (
+                      <label key={t.code} className="lbl">{t.label}{t.unit ? ` (${t.unit})` : ''}{t.periodic ? ' · theo tần suất' : ''}
+                        {t.kind === 'pf' ? (
+                          <select className="inp" name={`t_${t.code}`} defaultValue=""><option value="">—</option><option value="PASS">Đạt</option><option value="FAIL">Không đạt</option></select>
+                        ) : <input className="inp" name={`t_${t.code}`} inputMode={t.kind === 'num' ? 'decimal' : undefined} />}
+                      </label>
+                    ))}
                     <label className="lbl md:col-span-4">Ghi chú / lỗi phát hiện (bắt buộc khi không đạt)<input className="inp" name="note" /></label>
                     <div className="flex flex-wrap gap-2 md:col-span-4">
                       <SubmitButton className="btn btn-ok" formAction={passLot}>
