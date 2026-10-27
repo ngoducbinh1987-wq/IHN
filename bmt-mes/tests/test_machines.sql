@@ -175,10 +175,15 @@ select pg_temp.ok((select count(*) from wf.notifications n join core.profiles p 
 -- ============================================================ 4. Trạng thái máy, hỏng, phiếu sửa chữa
 select pg_temp.as_user('M_VH');
 set local role authenticated;
+select pg_temp.fails($$select app.set_machine_status('$$ || pg_temp.v('oven') || $$', 'DOWN', 'DT_BREAKDOWN', 'x', now() + interval '1 day')$$, 'TP Kỹ thuật/QA', 'Vận hành không tự báo hỏng trên MES (báo TP SX)');
+reset role;
+select pg_temp.as_user('M_KTTP');
+set local role authenticated;
 select pg_temp.fails($$select app.set_machine_status('$$ || pg_temp.v('oven') || $$', 'DOWN')$$, 'lý do', 'Dừng / hỏng phải chọn lý do');
+select pg_temp.fails($$select app.set_machine_status('$$ || pg_temp.v('line') || $$', 'DOWN', 'DT_BREAKDOWN', 'x')$$, 'dự kiến chạy lại', 'Báo hỏng dây chuyền phải có giờ dự kiến chạy lại');
 select app.set_machine_status(pg_temp.v('oven'), 'DOWN', 'DT_BREAKDOWN', 'Thanh gia nhiệt module 7 hỏng', now() + interval '1 day');
 reset role;
-select pg_temp.ok((select status from master.machines where id = pg_temp.v('oven')) = 'DOWN', 'Vận hành báo hỏng máy con');
+select pg_temp.ok((select status from master.machines where id = pg_temp.v('oven')) = 'DOWN', 'TP Kỹ thuật/QA báo hỏng máy con');
 select pg_temp.ok((select status from master.machines where id = pg_temp.v('line')) = 'DOWN', 'Máy con quan trọng hỏng: cả dây chuyền chuyển Hỏng');
 select pg_temp.ok((select count(*) from mfg.maint_work_orders where machine_id = pg_temp.v('oven') and wo_type = 'CM' and status = 'OPEN') = 1, 'Tự mở phiếu sửa chữa cho máy hỏng');
 select pg_temp.ok((select count(*) from mfg.downtime_events where machine_id = pg_temp.v('oven') and ended_at is null and reason_code = 'DT_BREAKDOWN') = 1, 'Ghi lần dừng máy');
@@ -197,21 +202,17 @@ select pg_temp.ok((select status from master.machines where id = pg_temp.v('oven
 select pg_temp.ok((select status from master.machines where id = pg_temp.v('line')) = 'IDLE', 'Sửa xong máy con quan trọng: dây chuyền về Chờ việc');
 select pg_temp.ok((select count(*) from mfg.downtime_events where machine_id = pg_temp.v('oven') and ended_at is null) = 0, 'Đóng lần dừng máy');
 select pg_temp.ok((select count(*) from mfg.machine_status_log where machine_id = pg_temp.v('line')) >= 2, 'Nhật ký trạng thái dây chuyền');
-select pg_temp.as_user('M_SXTP');
-set local role authenticated;
-select pg_temp.fails($$select app.confirm_maint_wo('$$ || pg_temp.v('cm') || $$')$$, 'TP Kỹ thuật', 'Quản lý SX không xác nhận phiếu');
-reset role;
-select pg_temp.as_user('M_KTTP');
-set local role authenticated;
-select pg_temp.fails($$select app.confirm_maint_wo('$$ || pg_temp.v('cm') || $$')$$, 'không tự xác nhận', 'Người làm phiếu không tự xác nhận');
-reset role;
 select pg_temp.as_user('M_KTTP2');
+set local role authenticated;
+select pg_temp.fails($$select app.confirm_maint_wo('$$ || pg_temp.v('cm') || $$')$$, 'TP SX', 'TP Kỹ thuật/QA không xác nhận máy chạy lại (TP SX xác nhận)');
+reset role;
+select pg_temp.as_user('M_SXTP');
 set local role authenticated;
 select app.confirm_maint_wo(pg_temp.v('cm'));
 reset role;
 select pg_temp.as_user('M_KTTP');
 set local role authenticated;
-select pg_temp.ok((select confirmed_at is not null from mfg.maint_work_orders where id = pg_temp.v('cm')), 'TP Kỹ thuật/QA xác nhận phiếu');
+select pg_temp.ok((select confirmed_at is not null from mfg.maint_work_orders where id = pg_temp.v('cm')), 'TP SX xác nhận máy chạy lại đạt');
 
 -- ============================================================ 5. Phiếu bảo dưỡng từ kế hoạch
 insert into t values ('pm', app.create_maint_wo(pg_temp.v('p1'), null));
