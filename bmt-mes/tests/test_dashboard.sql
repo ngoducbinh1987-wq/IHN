@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026004800_dashboard: Trang tổng quan theo phân quyền (app.dashboard).
+-- Kiểm thử migration 20261026004900_dashboard: Trang tổng quan theo phân quyền (app.dashboard).
 -- Mỗi khối chỉ có khi người xem có quyền; số liệu sản lượng, lô, việc của tôi, dự phòng, QC, hao hụt, hiệu suất máy, giá trị tồn kho, giá thành.
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 set client_min_messages = warning;
