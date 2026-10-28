@@ -4,16 +4,17 @@ import { loadKh } from '@/lib/kh/load';
 import { DT_REASONS } from '@/lib/kh/shift';
 import { addDays, dayIndex, shiftPlan, toMin } from '@/lib/kh/scheduler';
 import { nf } from '@/lib/format';
-import { requireMe } from '@/lib/session';
+import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
-export const metadata = { title: 'Kế hoạch – Thực tế' };
+export const metadata = { title: 'Kế hoạch sản xuất chung' };
 
 type Rep = { work_date: string; shift_code: string; machine_code: string; status: string; lines: { key?: string; declared_m?: number; plc_m?: number | null }[];
   downtime: { min: number; reason: string }[]; scrap_kg: number; samples: { status: string }[] };
 
 export default async function KhThucTe({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
+  await requirePage('kh-chung');
   const me = await requireMe();
   const db = await createClient();
   const kh = await loadKh(db, { plan: sp.plan, roles: me.roles });
@@ -71,10 +72,22 @@ export default async function KhThucTe({ searchParams }: { searchParams: Promise
   const onTime = withDue.filter((o) => { const f = kh.fin.get(o.id); return f?.placed && (f.slack ?? -1) >= 0; }).length;
   const risk = kh.orders.filter((o) => { const f = kh.fin.get(o.id); return f && (!f.placed || (f.slack !== null && f.slack <= 1)); });
   const tone = (v: number, good: number, warn: number) => (v >= good ? 'ok' : v >= warn ? 'warn' : 'bad') as 'ok' | 'warn' | 'bad';
+  // Thông tin chung mọi người cùng biết: kế hoạch tháng theo lô, việc từng máy hôm nay (phân quyền theo bộ phận 28/10/2026)
+  const lineOf = new Map((kh.lines as { id: string; committed_date?: string | null; lot_approved_at?: string | null }[]).map((l) => [l.id, l]));
+  const totalM = kh.orders.reduce((a, o) => a + o.qty, 0);
+  const todayIdx = kh.sch ? dayIndex(kh.cal, today) : -1;
+  const todayJobs = kh.sch && todayIdx >= 0 && todayIdx < kh.cal.days.length && kh.cal.days[todayIdx] === today
+    ? kh.machines.map((m) => {
+      const rows = Array.from({ length: SPD }, (_, j) => shiftPlan(kh.sch!.byMachine.get(m.code) ?? [], todayIdx * SPD + j, S)).flat();
+      const by = new Map<string, number>();
+      for (const r of rows) { const o = kh.orders.find((x) => x.id === r.sl.lineId); const k = `${o?.label ?? ''} ${o?.product_code ?? ''}`.trim(); by.set(k, (by.get(k) ?? 0) + r.m); }
+      return { m, jobs: [...by.entries()] };
+    }).filter((x) => x.jobs.length)
+    : null;
 
   return (
     <>
-      <Toolbar title="Kế hoạch – Thực tế" reload={`/kh-thuc-te?from=${from}&to=${to}`}
+      <Toolbar title="Kế hoạch sản xuất chung" reload={`/kh-thuc-te?from=${from}&to=${to}`}
         actions={<form action="/kh-thuc-te" className="flex flex-wrap items-center gap-1.5">
           <input type="date" name="from" defaultValue={from} className="inp w-[150px] py-1" aria-label="Từ ngày" />
           <span className="text-muted">→</span>
@@ -83,6 +96,39 @@ export default async function KhThucTe({ searchParams }: { searchParams: Promise
         </form>} />
       <div className="mt-3 text-[13px] text-muted">Từ {dd(from)} đến {dd(to)} · {kh.planNo || 'chưa có kế hoạch'} · chỉ tiêu xếp theo người chịu trách nhiệm trong Quy chuẩn · kế hoạch chỉ tính các ca đã kết thúc</div>
       <div className="mt-3"><Flash ok={sp.ok} err={sp.err} /></div>
+      <section className="card mb-4" id="ke-hoach-thang">
+        <div className="card-h"><h2>Kế hoạch tháng {kh.planNo ? `· ${kh.planNo}` : ''}</h2>
+          <span className="text-[13px] font-normal text-muted">{kh.orders.length} lô · {nf(totalM)} m · mọi người cùng theo dõi</span></div>
+        {kh.orders.length ? (
+          <div className="overflow-x-auto"><table className="tbl">
+            <thead><tr><th>Lô</th><th>Sản phẩm</th><th className="num">Sản lượng (m)</th><th className="num">Hạn giao</th><th className="num">Ngày chốt</th><th className="num">Dự kiến xong</th><th>Tình trạng</th></tr></thead>
+            <tbody>{kh.orders.map((o) => {
+              const f = kh.fin.get(o.id);
+              const l = lineOf.get(o.id);
+              return (
+                <tr key={o.id}><td className="mono">{o.label}{o.prio === 0 && <> <Pill tone="bad">Gấp</Pill></>}</td>
+                  <td><b>{o.product_code}</b><div className="text-[12px] text-muted">{o.product_name}</div></td>
+                  <td className="num">{nf(o.qty)}</td><td className="num">{dd(o.due)}</td>
+                  <td className="num">{dd(l?.committed_date ?? null)}{l?.lot_approved_at ? <div className="text-[11.5px] text-brand">đã duyệt</div> : null}</td>
+                  <td className="num">{f ? dd(f.finDate) : '—'}</td>
+                  <td>{f ? <FinishPill {...f} due={o.due} /> : <Pill>Chưa có lịch</Pill>}</td></tr>
+              );
+            })}</tbody>
+          </table></div>
+        ) : <Empty>Chưa có kế hoạch tháng đã duyệt.</Empty>}
+      </section>
+      {todayJobs && (
+        <section className="card mb-4" id="hom-nay">
+          <div className="card-h"><h2>Hôm nay từng máy làm gì</h2><span className="text-[13px] font-normal text-muted">theo lịch máy đang dùng · {dd(today)}</span></div>
+          <div className="overflow-x-auto"><table className="tbl">
+            <thead><tr><th>Máy</th><th>Người</th><th>Lô (mét kế hoạch trong ngày)</th></tr></thead>
+            <tbody>{todayJobs.length ? todayJobs.map((x) => (
+              <tr key={x.m.code}><td><b>{x.m.code}</b><div className="text-[12px] text-muted">{x.m.name}</div></td><td className="text-[12.5px]">{x.m.operators.join(', ')}</td>
+                <td className="text-[13px]">{x.jobs.map(([k, m]) => `${k}: ${nf(m)} m`).join(' · ')}</td></tr>
+            )) : <tr><td colSpan={3} className="text-[13px] text-muted">Hôm nay không có việc trên lịch máy.</td></tr>}</tbody>
+          </table></div>
+        </section>
+      )}
       {!kh.sch ? <div className="card"><Empty>Chưa có lịch máy để so sánh.</Empty></div> : (
         <div className="flex flex-col gap-4">
           <Group title="Quản lý SX">

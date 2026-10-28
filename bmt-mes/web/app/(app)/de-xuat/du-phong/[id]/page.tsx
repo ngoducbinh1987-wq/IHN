@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { df, nf, numIn } from '@/lib/format';
 import { SS_STATUS } from '@/lib/safety';
-import { can, requireMe } from '@/lib/session';
+import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { cancelSafety, saveSafety, submitSafety } from '../../actions';
 
@@ -19,6 +19,7 @@ type Line = { id: string; line_no: number; material_code: string; material_name:
 export default async function SafetyChange({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('du-phong');
   const me = await requireMe();
   if (!(can(me, 'purchase', 'view') || can(me, 'inventory', 'view') || me.roles.includes('BGD'))) redirect('/?err=' + encodeURIComponent('Không có quyền xem tồn dự phòng'));
   const supabase = await createClient();

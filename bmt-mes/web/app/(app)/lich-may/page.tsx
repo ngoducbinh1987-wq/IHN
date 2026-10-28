@@ -12,7 +12,7 @@ import {
 import { M_STATUS } from '@/lib/machine';
 import { DOC_STATUS, df, nf } from '@/lib/format';
 import { adminDeleteDoc } from '../quan-tri/doc-actions';
-import { requireMe } from '@/lib/session';
+import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { applyChange, approveLot, approveLots, changeStep, commitLot, commitLots, confirmMaint, createChange, editChange, proposeMaint, rebuildSchedule, returnChange, reviewSchedule, setLine, setStart } from './actions';
 
@@ -26,6 +26,7 @@ const TABS = [
 
 export default async function LichMay({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
+  await requirePage('lich-may');
   const me = await requireMe();
   const db = await createClient();
   const kh = await loadKh(db, { plan: sp.plan, roles: me.roles, ver: sp.ver });

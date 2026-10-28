@@ -36,6 +36,8 @@ select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1
 insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('M_KTTP','KT_TP'),('M_SXTP','SX_TP'),('M_VH','VAN_HANH'),('M_BGD','BGD'),('M_KD','KD_NV'),('M_BGD2','BGD'),('M_KTTP2','KT_TP')) u(code, role)
   on u.code = p.employee_code;
+-- Từ 4700 Kinh doanh được xem tình trạng máy (thông tin chung); kiểm thử chặn quyền xem máy bằng vai trò không có quyền này
+delete from core.role_permissions where role_code = 'KD_NV' and module = 'machine';
 
 -- ============================================================ 1. Khai báo dây chuyền, máy con, thông số
 select pg_temp.as_user('M_KTTP');

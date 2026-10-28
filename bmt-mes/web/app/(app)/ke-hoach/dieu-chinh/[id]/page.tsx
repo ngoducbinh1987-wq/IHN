@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
 import { df, nf, numIn } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { cancelAdj, saveAdj, submitAdj } from '../../actions';
 
@@ -31,6 +31,7 @@ const dmy = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'â
 export default async function AdjustmentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('dieu-chinh');
   const me = await requirePerm('plan', 'view');
   const supabase = await createClient();
   const { data: a } = await supabase.schema('app').from('v_plan_adjustments').select('*').eq('id', id).maybeSingle<Adj>();

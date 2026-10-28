@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Empty, Tabs, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { DOC_TYPES, KIND_NAMES } from '@/lib/kho';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Nhập – xuất – tồn' };
@@ -20,6 +20,7 @@ function monthRange() {
 
 export default async function LedgerPage({ searchParams }: { searchParams: Promise<{ tu?: string; den?: string; kho?: string; ma?: string; tab?: string }> }) {
   const sp = await searchParams;
+  await requirePage('kho-so-cai');
   await requirePerm('inventory', 'view');
   const def = monthRange();
   const from = isDate(sp.tu) ? sp.tu! : def.from;

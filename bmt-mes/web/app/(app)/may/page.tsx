@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Empty, Flash, Kpi, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { MStatus } from '@/components/machine-ui';
 import { PLAN_STATE, remainText, vnToday } from '@/lib/machine';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Danh sách máy' };
@@ -11,6 +11,7 @@ const SEVERITY: Record<string, number> = { OVERDUE: 0, DUE: 1, SOON: 2, OK: 3 };
 
 export default async function MachinesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may');
   const me = await requirePerm('machine', 'view');
   const supabase = await createClient();
   const today = vnToday();

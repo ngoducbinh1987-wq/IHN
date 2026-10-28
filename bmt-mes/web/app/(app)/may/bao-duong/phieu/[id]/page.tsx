@@ -4,7 +4,7 @@ import { Empty, Flash, InfoRow, Pill, StatusPill, Toolbar } from '@/components/u
 import { SubmitButton } from '@/components/submit-button';
 import { ASSIGNEE, WO_STATUS, WO_TYPE } from '@/lib/machine';
 import { df, nf } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { addPart, cancelWo, confirmWo, deleteRow, finishWo, saveWoProgress, startWo } from '../../../actions';
 
@@ -15,6 +15,7 @@ type Step = { label: string; done: boolean };
 export default async function WoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('may-bao-duong');
   const me = await requirePerm('machine', 'view');
   const supabase = await createClient();
   const { data: w } = await supabase.schema('app').from('v_maint_wos').select('*').eq('id', id).maybeSingle();

@@ -453,18 +453,23 @@ ok('Spec mới: thanh giai đoạn hiện người duyệt bước Quản lý SX
 await page.screenshot({ path: `${SHOTS}/11-spec-moi.png`, fullPage: true });
 await ctx.close();
 
-// 7. Phân quyền: vận hành không vào trang Vật tư/Quản trị, menu bị ẩn
+// 7. Phân quyền theo bộ phận: vận hành chỉ thấy việc tại máy + thông tin chung (kế hoạch sản xuất chung, máy, bảo dưỡng)
 [ctx, page] = await ctxFor();
 await login(page, 'vh@bmt.test');
 const nav = await page.textContent('nav');
-if (['Người dùng', 'Kế hoạch & MRP', 'Vật tư', 'Báo cáo hao hụt', 'Lịch máy', 'Danh sách máy', 'Nhận NVL tại máy', 'Quét mã QR'].some((x) => nav.includes(x))) fail(`Menu của vận hành chỉ có việc tại máy: ${nav}`);
-if (!['Ghi nhận ca', 'Lệnh SX ngày', 'Checklist đầu ca', 'Bảo dưỡng'].every((x) => nav.includes(x))) fail(`Menu của vận hành thiếu việc tại máy: ${nav}`);
+if (['Người dùng', 'Kế hoạch & MRP', 'Vật tư', 'Báo cáo hao hụt', 'Tồn kho', 'Phiếu kho', 'Phân quyền', 'Nhận NVL tại máy', 'Quét mã QR'].some((x) => nav.includes(x))) fail(`Menu của vận hành chỉ có việc tại máy và thông tin chung: ${nav}`);
+if (!['Ghi nhận ca', 'Lệnh SX ngày', 'Checklist đầu ca', 'Bảo dưỡng', 'Kế hoạch sản xuất chung', 'Danh sách máy', 'Lịch máy'].every((x) => nav.includes(x))) fail(`Menu của vận hành thiếu việc tại máy / thông tin chung: ${nav}`);
 await page.goto(`${BASE}/quan-tri`);
-if (!(await flash(page)).includes('chưa được cấp quyền')) fail('Vận hành vào được trang Quản trị');
-ok('Vận hành không thấy menu Quản trị/Kế hoạch và bị chặn khi gõ thẳng URL');
+if (!(await flash(page)).includes('không thuộc bộ phận')) fail('Vận hành vào được trang Quản trị');
+ok('Vận hành không thấy menu Quản trị/Kế hoạch & MRP và bị chặn khi gõ thẳng URL');
 await page.goto(`${BASE}/vat-tu`);
-if ((await page.textContent('thead')).includes('Đơn giá')) fail('Vận hành không được thấy cột giá');
-ok('Vận hành xem Vật tư nhưng không thấy cột giá');
+if (!(await flash(page)).includes('không thuộc bộ phận')) fail('Vận hành vào được trang Vật tư (mục của Mua hàng, Kỹ thuật)');
+ok('Vận hành bị chặn ở Vật tư (mục của bộ phận khác)');
+await page.goto(`${BASE}/`);
+if (!(await page.locator('#thong-tin-chung').count())) fail('Tổng quan phải có thông tin chung (sản lượng, máy, bảo dưỡng) cho mọi người');
+await page.goto(`${BASE}/kh-thuc-te`);
+if (!(await page.textContent('main h1')).includes('Kế hoạch sản xuất chung')) fail('Vận hành phải xem được Kế hoạch sản xuất chung');
+ok('Vận hành xem Tổng quan (thông tin chung) và Kế hoạch sản xuất chung');
 await page.goto(`${BASE}/`);
 await page.screenshot({ path: `${SHOTS}/06-tong-quan-van-hanh.png` });
 await ctx.close();
@@ -504,7 +509,7 @@ await ctx.close();
 [ctx, page] = await ctxFor();
 await login(page, 'sx.kh@bmt.test');
 await page.goto(`${BASE}/quan-tri/quy-trinh`);
-if (!(await flash(page)).includes('chưa được cấp quyền')) fail('Kế hoạch SX không được vào Cài đặt quy trình');
+if (!(await flash(page)).includes('không thuộc bộ phận')) fail('Kế hoạch SX không được vào Cài đặt quy trình');
 ok('Người không phải quản trị bị chặn khỏi Cài đặt quy trình');
 await ctx.close();
 {
@@ -686,6 +691,53 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.goto(`${BASE}/duyet?tab=tat-ca`);
 await page.screenshot({ path: `${SHOTS}/08-dien-thoai.png` });
 await ctx.close();
+
+// 12. Phân quyền theo bộ phận + ô tick phân quyền (chỉ Quản trị hệ thống)
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'mua.tp@bmt.test');
+  const navMua = await p.textContent('nav');
+  if (['Lịch máy', 'Ghi nhận ca', 'Phiếu kho', 'Kiểm kê', 'Phân quyền'].some((x) => navMua.includes(x)) || !['Đề xuất mua hàng', 'Tồn kho', 'Kế hoạch sản xuất chung', 'Danh sách máy'].every((x) => navMua.includes(x))) {
+    fail(`Menu TP Mua phải theo bộ phận Mua hàng + thông tin chung: ${navMua}`);
+  }
+  await p.goto(`${BASE}/ghi-nhan-ca`);
+  if (!(await flash(p)).includes('không thuộc bộ phận')) fail('TP Mua vào được Ghi nhận ca');
+  await c.close();
+  ok('TP Mua: menu theo bộ phận (không còn Lịch máy, Ghi nhận ca, Phiếu kho), gõ thẳng URL bị chặn');
+}
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'bgd@bmt.test');
+  if ((await p.textContent('nav')).includes('Phân quyền')) fail('Giám đốc không được thấy Phân quyền');
+  await p.goto(`${BASE}/quan-tri/phan-quyen`);
+  if (!(await flash(p)).includes('Chỉ Quản trị hệ thống')) fail('Giám đốc vào được Phân quyền');
+  await c.close();
+  ok('Phân quyền: chỉ Quản trị hệ thống thấy và vào được');
+}
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'admin@bmt.test', 'Admin@12345');
+  await p.goto(`${BASE}/quan-tri/phan-quyen`);
+  const box = p.locator('input[name=g][value="VAN_HANH|lich-may"]');
+  if (!(await box.isChecked())) fail('Mặc định vận hành được xem Lịch máy');
+  await box.uncheck();
+  await clickNav(p, 'button:has-text("Lưu quyền vào mục")');
+  await expectOk(p, 'Quản trị bỏ tick Vận hành → Lịch máy');
+  const [c2, p2] = await ctxFor();
+  await login(p2, 'vh@bmt.test');
+  if ((await p2.textContent('nav')).includes('Lịch máy')) fail('Bỏ tick thì vận hành không còn thấy Lịch máy');
+  await p2.goto(`${BASE}/lich-may`);
+  if (!(await flash(p2)).includes('không thuộc bộ phận')) fail('Bỏ tick thì vận hành bị chặn ở Lịch máy');
+  await c2.close();
+  await p.locator('input[name=g][value="VAN_HANH|lich-may"]').check();
+  await clickNav(p, 'button:has-text("Lưu quyền vào mục")');
+  await expectOk(p, 'Quản trị tick lại Vận hành → Lịch máy');
+  await p.goto(`${BASE}/quan-tri/phan-quyen?tab=thao-tac&role=KD_NV`);
+  if (!(await p.locator('input[name=p][value="machine:view"]').isChecked())) fail('Kinh doanh phải có quyền xem máy (thông tin chung)');
+  await p.screenshot({ path: `${SHOTS}/13-phan-quyen.png`, fullPage: true });
+  await c.close();
+  ok('Quản trị tick/bỏ tick quyền vào mục có hiệu lực ngay; quyền thao tác theo vai trò hiện đúng');
+}
 
 await browser.close();
 console.log(`==> ĐẠT ${n} kiểm tra end-to-end`);

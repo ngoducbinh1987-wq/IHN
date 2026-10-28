@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Bell, LogOut } from 'lucide-react';
 import { MobileMenu, Sidebar, type NavItem } from '@/components/sidebar';
-import { can, requireMe } from '@/lib/session';
+import { can, canPage, requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_NAMES } from '@/lib/format';
 import { signOut } from '../login/actions';
@@ -22,69 +22,53 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   const maintDue = can(me, 'machine', 'view') ? maintAll : 0;
 
+  // Menu theo bộ phận: mục nào hiện do Quản trị tick ở Hệ thống → Phân quyền (core.role_pages); trang tự kiểm lại (requirePage)
   const items: NavItem[] = [
     { href: '/', label: 'Tổng quan', icon: 'gauge', group: 'Điều hành' },
     { href: '/dieu-hanh', label: 'Trung tâm điều hành', icon: 'screen', group: 'Điều hành', static: true },
     { href: '/duyet', label: 'Quy trình duyệt', icon: 'check', group: 'Điều hành', badge: myTurn ?? 0 },
     { href: '/thong-bao', label: 'Thông báo', icon: 'bell', group: 'Điều hành', badge: unread ?? 0 },
   ];
-  if (can(me, 'purchase', 'view')) items.push({ href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' });
-  if (can(me, 'purchase', 'view') || can(me, 'inventory', 'view') || me.roles.includes('BGD')) {
-    items.push({ href: '/de-xuat/du-phong', label: 'Tồn dự phòng', icon: 'warehouse', group: 'Mua hàng', badge: Number(safetyBelow ?? 0) });
-  }
-  if (can(me, 'master', 'view')) items.push({ href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' });
-  if (can(me, 'plan', 'view')) {
-    items.push({ href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' });
-    items.push({ href: '/ke-hoach/dieu-chinh', label: 'Điều chỉnh kế hoạch tháng', icon: 'flow', group: 'Sản xuất' });
-  }
-  if (can(me, 'plan', 'view') || can(me, 'production', 'view') || can(me, 'inventory', 'view')) {
-    items.push(
-      { href: '/lich-may', label: 'Lịch máy', icon: 'calendar', group: 'Sản xuất' },
-      { href: '/lenh-ngay', label: 'Lệnh SX ngày', icon: 'order', group: 'Sản xuất' },
-      { href: '/ghi-nhan-ca', label: 'Ghi nhận ca', icon: 'shift', group: 'Sản xuất' },
-      { href: '/phieu-hoan-thanh', label: 'Phiếu hoàn thành bobin', icon: 'checklist', group: 'Sản xuất' },
-      { href: '/phieu-xuat-nvl', label: 'Phiếu xuất NVL, NVL thừa', icon: 'issue', group: 'Sản xuất' },
-      { href: '/kh-thuc-te', label: 'Kế hoạch – Thực tế', icon: 'chart', group: 'Sản xuất' },
-      { href: '/tham-so', label: 'Tham số xếp lịch', icon: 'sliders', group: 'Sản xuất' },
-    );
-  }
-  const inv = can(me, 'inventory', 'view');
-  const floor = me.roles.some((r) => r === 'VAN_HANH' || r === 'TO_TRUONG');
-  const office = me.roles.some((r) => r !== 'VAN_HANH' && r !== 'TO_TRUONG');   // công nhân, tổ trưởng chỉ thấy việc tại máy
-  // Quy trình final: xuất NVL bằng phiếu giấy (Kế toán SX nhập ở Phiếu xuất NVL), công nhân không dùng điện thoại
-  // → bỏ Quét mã QR, Cấp NVL, Nhận NVL tại máy khỏi menu (trang vẫn còn, mở từ đường dẫn mã tem)
-  if (inv || can(me, 'production', 'view') || floor) items.push({ href: '/kho', label: 'Tổng quan kho', icon: 'warehouse', group: 'Kho' });
-  if (inv && office) {
-    items.push({ href: '/kho/ton', label: 'Tồn kho', icon: 'mat', group: 'Kho' });
-    items.push({ href: '/kho/phieu', label: 'Phiếu kho', icon: 'spec', group: 'Kho' });
-    items.push({ href: '/kho/kiem-ke', label: 'Kiểm kê', icon: 'count', group: 'Kho' });
-  }
-  if (office && (inv || can(me, 'sales', 'view'))) items.push({ href: '/kho/xuat-ban', label: 'Xuất giao hàng', icon: 'truck', group: 'Kho' });
-  if (can(me, 'production', 'view') || inv || can(me, 'cost', 'view')) {
-    items.push({ href: '/bao-cao/ngay', label: 'Báo cáo sản xuất ngày', icon: 'report', group: 'Báo cáo' });
-    items.push({ href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: 'chart', group: 'Báo cáo' });
-  }
-  if (inv && office) items.push({ href: '/kho/so-cai', label: 'Nhập – xuất – tồn', icon: 'ledger', group: 'Báo cáo' });
-  if (can(me, 'spec', 'view')) items.push({ href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' });
-  if (can(me, 'quality', 'view')) items.push({ href: '/kho/qc', label: 'QC bobin, lô hàng', icon: 'checklist', group: 'Kỹ thuật / QA', badge: qcWait ?? 0 });
-  if (can(me, 'machine', 'view')) {
-    items.push({ href: '/may', label: 'Danh sách máy', icon: 'machine', group: 'Quản lý máy' });
-    items.push({ href: '/may/checklist', label: 'Checklist đầu ca', icon: 'checklist', group: 'Quản lý máy' });
-    items.push({ href: '/may/bao-duong', label: 'Bảo dưỡng, sửa chữa', icon: 'wrench', group: 'Quản lý máy', badge: maintDue ?? 0 });
-    items.push({ href: '/may/toc-do', label: 'Tốc độ sản xuất', icon: 'speed', group: 'Quản lý máy' });
-    items.push({ href: '/may/kiem-tra', label: 'Kiểm tra năng lực', icon: 'capacity', group: 'Quản lý máy' });
-    items.push({ href: '/may/lich-su', label: 'Lịch sử vận hành', icon: 'history', group: 'Quản lý máy' });
-    items.push({ href: '/may/bao-cao', label: 'Báo cáo bảo trì', icon: 'report', group: 'Quản lý máy' });
-    if (can(me, 'machine', 'config') || me.roles.includes('BGD')) items.push({ href: '/may/cai-dat', label: 'Cài đặt máy', icon: 'settings', group: 'Quản lý máy' });
-  }
-  if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' });
-  if (can(me, 'admin', 'view')) items.push({ href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' });
-  // Công nhân, tổ trưởng (không giữ vai trò văn phòng) chỉ thấy việc tại máy; các trang khác vẫn tự kiểm quyền
-  const FLOOR_MENU = ['/', '/thong-bao', '/lenh-ngay', '/ghi-nhan-ca', '/may/checklist', '/may/bao-duong'];
-  const LEAD_MENU = ['/duyet', '/lich-may', '/kh-thuc-te', '/kho'];
-  const menu = floor && !office
-    ? items.filter((i) => FLOOR_MENU.includes(i.href) || (me.roles.includes('TO_TRUONG') && LEAD_MENU.includes(i.href)))
-    : items;
+  const PAGES: (NavItem & { key: string })[] = [
+    { key: 'de-xuat', href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' },
+    { key: 'du-phong', href: '/de-xuat/du-phong', label: 'Tồn dự phòng', icon: 'warehouse', group: 'Mua hàng', badge: Number(safetyBelow ?? 0) },
+    { key: 'vat-tu', href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' },
+    { key: 'ke-hoach', href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' },
+    { key: 'dieu-chinh', href: '/ke-hoach/dieu-chinh', label: 'Điều chỉnh kế hoạch tháng', icon: 'flow', group: 'Sản xuất' },
+    { key: 'kh-chung', href: '/kh-thuc-te', label: 'Kế hoạch sản xuất chung', icon: 'chart', group: 'Sản xuất' },
+    { key: 'lich-may', href: '/lich-may', label: 'Lịch máy', icon: 'calendar', group: 'Sản xuất' },
+    { key: 'lenh-ngay', href: '/lenh-ngay', label: 'Lệnh SX ngày', icon: 'order', group: 'Sản xuất' },
+    { key: 'ghi-nhan-ca', href: '/ghi-nhan-ca', label: 'Ghi nhận ca', icon: 'shift', group: 'Sản xuất' },
+    { key: 'phieu-hoan-thanh', href: '/phieu-hoan-thanh', label: 'Phiếu hoàn thành bobin', icon: 'checklist', group: 'Sản xuất' },
+    { key: 'phieu-xuat-nvl', href: '/phieu-xuat-nvl', label: 'Phiếu xuất NVL, NVL thừa', icon: 'issue', group: 'Sản xuất' },
+    { key: 'tham-so', href: '/tham-so', label: 'Tham số xếp lịch', icon: 'sliders', group: 'Sản xuất' },
+    // Quy trình final: xuất NVL bằng phiếu giấy, công nhân không dùng điện thoại → Quét mã QR, Cấp NVL, Nhận NVL tại máy
+    // không có trên menu (trang vẫn còn, mở từ đường dẫn mã tem)
+    { key: 'kho', href: '/kho', label: 'Tổng quan kho', icon: 'warehouse', group: 'Kho' },
+    { key: 'kho-ton', href: '/kho/ton', label: 'Tồn kho', icon: 'mat', group: 'Kho' },
+    { key: 'kho-phieu', href: '/kho/phieu', label: 'Phiếu kho', icon: 'spec', group: 'Kho' },
+    { key: 'kho-kiem-ke', href: '/kho/kiem-ke', label: 'Kiểm kê', icon: 'count', group: 'Kho' },
+    { key: 'kho-xuat-ban', href: '/kho/xuat-ban', label: 'Xuất giao hàng', icon: 'truck', group: 'Kho' },
+    { key: 'bc-ngay', href: '/bao-cao/ngay', label: 'Báo cáo sản xuất ngày', icon: 'report', group: 'Báo cáo' },
+    { key: 'bc-hao-hut', href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: 'chart', group: 'Báo cáo' },
+    { key: 'kho-so-cai', href: '/kho/so-cai', label: 'Nhập – xuất – tồn', icon: 'ledger', group: 'Báo cáo' },
+    { key: 'san-pham', href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' },
+    { key: 'kho-qc', href: '/kho/qc', label: 'QC bobin, lô hàng', icon: 'checklist', group: 'Kỹ thuật / QA', badge: qcWait ?? 0 },
+    { key: 'may', href: '/may', label: 'Danh sách máy', icon: 'machine', group: 'Quản lý máy' },
+    { key: 'may-checklist', href: '/may/checklist', label: 'Checklist đầu ca', icon: 'checklist', group: 'Quản lý máy' },
+    { key: 'may-bao-duong', href: '/may/bao-duong', label: 'Bảo dưỡng, sửa chữa', icon: 'wrench', group: 'Quản lý máy', badge: maintDue ?? 0 },
+    { key: 'may-toc-do', href: '/may/toc-do', label: 'Tốc độ sản xuất', icon: 'speed', group: 'Quản lý máy' },
+    { key: 'may-kiem-tra', href: '/may/kiem-tra', label: 'Kiểm tra năng lực', icon: 'capacity', group: 'Quản lý máy' },
+    { key: 'may-lich-su', href: '/may/lich-su', label: 'Lịch sử vận hành', icon: 'history', group: 'Quản lý máy' },
+    { key: 'may-bao-cao', href: '/may/bao-cao', label: 'Báo cáo bảo trì', icon: 'report', group: 'Quản lý máy' },
+    { key: 'may-cai-dat', href: '/may/cai-dat', label: 'Cài đặt máy', icon: 'settings', group: 'Quản lý máy' },
+    { key: 'quan-tri', href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' },
+    { key: 'quan-tri-quy-trinh', href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' },
+  ];
+  for (const { key, ...it } of PAGES) if (canPage(me, key)) items.push(it);
+  // Ô tick phân quyền: chỉ Quản trị hệ thống thấy
+  if (me.is_admin) items.push({ href: '/quan-tri/phan-quyen', label: 'Phân quyền', icon: 'users', group: 'Hệ thống' });
+  const menu = items;
 
   const initials = me.full_name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase();
   const delegated = (me.delegated_roles ?? []).map((d) => d.split(':')[0]);

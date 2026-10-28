@@ -3,7 +3,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Toolbar } from '@/components/ui';
 import { df } from '@/lib/format';
 import { COUNT_STATUS, hasRole } from '@/lib/kho';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { openCount } from './actions';
 
@@ -11,6 +11,7 @@ export const metadata = { title: 'Kiểm kê' };
 
 export default async function CountsPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('kho-kiem-ke');
   const me = await requirePerm('inventory', 'view');
   const supabase = await createClient();
   const [{ data: counts }, { data: whs }, { data: locs }] = await Promise.all([

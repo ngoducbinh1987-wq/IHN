@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Flash, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { DELIVERY_STATUS, keeps } from '@/lib/kho';
-import { requireMe } from '@/lib/session';
+import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { ship } from '../actions';
 import { PrintButton } from '@/components/print-button';
@@ -15,6 +15,7 @@ export const metadata = { title: 'Lệnh giao' };
 export default async function DeliveryDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('kho-xuat-ban');
   const me = await requireMe();
   const supabase = await createClient();
   const { data: d } = await supabase.schema('app').from('v_deliveries').select('*').eq('id', id).maybeSingle();

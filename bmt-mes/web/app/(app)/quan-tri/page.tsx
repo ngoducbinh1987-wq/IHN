@@ -1,7 +1,7 @@
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { ROLE_NAMES, df } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { ResetPasswordFields } from '@/components/reset-password-fields';
 import { createUser, resetPassword, updateUser } from './actions';
@@ -57,6 +57,7 @@ function WarehouseChecks({ selected, warehouses }: { selected: string[]; warehou
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; sua?: string; them?: string }> }) {
   const sp = await searchParams;
+  await requirePage('quan-tri');
   const me = await requirePerm('admin', 'view');
   const supabase = await createClient();
   const [{ data, error }, { data: whs }, { data: conf }] = await Promise.all([

@@ -3,7 +3,7 @@ import { Empty, Flash, Kpi, Toolbar } from '@/components/ui';
 import { HistoryTable } from '@/components/machine-history';
 import { M_STATUS, hhmm, vnToday } from '@/lib/machine';
 import { df, nf } from '@/lib/format';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Lịch sử vận hành' };
@@ -14,6 +14,7 @@ const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h
 
 export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ may?: string; tu?: string; den?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may-lich-su');
   await requirePerm('machine', 'view');
   const supabase = await createClient();
   const [{ data: lines }, { data: shift }] = await Promise.all([

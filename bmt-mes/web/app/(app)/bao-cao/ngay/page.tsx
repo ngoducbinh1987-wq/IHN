@@ -4,7 +4,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Kpi, Pill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { hasRole } from '@/lib/kho';
-import { can, requireMe } from '@/lib/session';
+import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { saveLossNote, sendDailyReport } from './actions';
 
@@ -38,6 +38,7 @@ const shiftDay = (d: string, n: number) => {
 
 export default async function DailyReport({ searchParams }: { searchParams: Promise<{ d?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('bc-ngay');
   const me = await requireMe();
   if (!can(me, 'production', 'view') && !can(me, 'inventory', 'view') && !can(me, 'cost', 'view')) {
     redirect('/?err=' + encodeURIComponent('Không có quyền xem báo cáo sản xuất ngày'));

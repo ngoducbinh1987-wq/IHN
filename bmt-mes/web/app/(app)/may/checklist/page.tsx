@@ -4,7 +4,7 @@ import { MStatus } from '@/components/machine-ui';
 import { SubmitButton } from '@/components/submit-button';
 import { hhmm, vnToday } from '@/lib/machine';
 import { df } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { reviewCheck, saveCheck } from '../actions';
 
@@ -14,6 +14,7 @@ type Res = { label: string; ok: boolean; note: string | null };
 
 export default async function ChecklistPage({ searchParams }: { searchParams: Promise<{ ngay?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may-checklist');
   const me = await requirePerm('machine', 'view');
   const today = vnToday();
   const day = /^\d{4}-\d{2}-\d{2}$/.test(sp.ngay ?? '') && sp.ngay! <= today ? sp.ngay! : today;

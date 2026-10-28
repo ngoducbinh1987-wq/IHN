@@ -6,7 +6,7 @@ import { PlanForm } from '@/components/maint-plan-form';
 import { SubmitButton } from '@/components/submit-button';
 import { ASSIGNEE, LEVEL, PLAN_KIND, PLAN_STATE, WO_STATUS, cycleText, remainText, usedFraction, usedText } from '@/lib/machine';
 import { df } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createWo, deleteRow } from '../../../actions';
 
@@ -15,6 +15,7 @@ export const metadata = { title: 'Kế hoạch bảo dưỡng' };
 export default async function PlanPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string; sua?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('may-bao-duong');
   const me = await requirePerm('machine', 'view');
   const supabase = await createClient();
   const { data: p } = await supabase.schema('app').from('v_maint_plans').select('*').eq('id', id).maybeSingle();

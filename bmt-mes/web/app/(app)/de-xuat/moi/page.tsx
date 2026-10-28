@@ -1,6 +1,6 @@
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Toolbar } from '@/components/ui';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createPr } from '../actions';
 
@@ -8,6 +8,7 @@ export const metadata = { title: 'Thêm đề xuất mua hàng' };
 
 export default async function NewPr({ searchParams }: { searchParams: Promise<{ err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('de-xuat');
   const me = await requirePerm('purchase', 'create');
   const buyer = me.roles.some((r) => r === 'MUA_NV' || r === 'MUA_TP' || r === 'ADMIN');
   const supabase = await createClient();

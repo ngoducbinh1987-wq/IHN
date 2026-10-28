@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Empty, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { KIND_NAMES, QC_STATUS } from '@/lib/kho';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Tồn kho' };
@@ -17,9 +17,12 @@ const FILTERS: Record<string, string> = { '': 'Tất cả', dat: 'Đạt', qc: '
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ kho?: string; loc?: string; q?: string; xem?: string }> }) {
   const sp = await searchParams;
+  const me = await requirePage('kho-ton');
   await requirePerm('inventory', 'view');
-  const kho = ['KNL', 'KBTP', 'KTP', 'KPL'].includes(sp.kho ?? '') ? sp.kho! : '';
-  const loc = sp.loc && FILTERS[sp.loc] ? sp.loc : '';
+  // Kinh doanh (chỉ giữ vai trò kinh doanh) xem tồn thành phẩm để hẹn giao khách (phân quyền theo bộ phận 28/10/2026)
+  const fgOnly = me.roles.length > 0 && me.roles.every((r) => r.startsWith('KD_'));
+  const kho = fgOnly ? 'KTP' : ['KNL', 'KBTP', 'KTP', 'KPL'].includes(sp.kho ?? '') ? sp.kho! : '';
+  const loc = sp.loc && FILTERS[sp.loc] && !(fgOnly && sp.loc === 'thieu') ? sp.loc : '';
   const detail = sp.xem === 'ct' || !!sp.q;
   const supabase = await createClient();
   const qs = (patch: Record<string, string | undefined>) => {

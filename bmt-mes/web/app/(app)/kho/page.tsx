@@ -6,7 +6,7 @@ import {
 import { Empty, Flash, Kpi, StatusPill, Toolbar } from '@/components/ui';
 import { df } from '@/lib/format';
 import { DOC_TYPES, REVIEW_STATUS, hasRole, keeps } from '@/lib/kho';
-import { can, requireMe } from '@/lib/session';
+import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Kho' };
@@ -15,6 +15,7 @@ type Ov = Record<string, number>;
 
 export default async function KhoHome({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('kho');
   const me = await requireMe();
   const supabase = await createClient();
   const [{ data: ov }, { data: docs }] = await Promise.all([

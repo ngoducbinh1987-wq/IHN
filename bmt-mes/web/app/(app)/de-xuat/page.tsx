@@ -3,7 +3,7 @@ import { StageMini } from '@/components/stage-bar';
 import { Empty, Flash, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { type Approval, stageLabel, stagePos } from '@/lib/approvals';
 import { DOC_STATUS, df } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Đề xuất mua hàng' };
@@ -19,6 +19,7 @@ const TABS = [
 
 export default async function PrList({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('de-xuat');
   const me = await requirePerm('purchase', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();

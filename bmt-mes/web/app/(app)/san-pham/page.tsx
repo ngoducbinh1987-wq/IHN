@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { SPEC_STATUS, nf } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Sản phẩm & Spec' };
@@ -23,6 +23,7 @@ const TABS = [
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ nhom?: string; tab?: string; q?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('san-pham');
   const me = await requirePerm('spec', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();

@@ -7,7 +7,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import type { Approval } from '@/lib/approvals';
 import { DOC_STATUS, df, nf, numIn } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { deletePrLine, savePrHeader, savePrLine, setPrKind, submitPr } from '../actions';
 
@@ -17,6 +17,7 @@ export default async function PrDetail({ params, searchParams }:
   { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('de-xuat');
   const me = await requirePerm('purchase', 'view');
   const supabase = await createClient();
   const { data: pr } = await supabase.schema('app').from('v_prs').select('*').eq('id', id).maybeSingle();

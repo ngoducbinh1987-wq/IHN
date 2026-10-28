@@ -11,7 +11,7 @@ import {
 } from '@/lib/machine';
 import { df, nf, numIn } from '@/lib/format';
 import { MACHINE_OPS } from '@/lib/kh/scheduler';
-import { can, requirePerm } from '@/lib/session';
+import { can, canPage, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import {
   addComponent, addDoc, addSpeed, approveSpeed, deleteRow, removeOperatorSkill, saveRange, saveSpecs, setOperatorSkill, signOperatorSkill, updateMachine,
@@ -26,13 +26,17 @@ export default async function MachineProfile({ params, searchParams }:
   { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; ok?: string; err?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('may');
   const me = await requirePerm('machine', 'view');
   const supabase = await createClient();
   const { data: m } = await supabase.schema('app').from('v_machines').select('*').eq('id', id).maybeSingle();
   if (!m) notFound();
   const isLine = !m.line_id;
   const lineId: string = m.line_id ?? m.id;
-  const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : 'thong-so';
+  // Ngoài Sản xuất, Kỹ thuật/QA, Ban giám đốc (không vào được Lịch sử vận hành): chỉ xem tình trạng, bảo dưỡng, thông tin chung
+  const full = canPage(me, 'may-lich-su');
+  const tabs = full ? TABS : TABS.filter(([k]) => k === 'bao-duong' || k === 'thong-tin');
+  const tab = tabs.some(([k]) => k === sp.tab) ? sp.tab! : tabs[0][0];
   const base = `/may/${id}`;
   const here = `${base}?tab=${tab}`;
   const cfg = can(me, 'machine', 'config');
@@ -101,7 +105,7 @@ export default async function MachineProfile({ params, searchParams }:
         )}
       </section>
 
-      <SubTabs base={base} items={TABS} active={tab} />
+      <SubTabs base={base} items={tabs} active={tab} />
       {tab === 'thong-so' && <SpecsTab id={id} cfg={cfg} back={here} />}
       {tab === 'toc-do' && <SpeedTab lineId={lineId} isLine={isLine} machineType={line?.machine_type ?? m.machine_type} cfg={cfg} canPropose={cfg || can(me, 'machine', 'create')} meId={me.id} canApprove={can(me, 'machine', 'approve')} back={here} />}
       {tab === 'bao-duong' && <MaintTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} />}
