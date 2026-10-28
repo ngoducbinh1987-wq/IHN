@@ -1,4 +1,4 @@
--- Máy bị chậm thì chạy 2 ca, 3 ca; người xếp theo máy, tối đa 12 giờ/ngày (anh Bình duyệt 28/10/2026 13:33,
+-- Máy bị chậm thì chạy 2 ca, 3 ca; người xếp theo máy, tối đa 12 giờ/ngày (anh Bình duyệt 28/10/2026,
 -- Claude Doc "BMT MES – Phương án tháo nút cổ chai: máy chạy 2–3 ca, người theo máy", 5 điểm đã chọn):
 --  - máy trộn cần 1 người đứng riêng suốt lúc trộn;
 --  - ca dài 12 giờ chỉ dùng tạm khi thiếu người, MES dừng khi người đó hết giờ làm thêm trong tháng;
