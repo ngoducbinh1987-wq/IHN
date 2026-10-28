@@ -1,8 +1,9 @@
 // Đọc dữ liệu module Kế hoạch sản xuất từ database và dựng lịch máy để hiển thị / xếp lại.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  type Calendar, type Config, type FlowCfg, type MachineInfo, type Op, type OperatorInfo, type Order, type PrevSchedule, type Schedule, type Slot, type Window,
-  OPS, dayIndex, finishInfo, flowOf, isWorkday, makeCalendar, nextWorkday, schedule, shiftPlan, toMin,
+  type Absence, type Attend, type Calendar, type Config, type Cover, type CrewDay, type FlowCfg, type MachineInfo, type Op, type OperatorInfo, type Order,
+  type PrevSchedule, type Schedule, type Slot, type Window,
+  OPS, dayIndex, finishInfo, flowOf, isWorkday, makeCalendar, nextWorkday, peopleOf, schedule, shiftPlan, toMin,
 } from './scheduler';
 import { type Levers, type OptResult, optimize } from './optimize';
 
@@ -47,28 +48,92 @@ export type MaintRow = {
 };
 const hm = (iso: string) => { const v = vnNow(new Date(iso)); return `${String(Math.floor(v.min / 60)).padStart(2, '0')}:${String(v.min % 60).padStart(2, '0')} ${v.date.slice(8, 10)}/${v.date.slice(5, 7)}`; };
 
-// Khoảng máy không chạy được theo lịch cal: hỏng / bảo dưỡng đến giờ dự kiến chạy lại (chưa có giờ: tạm 1 ngày), ngừng dùng,
-// bảo dưỡng đã chốt "trong ca" (khối giữ chỗ = phút dừng máy quy ra phút xếp lịch)
-export function machineWindows(machines: MachineInfo[], maint: MaintRow[], cal: Calendar, now: { date: string; min: number }): Window[] {
+// Kế hoạch bảo dưỡng của dây chuyền xếp lịch (plan.kh_maint_due): để lịch máy tự giữ chỗ tạm
+export type MaintPlanRow = {
+  id: string; name: string; level: string | null; line_code: string; due_date: string; trigger: 'DAYS' | 'HOURS' | 'KM' | null; state: string;
+  every_hours: number | null; every_km: number | null; used_hours: number | null; used_km: number | null; stop_minutes: number; off_shift: boolean;
+  open_wo: string | null; open_wo_no: string | null;
+};
+// Ngày đến hạn bảo dưỡng theo giờ chạy / km: cộng giờ, km đã chạy với giờ, mét của lịch đang dùng trên máy (từ bây giờ);
+// lịch không đủ dài thì dùng ngày database ước tính theo nhịp chạy thực tế
+export function maintDueDate(p: MaintPlanRow, sch: Schedule | null, cal: Calendar, nowT: number): string {
+  if (!sch || (p.trigger !== 'HOURS' && p.trigger !== 'KM')) return p.due_date;
+  const left = p.trigger === 'HOURS' ? (Number(p.every_hours) - Number(p.used_hours ?? 0)) * 60 : (Number(p.every_km) - Number(p.used_km ?? 0)) * 1000;
+  if (!(left > 0)) return p.due_date;
+  let acc = 0;
+  for (const sl of (sch.byMachine.get(p.line_code) ?? []).filter((x) => x.end > nowT).sort((a, b) => a.runStart - b.runStart)) {
+    const from = Math.max(sl.runStart, nowT), len = Math.max(0, sl.end - from);
+    const add = p.trigger === 'HOURS' ? len : sl.rate * len;
+    if (acc + add >= left) {
+      const t = from + (p.trigger === 'HOURS' ? left - acc : (left - acc) / Math.max(1e-9, sl.rate));
+      const di = Math.floor(t / (cal.S * cal.SPD));
+      return cal.days[Math.min(Math.max(0, di), cal.days.length - 1)];
+    }
+    acc += add;
+  }
+  return p.due_date;
+}
+
+// Khoảng máy không chạy được theo lịch cal:
+//  - Dừng / hỏng / bảo dưỡng đến giờ dự kiến chạy lại (chưa có giờ: tạm đến hết ngày làm việc kế tiếp), ngừng dùng;
+//  - bảo dưỡng đã chốt "trong ca" (khối giữ chỗ = phút dừng máy quy ra phút xếp lịch);
+//  - giữ chỗ tạm: phiếu bảo dưỡng đã đề xuất / chưa chốt, kế hoạch bảo dưỡng đến hạn chưa có phiếu (theo ngày, giờ chạy, km).
+export function machineWindows(machines: MachineInfo[], maint: MaintRow[], cal: Calendar, now: { date: string; min: number },
+  plans: MaintPlanRow[] = [], sch: Schedule | null = null): Window[] {
   const nowT = timeT(cal, now);
+  const DAY = cal.SPD * cal.S;
   const out: Window[] = [];
+  // hết ngày làm việc kế tiếp sau hôm nay (theo ngày VN; sau giờ ca hay ngày nghỉ vẫn tính đúng một ngày làm việc)
+  const nextEnd = (dayIndex(cal, nextWorkday(addDays1(now.date), cal.wd)) + 1) * DAY;
   for (const m of machines) {
     if (m.status === 'OFF') out.push({ machine: m.code, from: nowT, to: Infinity, kind: 'OFF', label: `${m.code} ngừng dùng` });
-    else if (m.status === 'DOWN' || m.status === 'MAINT') {
-      const to = m.status_eta ? timeT(cal, vnNow(new Date(m.status_eta))) : nowT + cal.SPD * cal.S;
-      const what = m.status === 'DOWN' ? 'hỏng' : 'bảo dưỡng';
-      if (to > nowT) out.push({ machine: m.code, from: nowT, to, kind: m.status, label: `${m.code} ${what}${m.status_eta ? `, dự kiến chạy lại ${hm(m.status_eta)}` : ' (chưa có giờ chạy lại, tạm tính 1 ngày)'}` });
+    else if (m.status === 'DOWN' || m.status === 'MAINT' || m.status === 'STOP') {
+      const etaT = m.status_eta ? timeT(cal, vnNow(new Date(m.status_eta))) : null;
+      // giờ chạy lại đã qua mà máy vẫn chưa chạy: coi như chưa có giờ (máy vẫn không chạy được)
+      const passed = m.status_eta != null && new Date(m.status_eta).getTime() <= Date.now();
+      const to = etaT != null && !passed ? etaT : nextEnd;
+      const what = m.status === 'DOWN' ? 'hỏng' : m.status === 'STOP' ? 'dừng' : 'bảo dưỡng';
+      const note = !m.status_eta ? ' (chưa có giờ chạy lại, tạm tính hết ngày làm việc kế tiếp)'
+        : passed ? ` (giờ chạy lại ${hm(m.status_eta)} đã qua, máy chưa chạy: tạm tính hết ngày làm việc kế tiếp)` : `, dự kiến chạy lại ${hm(m.status_eta)}`;
+      if (to > nowT) out.push({ machine: m.code, from: nowT, to, kind: m.status, label: `${m.code} ${what}${note}` });
     }
   }
+  const pmLen = (min: number) => (Number(min) * cal.S) / Math.max(1, cal.RUN);
+  const lineOf = (code: string) => machines.some((m) => m.code === code) ? code : null;
+  const reserved = new Set<string>();
   for (const w of maint) {
-    if (w.status !== 'OPEN' || w.sched_status !== 'CONFIRMED' || w.sched_mode !== 'IN_SHIFT' || !w.planned_date || w.planned_date < now.date) continue;
-    if (!isWorkday(w.planned_date, cal.wd) || !machines.some((m) => m.code === w.machine_code)) continue;
-    const from = dayIndex(cal, w.planned_date) * cal.SPD * cal.S;
-    const to = from + (Number(w.est_minutes ?? w.stop_minutes ?? 0) * cal.S) / Math.max(1, cal.RUN);
-    if (to > nowT && to > from) out.push({ machine: w.machine_code, from, to, kind: 'PM', label: `bảo dưỡng ${w.wo_no} (${w.est_minutes ?? 0} phút, đã chốt)` });
+    if (w.status !== 'OPEN' || !lineOf(w.machine_code)) continue;
+    if (w.sched_mode && w.sched_mode !== 'IN_SHIFT') continue;   // gộp lần đổi máy lớn / ngoài giờ ca: không chặn giờ máy
+    // phiếu chưa có ngày, đã quá ngày hoặc đã qua giờ giữ chỗ mà chưa làm: giữ chỗ tạm ngày làm việc kế tiếp; ngày nghỉ: dời sang ngày làm việc
+    const mins = Number(w.est_minutes ?? w.stop_minutes ?? 0);
+    if (!(mins > 0)) continue;
+    const tomorrow = nextWorkday(addDays1(now.date), cal.wd);
+    let late = !w.planned_date || w.planned_date < now.date;
+    let day = late ? tomorrow : nextWorkday(w.planned_date!, cal.wd);
+    let from = dayIndex(cal, day) * DAY, to = from + pmLen(mins);
+    if (!(to > nowT)) { late = true; day = tomorrow; from = dayIndex(cal, day) * DAY; to = from + pmLen(mins); }
+    if (from >= cal.days.length * DAY || !(to > nowT)) continue;
+    const moved = day !== w.planned_date;
+    if (w.plan_id) reserved.add(w.plan_id);
+    if (w.sched_status === 'CONFIRMED' && !moved) out.push({ machine: w.machine_code, from, to, kind: 'PM', label: `bảo dưỡng ${w.wo_no} (${mins} phút, đã chốt)` });
+    else out.push({ machine: w.machine_code, from, to, kind: 'PM', tentative: true,
+      label: `bảo dưỡng ${w.wo_no} (${mins} phút, giữ chỗ tạm${!w.planned_date ? ', chưa có ngày'
+        : moved ? `, ngày ${w.planned_date.slice(8, 10)}/${w.planned_date.slice(5, 7)} ${late ? 'chưa làm' : 'là ngày nghỉ'}` : ''}, chờ TP SX chốt)` });
+  }
+  // Kế hoạch bảo dưỡng đến hạn chưa có phiếu: giữ chỗ tạm đầu ngày đến hạn (đã quá hạn: ngày làm việc kế tiếp)
+  for (const p of plans) {
+    if (p.open_wo || p.off_shift || !(Number(p.stop_minutes) > 0) || reserved.has(p.id) || !lineOf(p.line_code)) continue;
+    let d = maintDueDate(p, sch, cal, nowT);
+    if (d <= now.date) d = nextWorkday(addDays1(now.date), cal.wd);
+    d = nextWorkday(d, cal.wd);
+    const from = dayIndex(cal, d) * DAY, to = from + pmLen(p.stop_minutes);
+    if (from >= cal.days.length * DAY || !(to > nowT)) continue;
+    const by = p.trigger === 'HOURS' ? 'theo giờ chạy' : p.trigger === 'KM' ? 'theo km' : 'theo ngày';
+    out.push({ machine: p.line_code, from, to, kind: 'PM', tentative: true, label: `bảo dưỡng ${p.name} (${p.stop_minutes} phút, đến hạn ${by}, giữ chỗ tạm)` });
   }
   return out;
 }
+const addDays1 = (d: string) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
 
 export async function loadConfig(db: Db) {
   const [{ data: c, error }, { data: m }, { data: o }] = await Promise.all([
@@ -116,15 +181,30 @@ export async function loadConfig(db: Db) {
       active: Object.keys((c.extra_min_now ?? {}) as object).length > 0 || Number(c.mix_early_h_now ?? 0) > 0,
       planned: Object.keys(cfg.flow.extra_min ?? {}).length > 0 || Number(cfg.flow.mix_early_h) > 0 },
   };
+  // Người đứng máy (migration 5000): phút có mặt, tổ đóng gói, lịch vắng, kiêm nhiệm tạm; tỷ lệ xếp lịch riêng từng máy
+  cfg.people = {
+    start_min: num(c.start_min), bobbin_min: num(c.bobbin_min), watch_max: num(c.watch_max), pack_crew: num(c.pack_crew), pack_one_pct: num(c.pack_one_pct),
+    absences: ((c.absences ?? []) as Absence[]), covers: ((c.covers ?? []) as Cover[]), crews: ((c.crews ?? []) as CrewDay[]),
+  };
+  cfg.avail = Object.fromEntries(Object.entries((c.avail ?? {}) as Record<string, { fill: number; down_pct?: number; days?: number }>)
+    .map(([k, v]) => [k, { fill: Number(v.fill), down_pct: Number(v.down_pct ?? 0), days: Number(v.days ?? 0) }]));
+  const maintPlans = ((c.maint_plans ?? []) as MaintPlanRow[]).map((p) => ({ ...p, stop_minutes: Number(p.stop_minutes) }));
   const ORDER = ['SIL-MIX', 'BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02', 'PACK-01'];
   const machines = ((m ?? []) as MachineInfo[]).map((x) => ({ ...x, tag_count: Number(x.tag_count) }))
     .sort((a, b) => (ORDER.indexOf(a.code) + 1 || 99) - (ORDER.indexOf(b.code) + 1 || 99) || a.code.localeCompare(b.code));
-  return { cfg, machines, operators: (o ?? []) as OperatorInfo[], updated_at: c.updated_at as string | null, flowMeta };
+  return { cfg, machines, operators: (o ?? []) as OperatorInfo[], updated_at: c.updated_at as string | null, flowMeta, maintPlans };
 }
 // Số mẫu QC tối thiểu (30 ngày) để MES dùng thời gian QC thực tế thay số TP KT/QA nhập
 export const QC_LEARN_MIN_SAMPLES = 10;
 // Dấu vân tay thông số dòng chảy: đổi (TP KT/QA sửa, tăng ca được duyệt/hết hạn, QC tự học thay đổi) thì lịch đang dùng cần xếp lại
 export const flowSig = (cfg: Pick<Config, 'flow'>) => JSON.stringify(flowOf(cfg));
+// Dấu vân tay thông số người đứng máy + tỷ lệ xếp lịch riêng (làm tròn %): đổi thì lịch cần xếp lại.
+// Lịch vắng, kiêm nhiệm, tổ đóng gói đổi thì ghi nhật ký tham số nên cũng làm lịch cần xếp lại.
+export const peopleSig = (cfg: Pick<Config, 'people' | 'avail'>) => {
+  const p = peopleOf(cfg);
+  return JSON.stringify([p.start_min, p.bobbin_min, p.watch_max, p.pack_crew, p.pack_one_pct,
+    Object.entries(cfg.avail ?? {}).map(([k, v]) => k + ':' + Math.round(Number(v.fill))).sort()]);
+};
 // Thứ tự lô bộ tối ưu đã chọn (lưu trong phiên bản lịch): lô mới thêm chen theo hạn giao
 export function applySeq(orders: Order[], seq?: Record<string, number> | null): Order[] {
   if (!seq || !Object.keys(seq).length) return orders;
@@ -184,7 +264,7 @@ export type VersionRow = {
   // Từ 28/10/2026: TP SX xếp → bản đề xuất (PROPOSED) chờ Giám đốc duyệt mới thành lịch đang dùng
   status?: 'PROPOSED' | 'APPROVED' | 'RETURNED' | 'SUPERSEDED'; approved_at?: string | null; approved_by_name?: string | null; review_note?: string | null; created_by?: string | null;
   params: { S: number; SPD: number; RUN: number; fill_pct: number; frozen_days: number; machines_per_operator: number; plan_no?: string; workdays?: number[];
-    group_days?: number; speeds_sig?: string; flow_sig?: string; seq?: Record<string, number>; flow?: unknown; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
+    group_days?: number; speeds_sig?: string; flow_sig?: string; people_sig?: string; seq?: Record<string, number>; flow?: unknown; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
 };
 
 export type Kh = Awaited<ReturnType<typeof loadKh>>;
@@ -255,6 +335,8 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
       color: (r.color as string) ?? null, machine: String(r.machine_code), operator: (r.operator_code as string) ?? null, lane: Number(r.lane ?? 0),
       start: Number(r.start_min), runStart: Number(r.run_start_min), end: Number(r.end_min), setup: Number(r.setup_min), meters: Number(r.meters),
       rate: Number(r.rate), speed: Number(r.speed), reason: String(r.reason ?? ''), why: String(r.setup_why ?? ''), part: Boolean(r.part),
+      attend: Array.isArray(r.attend) ? (r.attend as Attend[]).map((a) => ({ ...a, f: Number(a.f), t: Number(a.t) })) : undefined,
+      crew: r.crew == null ? undefined : Number(r.crew),
     }));
     const byMachine = new Map(base.machines.map((m) => [m.code, slots.filter((s) => s.machine === m.code)]));
     const opDone = new Map<string, { start: number; end: number; left: number }>();
@@ -287,12 +369,16 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
     || cfgCal.wd.join() !== cal.wd.join()
     || (version.params.speeds_sig ?? '') !== speedSig(base.cfg)
     || (version.params.flow_sig ?? '') !== flowSig(base.cfg)
+    || (version.params.people_sig !== undefined && version.params.people_sig !== peopleSig(base.cfg))
     || (lastParamAt && lastParamAt > version.created_at)));
   const missing = version ? orders.filter((o) => !sch!.slots.some((s) => s.lineId === o.id)) : [];
 
   // Máy hỏng / bảo dưỡng / ngừng dùng: lịch đang dùng còn việc trong khoảng máy không chạy được → cần xếp lại
-  const windows = machineWindows(base.machines, maint, cal, now);
+  const windows = machineWindows(base.machines, maint, cal, now, base.maintPlans, sch);
   const machAlerts: string[] = [];
+  for (const m of base.machines) if ((m.status === 'STOP' || m.status === 'DOWN' || m.status === 'MAINT')
+    && (!m.status_eta || new Date(m.status_eta).getTime() <= Date.now()))
+    machAlerts.push(`${m.code} ${m.status === 'DOWN' ? 'hỏng' : m.status === 'STOP' ? 'dừng' : 'bảo dưỡng'} ${m.status_eta ? `quá giờ dự kiến chạy lại (${hm(m.status_eta)}) mà chưa chạy` : 'chưa có giờ dự kiến chạy lại'}: MES tạm không xếp việc đến hết ngày làm việc kế tiếp. TP KT/QA nhập giờ chạy lại mới (hoặc chuyển máy về Chờ việc nếu đã chạy được) ở Hồ sơ máy`);
   if (sch) for (const w of windows) {
     const n = sch.slots.filter((x) => x.machine === w.machine && x.end > w.from + 1 && x.start < w.to - 1 && x.end > nowT).length;
     if (n) machAlerts.push(`${w.label}: lịch đang dùng còn ${n} việc trên máy trong thời gian này`);
@@ -315,9 +401,13 @@ export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?
   const base = kh.version ? kh.version.base_date : kh.cal.base;
   const cal = makeCalendar(kh.cfg, base);
   const todayIdx = dayIndex(cal, kh.now.date);
-  const windows = machineWindows(kh.machines, kh.maint, cal, kh.now);
+  const windows = machineWindows(kh.machines, kh.maint, cal, kh.now, kh.maintPlans, kh.sch);
   const frozenEnd = Math.max(0, todayIdx + kh.cfg.frozen_days) * cal.SPD * cal.S;
-  const early = windows.some((w) => w.from < frozenEnd);
+  // Máy hỏng / dừng / ngừng dùng / bảo dưỡng đã chốt mà lịch đang dùng còn việc trên máy đó trong vùng khóa: xếp lại từ ngày mai
+  // (chuyển việc sang máy cùng loại); giữ chỗ bảo dưỡng tạm (chưa chốt) hay máy không có việc trong vùng khóa thì giữ vùng khóa
+  const oldFrozen = Math.max(0, kh.todayIdx + kh.cfg.frozen_days) * kh.cal.SPD * kh.cal.S;
+  const early = frozenEnd > 0 && kh.windows.some((w) => !w.tentative && w.from < oldFrozen
+    && (kh.sch?.slots ?? []).some((x) => x.machine === w.machine && x.end > Math.max(w.from, kh.nowT) + 1e-6 && x.start < Math.min(w.to, oldFrozen) - 1e-6));
   const boundaryDay = opt.split || early ? Math.max(0, todayIdx + 1) : Math.max(0, todayIdx + kh.cfg.frozen_days);
   const prev: PrevSchedule | null = kh.sch && kh.version ? { S: kh.version.params.S, SPD: kh.version.params.SPD, slots: kh.sch.slots } : null;
   // Lô TP SX đã duyệt lịch: giữ chỗ trên lịch máy khi xếp lại

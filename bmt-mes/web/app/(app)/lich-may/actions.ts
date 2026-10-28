@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { type ChangeInput, type ProductRow, readChange, simulate, stepsFor } from '@/lib/kh/change';
-import { type Kh, ROLE, carryOver, flowSig, hasRole, loadKh, metaOf, rebuild, speedSig } from '@/lib/kh/load';
+import { type Kh, ROLE, carryOver, flowSig, hasRole, loadKh, metaOf, peopleSig, rebuild, speedSig } from '@/lib/kh/load';
 import { parseNum } from '@/lib/format';
 import { flowOf } from '@/lib/kh/scheduler';
 import type { Order } from '@/lib/kh/scheduler';
@@ -21,7 +21,7 @@ function payload(kh: Kh, orders: Order[], r: ReturnType<typeof rebuild>) {
     p_params: {
       S: r.cal.S, SPD: r.cal.SPD, RUN: r.cal.RUN, fill_pct: kh.cfg.fill_pct, frozen_days: kh.cfg.frozen_days,
       machines_per_operator: kh.cfg.machines_per_operator, plan_no: kh.planNo, workdays: r.cal.wd,
-      group_days: kh.cfg.group_days ?? 0, speeds_sig: speedSig(kh.cfg), flow_sig: flowSig(kh.cfg), flow: flowOf(kh.cfg),
+      group_days: kh.cfg.group_days ?? 0, speeds_sig: speedSig(kh.cfg), flow_sig: flowSig(kh.cfg), people_sig: peopleSig(kh.cfg), flow: flowOf(kh.cfg),
       // thứ tự lô (bộ tối ưu chọn): xếp lại sau giữ thứ tự này, lô mới chen theo hạn giao
       seq: Object.fromEntries(r.orders.filter((o) => o.seq != null).map((o) => [o.id, o.seq!])),
       shifts: r.cal.shifts.map((s) => ({ code: s.code, start_time: s.start_time, end_time: s.end_time, break_min: s.break_min })),
@@ -34,6 +34,7 @@ function payload(kh: Kh, orders: Order[], r: ReturnType<typeof rebuild>) {
       plan_line_id: s.lineId, op_code: s.op, color: s.color, machine_code: s.machine, operator_code: s.operator, lane: s.lane,
       start_min: r3(s.start), run_start_min: r3(s.runStart), end_min: r3(s.end), setup_min: r3(s.setup), meters: r3(s.meters),
       rate: r3(s.rate), speed: r3(s.speed), reason: s.reason, setup_why: s.why, part: s.part,
+      attend: (s.attend ?? []).map((a) => ({ ...a, f: r3(a.f), t: r3(a.t) })), crew: s.crew ?? null,
     })),
   };
 }

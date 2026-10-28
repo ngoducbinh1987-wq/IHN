@@ -59,7 +59,9 @@ export async function setStatus(form: FormData) {
     p_note: opt(form, 'note'), p_eta: vnDateTime(form.get('eta')),
   });
   if (error) back(form, 'err', friendly(error.message));
-  done(form, txt(form, 'status') === 'DOWN' ? 'Đã báo hỏng: mở phiếu sửa chữa, báo TP Kỹ thuật/QA; TP SX được báo xếp lại lịch máy' : 'Đã cập nhật trạng thái máy');
+  const st = txt(form, 'status'), down = st === 'DOWN' || (st === 'STOP' && opt(form, 'reason') === 'DT_BREAKDOWN');
+  done(form, down ? 'Đã báo hỏng: mở phiếu sửa chữa, báo TP Kỹ thuật/QA; TP SX được báo xếp lại lịch máy'
+    : st === 'STOP' ? 'Đã báo dừng máy: lịch máy không xếp việc đến giờ dự kiến chạy lại; TP SX được báo xếp lại lịch' : 'Đã cập nhật trạng thái máy');
 }
 
 // ---------------------------------------------------------------- Thông số, linh kiện, dải, tốc độ, người, tài liệu

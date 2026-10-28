@@ -33,7 +33,7 @@ export default async function MachineSettings({ searchParams }: { searchParams: 
       <Flash ok={sp.ok} err={sp.err} />
       <section className="card mb-4 max-w-4xl px-5 py-4 text-[14px]">
         <div className="mb-1 font-medium">Lịch làm việc (dùng chung với Kế hoạch sản xuất)</div>
-        <p>Ca A {s[0]?.[0] ?? '08:00'}–{s[0]?.[1] ?? '12:00'}, {s[1]?.[0] ?? '13:00'}–{s[1]?.[1] ?? '17:00'} · ngày làm việc {DOW.filter(([d]) => (shift.workdays as number[]).includes(d)).map(([, t]) => t).join(', ')} · tỷ lệ xếp lịch {Math.round(Number(shift.fill) * 100)}% · {get('max_machines_per_operator') ?? 2} máy/người.</p>
+        <p>Ca A {s[0]?.[0] ?? '08:00'}–{s[0]?.[1] ?? '12:00'}, {s[1]?.[0] ?? '13:00'}–{s[1]?.[1] ?? '17:00'} · ngày làm việc {DOW.filter(([d]) => (shift.workdays as number[]).includes(d)).map(([, t]) => t).join(', ')} · tỷ lệ xếp lịch {Math.round(Number(shift.fill) * 100)}% (máy hỏng nhiều có tỷ lệ riêng) · người đứng máy theo Nhân sự xưởng.</p>
         <p className="mt-1 text-[12.5px] text-muted">Giám đốc sửa ca, ngày làm việc, tỷ lệ xếp lịch, số máy/người ở <Link href="/tham-so" className="link">Sản xuất → Tham số xếp lịch</Link>.</p>
       </section>
 

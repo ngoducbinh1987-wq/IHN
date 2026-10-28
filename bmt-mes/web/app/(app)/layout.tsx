@@ -42,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { key: 'phieu-hoan-thanh', href: '/phieu-hoan-thanh', label: 'Phiếu hoàn thành bobin', icon: 'checklist', group: 'Sản xuất' },
     { key: 'phieu-xuat-nvl', href: '/phieu-xuat-nvl', label: 'Phiếu xuất NVL, NVL thừa', icon: 'issue', group: 'Sản xuất' },
     { key: 'tham-so', href: '/tham-so', label: 'Tham số xếp lịch', icon: 'sliders', group: 'Sản xuất' },
+    { key: 'nhan-su-xuong', href: '/nhan-su-xuong', label: 'Nhân sự xưởng', icon: 'users', group: 'Sản xuất' },
     // Quy trình final: xuất NVL bằng phiếu giấy, công nhân không dùng điện thoại → Quét mã QR, Cấp NVL, Nhận NVL tại máy
     // không có trên menu (trang vẫn còn, mở từ đường dẫn mã tem)
     { key: 'kho', href: '/kho', label: 'Tổng quan kho', icon: 'warehouse', group: 'Kho' },

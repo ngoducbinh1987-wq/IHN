@@ -281,9 +281,13 @@ create temp table _cap as select app.check_capacity(null, current_date, current_
 select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'EXTRUDER_TP')
   and (select (o ->> 'req_min')::numeric = 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'EXTRUDER_SI'), 'Bọc cách điện PVC/HDPE tính trên line vỏ như Lịch máy');
 drop table _cap;
+-- Từ 28/10/2026 chỉ cảnh báo khi một người trông quá watch_max máy (mặc định 6): thử với ngưỡng 1 máy/người
+reset role;
+update master.planning_config set watch_max = 1 where id = 1;
+set local role authenticated;
 create temp table _cap as select app.check_capacity(null, current_date, current_date + 4, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('sfr'), 'qty_m', 400000))) as j;
-select pg_temp.ok((select (j -> 'issues')::text like '%Thiếu người%' from _cap), 'Cảnh báo thiếu người khi phải chạy nhiều dây chuyền cùng lúc');
+select pg_temp.ok((select (j -> 'issues')::text like '%Thiếu người%cảnh báo khi một người trông quá 1 máy%' from _cap), 'Cảnh báo thiếu người khi phải chạy nhiều dây chuyền cùng lúc (ngưỡng trông máy)');
 select pg_temp.ok((select count(*) from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'TWISTER') = 1, 'Xoắn + quấn AL/PET tính chung máy xoắn');
 drop table _cap;
 -- Gọi hai lần trong cùng giao dịch

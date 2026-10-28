@@ -6,8 +6,8 @@ import { Empty, Flash, Kpi, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { LEVEL, type ProductRow, type Step, readChange, simulate, stepsFor } from '@/lib/kh/change';
 import { type Kh, ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import {
-  BOBBIN, type Finish, OP_NAME, OP_SHORT, type Op, type Schedule, type Slot, UNIT, addDays, dayIndex, isWorkday, makeCalendar, nextWorkday, opName,
-  schedule, finishInfo, flowOf, shiftDate, shiftCode, workdaysBetween,
+  BOBBIN, type Finish, OP_NAME, OP_SHORT, type Op, type Schedule, type Slot, UNIT, addDays, availFactor, dayIndex, isWorkday, makeCalendar, nextWorkday, opName,
+  peopleOf, schedule, finishInfo, flowOf, shiftDate, shiftCode, workdaysBetween,
 } from '@/lib/kh/scheduler';
 import { M_STATUS } from '@/lib/machine';
 import { DOC_STATUS, df, nf } from '@/lib/format';
@@ -179,10 +179,16 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
     const su = sl.reduce((a, s) => a + Math.max(0, Math.min(t1, s.runStart) - Math.max(t0, s.start)), 0);
     return { m, used, su, load: used / capMin };
   });
-  const wk = kh.operators.filter((w) => w.skills.length).map((w) => {
-    const used = view.sch.slots.filter((s) => s.operator === w.code).reduce((a, s) => a + clip(s, t0, t1), 0);
-    return { w, used, cap: capMin * kh.cfg.machines_per_operator, load: used / (capMin * kh.cfg.machines_per_operator) };
-  });
+  // Tải người = phút có mặt (khởi động, thay bobin, đứng máy trộn / đóng gói) ÷ phút làm việc trừ ngày vắng
+  const P = peopleOf(kh.cfg);
+  const absent = (code: string) => P.absences.filter((a) => a.code === code).reduce((acc, a) => acc + cal.days.slice(d0, d1)
+    .filter((d) => d >= a.from && d <= a.to).length * (a.part === 'FULL' ? 1 : 0.5), 0);
+  const wk = kh.operators.map((w) => {
+    const used = view.sch.slots.flatMap((s) => (s.attend ?? []).filter((a) => a.p === w.code)).reduce((acc, a) => acc + Math.max(0, Math.min(t1, a.t) - Math.max(t0, a.f)), 0);
+    const off = absent(w.code);
+    const cap = Math.max(0, nDays - off) * cal.SPD * view.sch.S;
+    return { w, used, cap, off, load: cap > 0 ? used / cap : used > 0 ? 9.99 : 0 };
+  }).filter((x) => x.used > 0 || x.w.skills.length);
   const top = wk.reduce((a, b) => (b.load > (a?.load ?? -1) ? b : a), wk[0]);
   const late = kh.orders.filter((o) => { const f = view.fin.get(o.id); return f && (!f.placed || (f.slack ?? 0) < 0); });
   const near = kh.orders.filter((o) => { const f = view.fin.get(o.id); return f?.placed && f.slack !== null && f.slack >= 0 && f.slack <= 1; });
@@ -199,13 +205,14 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
         <section className="card">
           <div className="card-h"><h2>Tải theo người</h2><span className="text-[13px] font-normal text-muted">giới hạn thật của xưởng</span></div>
           <div className="overflow-x-auto"><table className="tbl">
-            <thead><tr><th>Người</th><th>Đứng máy</th><th className="num">Phút cần</th><th className="num">Phút có</th><th className="min-w-[150px]">Tải</th></tr></thead>
+            <thead><tr><th>Người</th><th>Đứng máy</th><th className="num">Phút có mặt</th><th className="num">Phút làm việc</th><th className="min-w-[150px]">Tải</th></tr></thead>
             <tbody>{wk.map((x) => (
-              <tr key={x.w.code}><td><b>{x.w.code}</b>{x.w.is_deputy && <div className="text-[12px] text-muted">Tổ phó</div>}</td><td className="text-[12.5px]">{x.w.skills.join(', ')}</td>
-                <td className="num">{nf(x.used)}</td><td className="num">{nf(x.cap)}</td><td><Bar value={x.load} /></td></tr>
+              <tr key={x.w.code}><td><b>{x.w.code}</b>{x.w.full_name && <div className="text-[12px] text-muted">{x.w.full_name}</div>}{x.w.is_deputy && <div className="text-[12px] text-muted">Tổ phó</div>}</td>
+                <td className="text-[12.5px]">{x.w.skills.join(', ') || <span className="text-muted">chỉ kiêm nhiệm tạm</span>}</td>
+                <td className="num">{nf(x.used)}</td><td className="num">{nf(x.cap)}{x.off > 0 && <div className="text-[12px] text-muted">vắng {nf(x.off, 1)} ngày</div>}</td><td><Bar value={x.load} /></td></tr>
             ))}</tbody>
           </table></div>
-          <p className="px-4 py-3 text-[12.5px] text-muted">Từ {dd(start)} đến {dd(end)}: {nDays} ngày × {cal.SPD} ca × {view.sch.S} phút × {kh.cfg.machines_per_operator} máy/người. {kh.operators.filter((w) => !w.skills.length).map((w) => w.code).join(', ')} vận chuyển bobin, đóng gói: tính 1 ca sau công đoạn cuối.</p>
+          <p className="px-4 py-3 text-[12.5px] text-muted">Từ {dd(start)} đến {dd(end)}: {nDays} ngày × {cal.SPD} ca × {view.sch.S} phút, trừ ngày vắng. Phút có mặt: khởi động máy tự chạy (đổi máy + {P.start_min} phút), mỗi lần thay bobin {P.bobbin_min} phút, đứng suốt máy trộn và máy đóng gói (tổ {P.pack_crew} người). Máy bện, đùn, xoắn đang chạy không giữ người; cảnh báo khi một người trông quá {P.watch_max} máy. Nhân sự xưởng: <Link className="link" href="/nhan-su-xuong">lịch vắng, kiêm nhiệm tạm, tổ đóng gói</Link>.</p>
         </section>
         <section className="card">
           <div className="card-h"><h2>Tải theo máy</h2><span className="text-[13px] font-normal text-muted">phút xếp lịch = ca × {view.sch.RUN} × {kh.cfg.fill_pct}%</span></div>
@@ -216,12 +223,12 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
                 <td className="num">{nf(x.used)}<div className="text-[12px] text-muted">đổi máy {nf(x.su)}</div></td><td className="num">{nf(capMin)}</td><td><Bar value={x.load} /></td></tr>
             ))}</tbody>
           </table></div>
-          <p className="px-4 py-3 text-[12.5px] text-muted">Máy còn trống nhiều thường do thiếu người đứng máy, không phải thiếu máy.</p>
+          <p className="px-4 py-3 text-[12.5px] text-muted">Phút có của máy = ca × tỷ lệ xếp lịch; máy hỏng nhiều có tỷ lệ riêng thấp hơn (Tham số xếp lịch → Tỷ lệ xếp lịch riêng). Máy còn trống nhiều thường do chờ công đoạn trước, máy trộn hoặc chờ người.</p>
         </section>
       </div>
       {late.length > 0 && (
         <Alert tone="bad" title={`${late.length} lệnh dự kiến trễ hạn giao`}>
-          Phương án để Giám đốc chọn: bật ca B vài ngày, thêm người cho {top?.w.code ?? 'vị trí tải cao'}, mua bán thành phẩm, hoặc chốt lại ngày giao với kinh doanh.
+          Phương án để Giám đốc chọn: tăng ca (thẻ Tối ưu &amp; tăng ca), phân công kiêm nhiệm tạm cho vị trí tải cao ({top?.w.code ?? '—'}), mua bán thành phẩm, hoặc chốt lại ngày giao với kinh doanh.
         </Alert>
       )}
       <section className="card">
@@ -334,7 +341,7 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
   const idleNotes: string[] = [];
   const idleWhy = (sl: Slot | undefined) => {
     if (!sl) return 'Chưa có việc';
-    if (sl.reason.startsWith('Chờ người')) return `Chờ người (${sl.operator} đứng máy khác)`;
+    if (sl.reason.startsWith('Chờ người')) return sl.reason.split(' · ')[0];
     const o = orderOf.get(sl.lineId); const k = o ? o.route.indexOf(sl.op) : -1;
     return k > 0 && o ? `Chờ ${OP_NAME[o.route[k - 1]].toLowerCase()}` : 'Trống';
   };
@@ -373,8 +380,8 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
     });
     // Máy hỏng / ngừng dùng / bảo dưỡng giữ chỗ (theo trạng thái hiện tại, chưa cần xếp lại mới hiện)
     for (const win of kh.windows.filter((x) => x.machine === m.code && x.to > W0 && x.from < W0 + W)) {
-      const bad = win.kind === 'DOWN' || win.kind === 'OFF';
-      els.push(<div key={'w' + win.from} className={`absolute inset-y-0.5 z-[5] flex items-center overflow-hidden rounded border-2 px-1.5 text-[11.5px] font-medium ${bad ? 'border-bad bg-[repeating-linear-gradient(135deg,rgba(217,48,37,0.18)_0_4px,rgba(255,255,255,0.75)_4px_8px)] text-bad' : 'border-info bg-[repeating-linear-gradient(135deg,rgba(26,95,208,0.15)_0_4px,rgba(255,255,255,0.75)_4px_8px)] text-info'}`}
+      const bad = win.kind === 'DOWN' || win.kind === 'OFF' || win.kind === 'STOP';
+      els.push(<div key={'w' + win.from} className={`absolute inset-y-0.5 z-[5] flex items-center overflow-hidden rounded ${win.tentative ? 'border-2 border-dashed' : 'border-2'} px-1.5 text-[11.5px] font-medium ${bad ? 'border-bad bg-[repeating-linear-gradient(135deg,rgba(217,48,37,0.18)_0_4px,rgba(255,255,255,0.75)_4px_8px)] text-bad' : 'border-info bg-[repeating-linear-gradient(135deg,rgba(26,95,208,0.15)_0_4px,rgba(255,255,255,0.75)_4px_8px)] text-info'}`}
         style={{ left: `${X(win.from)}%`, width: `calc(${X(Math.min(win.to, W0 + W)) - X(win.from)}% - 2px)` }} title={win.label}>{win.label}</div>);
     }
     if (prevEnd < W0 + W - S / 2) {
@@ -435,14 +442,62 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
           ))}
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border border-dashed border-muted bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.15)_0_3px,transparent_3px_6px)]" />Đổi máy</span>
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm bg-info/20" />Vùng khóa {kh.cfg.frozen_days} ngày</span>
-          <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-bad" />Máy hỏng, ngừng dùng</span>
-          <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-info" />Bảo dưỡng giữ chỗ</span>
+          <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-bad" />Máy dừng, hỏng, ngừng dùng</span>
+          <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-info" />Bảo dưỡng đã chốt</span>
+          <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-dashed border-info" />Bảo dưỡng giữ chỗ tạm</span>
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-0.5 bg-bad" />Bây giờ</span>
           <span>Đổi máy cả tuần: {nf(setupWeek)} phút</span>
         </div>
       </section>
+      <PeopleRows kh={kh} view={view} days={days} startDay={startDay} X={X} W0={W0} W={W} grid={grid} />
       <div id="chi-tiet">{sel ? <SlotDetail kh={kh} view={view} sel={sel} canPlan={canPlan} /> : <div className="card px-4 py-3 text-[13px] text-muted">Bấm vào một khối trên lịch để xem người đứng máy, căn cứ xếp, cách tính thời gian và ngày dự kiến xong.</div>}</div>
     </div>
+  );
+}
+
+// Hàng người theo ngày: đoạn có mặt (khởi động, thay bobin, đứng máy trộn / đóng gói), ngày vắng, kiêm nhiệm tạm
+const ATT: Record<string, [string, string]> = { START: ['Khởi động', 'bg-brand/70'], BOB: ['Thay bobin', 'bg-warn/80'], RUN: ['Đứng máy đóng gói', 'bg-info/60'], MIX: ['Trộn silicone', 'bg-info/60'] };
+function PeopleRows({ kh, view, days, startDay, X, W0, W, grid }: { kh: Kh; view: View; days: string[]; startDay: number; X: (t: number) => number; W0: number; W: number; grid: string }) {
+  const P = peopleOf(kh.cfg);
+  const DAY = view.sch.S * kh.cal.SPD;
+  const rows = kh.operators.map((wk) => {
+    const evs = view.sch.slots.flatMap((s) => (s.attend ?? []).filter((a) => a.p === wk.code && a.t > W0 && a.f < W0 + W).map((a) => ({ a, s })));
+    const offs = days.map((d, i) => ({ i, ab: P.absences.find((x) => x.code === wk.code && x.from <= d && d <= x.to) })).filter((x) => x.ab);
+    const covers = P.covers.filter((c) => c.code === wk.code && days.length && c.to >= days[0] && c.from <= days[days.length - 1]);
+    return { wk, evs, offs, covers };
+  }).filter((x) => x.evs.length || x.offs.length || x.wk.skills.length);
+  if (!rows.length) return null;
+  return (
+    <section className="card overflow-x-auto" id="nguoi-co-mat">
+      <div className="card-h"><h2>Người có mặt tại máy</h2><span className="text-[13px] font-normal text-muted">máy tự chạy chỉ cần người lúc khởi động ({P.start_min}′ + đổi máy) và thay bobin ({P.bobbin_min}′); máy trộn, đóng gói: đứng suốt</span></div>
+      <div className="min-w-[980px]">
+        {rows.map(({ wk, evs, offs, covers }) => (
+          <div key={wk.code} className="grid grid-cols-[180px_1fr] border-b border-line last:border-b-0">
+            <div className="px-3 py-1.5 text-[12.5px] leading-snug"><b className="text-[13px]">{wk.code}</b>{wk.full_name ? ` · ${wk.full_name}` : ''}
+              <div className="truncate text-muted">{wk.skills.join(', ') || 'chưa có tay nghề máy nào'}</div>
+              {covers.map((c) => <div key={c.machine + c.from} className="text-warn">kiêm nhiệm tạm {c.machine} {dd(c.from)}–{dd(c.to)}</div>)}</div>
+            <div className="relative h-[40px]" style={{ backgroundImage: grid }}>
+              {offs.map(({ i, ab }) => {
+                const f = (startDay + i) * DAY + (ab!.part === 'PM' ? DAY / 2 : 0), t = ab!.part === 'AM' ? (startDay + i) * DAY + DAY / 2 : (startDay + i + 1) * DAY;
+                return <div key={'off' + i} className="absolute inset-y-1 flex items-center overflow-hidden rounded border border-muted/50 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.10)_0_4px,transparent_4px_8px)] px-1 text-[11px] text-muted"
+                  style={{ left: `${X(f)}%`, width: `calc(${X(t) - X(f)}% - 2px)` }}>Vắng{ab!.part !== 'FULL' ? (ab!.part === 'AM' ? ' nửa đầu ca' : ' nửa sau ca') : ''}</div>;
+              })}
+              {evs.map(({ a, s }) => (
+                <div key={s.key + a.f + a.k} className={`absolute top-2 h-[22px] rounded-sm ${ATT[a.k]?.[1] ?? 'bg-muted'} ${a.c ? 'outline outline-2 outline-dashed outline-warn' : ''}`}
+                  style={{ left: `${X(a.f)}%`, width: `max(3px, calc(${X(a.t) - X(a.f)}% - 1px))` }}
+                  title={`${ATT[a.k]?.[0] ?? a.k} ${s.machine}${a.c ? ' (kiêm nhiệm tạm)' : ''} · ${fmtT(kh, a.f)}`} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-4 py-2.5 text-[12.5px] text-muted">
+        {Object.entries(ATT).filter(([k]) => k !== 'MIX').map(([k, [n, c]]) => <span key={k} className="inline-flex items-center gap-1.5"><i className={`inline-block h-3 w-4 rounded-sm ${c}`} />{n === 'Đứng máy đóng gói' ? 'Đứng máy trộn / đóng gói' : n}</span>)}
+        <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm outline outline-2 outline-dashed outline-warn" />Kiêm nhiệm tạm</span>
+        <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border border-muted/50 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.10)_0_3px,transparent_3px_6px)]" />Vắng</span>
+        <Link className="link" href="/nhan-su-xuong">Nhân sự xưởng</Link>
+      </div>
+    </section>
   );
 }
 
@@ -469,8 +524,9 @@ function SlotDetail({ kh, view, sel, canPlan }: { kh: Kh; view: View; sel: Slot;
       </div>
       <div className="overflow-x-auto px-4 pb-2"><table className="tbl"><tbody>
         <tr><td className="w-[170px] text-muted">Phút chạy</td><td><b>{nf(sel.meters)} {UNIT[sel.op]} ÷ {nf(sel.speed)} m/phút = {nf(real)} phút ≈ {nf((sel.end - sel.runStart) / S, 1)} ca</b>
-          <div className="text-[12.5px] text-muted">Mỗi ca chỉ xếp {S} phút ({view.sch.RUN} × {kh.version?.params.fill_pct ?? kh.cfg.fill_pct}%){sel.op === 'CD3' && o.shield ? ' · xoắn và quấn AL/PET liền dây: lấy tốc độ chậm hơn của hai bước' : ''}</div></td></tr>
-        <tr><td className="text-muted">Người đứng máy</td><td><b>{sel.operator}</b><div className="text-[12.5px] text-muted">{op?.job}</div></td></tr>
+          <div className="text-[12.5px] text-muted">Mỗi ca chỉ xếp {S} phút ({view.sch.RUN} × {kh.version?.params.fill_pct ?? kh.cfg.fill_pct}%){availFactor(kh.cfg, sel.machine) < 1 ? ` · máy này tỷ lệ riêng ${Math.round(Number(kh.cfg.avail?.[sel.machine]?.fill))}% (trừ tỷ lệ hỏng 90 ngày)` : ''}{sel.op === 'CD3' && o.shield ? ' · xoắn và quấn AL/PET liền dây: lấy tốc độ chậm hơn của hai bước' : ''}</div></td></tr>
+        <tr><td className="text-muted">Người có mặt</td><td><b>{sel.operator ?? '—'}</b>{op?.full_name ? ` · ${op.full_name}` : ''}{sel.crew ? ` · tổ ${sel.crew} người` : ''}
+          <div className="text-[12.5px] text-muted">{(sel.attend ?? []).length ? (sel.attend ?? []).map((a) => `${ATT[a.k]?.[0] ?? a.k} ${a.p}${a.c ? ' (kiêm nhiệm tạm)' : ''} ${fmtT(kh, a.f)} ${nf((a.t - a.f), 0)}′`).join(' · ') : op?.job}</div></td></tr>
         <tr><td className="text-muted">Đổi máy</td><td><b>{sel.setup ? `${Math.round(sel.setup)} phút` : 'Không'}</b><div className="text-[12.5px] text-muted">{sel.setup ? `${sel.why} · cần mẫu đầu mã đạt trước khi chạy hàng loạt` : 'Cùng mã, cùng màu với việc trước hoặc là việc đầu tiên của máy'}</div></td></tr>
         <tr><td className="text-muted">Bắt đầu lúc này vì</td><td><b>{sel.reason}</b><div className="text-[12.5px] text-muted">Thứ tự trên máy: {o.prio === 0 ? 'đơn gấp' : o.due ? `theo hạn giao ${dd(o.due)}` : 'chưa có hạn giao, xếp sau'}{(kh.cfg.group_days ?? 0) > 0 ? `, gom lô cùng cỡ/màu trong ${kh.cfg.group_days} ngày` : ''}{sel.color ? ', màu sáng trước tối sau' : ''}</div></td></tr>
         <tr><td className="text-muted">Ngày xong lệnh</td><td><b>{dl && dl.end ? `${opName(last, o)} xong ${fmtT(kh, dl.end - 0.01)} + 1 ca kiểm tra, đóng gói = ${dd(f?.finDate)}` : 'Chưa xếp đủ công đoạn'}</b>
@@ -541,8 +597,8 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
             <tr><td><b>Tốc độ</b></td><td>{(c.speeds ?? []).length ? `Khai báo theo máy: ${[...new Set((c.speeds ?? []).map((x) => x.machine_code))].join(', ')}${(c.speeds ?? []).some((x) => x.status !== 'APPROVED') ? ' (có dòng chờ TP Kỹ thuật/QA duyệt)' : ''}. ` : 'Chưa máy nào khai báo tốc độ riêng. '}Mặc định theo công đoạn (cỡ &lt; {nf(flowOf(c).size_large_mm2, 2)} mm²): bện {r('CD1')?.rate_small}, bọc cách điện {r('CD2')?.rate_small}, xoắn {r('CD3')?.rate_small}, AL/PET {r('CD4')?.rate_small}, vỏ {r('CD5')?.rate_small}{r('CD6') ? `, đóng gói ${r('CD6')?.rate_small}` : ''} m/phút{r('CD0') ? `, trộn silicone ${r('CD0')?.rate_small} kg/giờ` : ''}{c.rates.some((x) => !x.confirmed) ? ' · còn số giả định chưa ban hành' : ''}</td></tr>
             <tr><td><b>Phút đổi máy</b></td><td>Màu sáng → tối {co('INS_UP')}′, tối → sáng {co('INS_DOWN')}′, đổi cỡ {co('INS_SIZE')}′, đổi màu vỏ {co('SH_COLOR')}′, đổi mã vỏ {co('SH_CODE')}′, bện đổi cỡ {co('BUN_SIZE')}′, xoắn đổi mã {co('TWS_CODE')}′, trộn đổi công thức {co('MIX_CODE')}′, đóng gói đổi mã {co('PK_CODE')}′</td></tr>
             <tr><td><b>Ca làm việc</b></td><td>{cal.shifts.map((s) => `Ca ${s.code} ${s.start_time}–${s.end_time}, nghỉ ${s.break_min}′`).join('; ')} · nghỉ Chủ nhật</td></tr>
-            <tr><td><b>Người và tay nghề</b></td><td>{kh.operators.filter((w) => w.skills.length).map((w) => `${w.code}: ${w.skills.join(', ')}`).join(' · ')} · mỗi người đứng {c.machines_per_operator} máy cùng lúc</td></tr>
-            <tr><td><b>Tỷ lệ xếp lịch</b></td><td>{c.fill_pct}% → mỗi ca xếp {cal.S} trên {cal.RUN} phút, giữ {100 - c.fill_pct}% cho sự cố, mẫu đầu ca, chạy lại</td></tr>
+            <tr><td><b>Người và tay nghề</b></td><td>{kh.operators.filter((w) => w.skills.length).map((w) => `${w.code}: ${w.skills.join(', ')}`).join(' · ')} · máy tự chạy: người có mặt lúc khởi động ({peopleOf(c).start_min}′ + đổi máy) và thay bobin ({peopleOf(c).bobbin_min}′); máy trộn 1 người, máy đóng gói tổ {peopleOf(c).pack_crew} người đứng suốt · lịch vắng, kiêm nhiệm tạm ở <Link className="link" href="/nhan-su-xuong">Nhân sự xưởng</Link></td></tr>
+            <tr><td><b>Tỷ lệ xếp lịch</b></td><td>{c.fill_pct}% → mỗi ca xếp {cal.S} trên {cal.RUN} phút, giữ {100 - c.fill_pct}% cho dừng ngắn, mẫu đầu ca, vệ sinh{Object.keys(c.avail ?? {}).length ? ` · máy có tỷ lệ riêng (trừ tỷ lệ hỏng 90 ngày): ${Object.entries(c.avail ?? {}).map(([k, v]) => `${k} ${Math.round(v.fill)}%`).join(', ')}` : ''}</td></tr>
             <tr><td><b>Thực tế</b></td><td>Báo cáo ca đã xác nhận: phần chưa xong cộng vào ca sau khi xếp lại lịch</td></tr>
           </tbody></table></div>
         </section>
@@ -554,13 +610,14 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
               ? <>lô có hạn giao không muộn hơn lô hạn sớm nhất đang chờ cùng máy quá <b>{c.group_days} ngày</b> được chạy liền nếu ít phút đổi máy hơn: cùng cỡ ruột, cùng màu, cùng mã chạy liền nhau (không đổi máy) → đổi màu sáng sang tối → đổi lớn (tối sang sáng phải xả, đổi cỡ, thay khuôn). Đơn gấp không bị lô thường vượt.</>
               : <>đang tắt (khung gom 0 ngày): chạy đúng thứ tự hạn giao.</>}</li>
             <li>Màu <b>sáng chạy trước, tối sau</b>; lô đầu tiên của máy chọn màu sáng nhất.</li>
-            <li>Mỗi việc vào <b>máy cùng loại có người đủ tay nghề rảnh sớm nhất</b>, đã tính phút đổi máy. Tốc độ: máy chế độ <b>Nhập tay</b> dùng <b>bảng tốc độ tự nhập</b> của máy theo chủng loại × cỡ ruột (Quản lý máy → Tốc độ); máy chế độ <b>Tự động</b> dùng <b>tốc độ thực tế đo từ PLC</b> 30 ngày gần nhất (cần ít nhất {nf(flowOf(c).plc_min_run)} phút chạy cùng mã / cùng cỡ, chưa đủ thì dùng bảng tự nhập); chưa khai báo thì dùng tốc độ mặc định theo công đoạn; không có tốc độ nào thì không xếp và báo thiếu thông số. Chọn máy <b>xong sớm nhất</b>.</li>
+            <li>Mỗi việc vào <b>máy cùng loại xong sớm nhất</b>: máy rảnh, không trong khoảng dừng / hỏng / bảo dưỡng, và có <b>người được đứng máy</b> (đứng chính hoặc kiêm nhiệm tạm, không vắng) rảnh lúc đổi máy + khởi động; mỗi lần thay bobin cần một người rảnh, không ai rảnh thì máy dừng chờ. Một người không có mặt hai nơi cùng lúc, người đang trộn không rời máy trộn. Tốc độ: máy chế độ <b>Nhập tay</b> dùng <b>bảng tốc độ tự nhập</b> của máy theo chủng loại × cỡ ruột (Quản lý máy → Tốc độ); máy chế độ <b>Tự động</b> dùng <b>tốc độ thực tế đo từ PLC</b> 30 ngày gần nhất (cần ít nhất {nf(flowOf(c).plc_min_run)} phút chạy cùng mã / cùng cỡ, chưa đủ thì dùng bảng tự nhập); chưa khai báo thì dùng tốc độ mặc định theo công đoạn; không có tốc độ nào thì không xếp và báo thiếu thông số. Chọn máy <b>xong sớm nhất</b>.</li>
             <li><b>Gối đầu theo bobin:</b> công đoạn sau bắt đầu khi <b>bobin đầu tiên</b> của công đoạn trước xong (mét một bobin ÷ tốc độ thật) <b>và QC xong</b> ({nf(flowOf(c).qc_min)} phút{kh.flowMeta.qc_learn ? ', MES tự học từ phiếu hoàn thành' : ''}), cộng đệm an toàn nếu có; không xong trước công đoạn trước.</li>
-            <li><b>Máy trộn silicone là nguồn cấp theo nhịp line:</b> line silicone chạy tới đâu lấy silicone tới đó, chỉ từ mẻ đã trộn xong và chưa quá <b>{nf(flowOf(c).pot_life_h, 1)} giờ</b>; máy trộn không kịp thì line chạy chậm (ghi phút chờ). Người trộn đứng riêng máy trộn trong lúc line silicone chạy. Bện không chờ trộn.</li>
+            <li><b>Máy trộn silicone là nguồn cấp theo nhịp line:</b> line silicone chạy tới đâu lấy silicone tới đó, chỉ từ mẻ đã trộn xong và chưa quá <b>{nf(flowOf(c).pot_life_h, 1)} giờ</b>; máy trộn không kịp thì line chạy chậm (ghi phút chờ). Người trộn đứng suốt giờ trộn (không ai trộn được thì giờ đó không trộn). Bện không chờ trộn.</li>
             <li><b>Tối ưu:</b> khi bấm Xếp lịch, MES thử nhiều thứ tự lô, giữ thứ tự ít trễ hạn nhất, xong sớm nhất, ít đổi máy nhất; tăng ca / trộn sớm chỉ dùng phần Giám đốc đã duyệt (thẻ Tối ưu &amp; tăng ca).</li>
             <li>Mỗi ca chỉ xếp <b>{c.fill_pct}%</b> thời gian chạy.</li>
             <li>Khi xếp lại: <b>phần đã chạy và vùng khóa {c.frozen_days} ngày giữ nguyên</b>. Chen vào vùng khóa phải qua đơn phát sinh mức C.</li>
-            <li>Ngày xong lệnh = ngày máy đóng gói xong; mã chưa có công đoạn đóng gói thì công đoạn cuối xong <b>+ 1 ca kiểm tra, đóng gói</b> (NV3, NV4; NV3 giữ kho thành phẩm).</li>
+            <li><b>Đóng gói:</b> tổ ngày đứng suốt (mặc định {peopleOf(c).pack_crew} người, TP SX đặt 1 hoặc 2 người đầu ca); 1 người thì tốc độ {peopleOf(c).pack_one_pct}%. Ngày xong lệnh = ngày máy đóng gói xong; mã chưa có công đoạn đóng gói thì công đoạn cuối xong <b>+ 1 ca kiểm tra, đóng gói</b>.</li>
+            <li><b>Máy không chạy được:</b> dừng, hỏng (đến giờ dự kiến chạy lại; chưa có giờ thì tạm hết ngày làm việc kế tiếp), bảo dưỡng đã chốt, <b>giữ chỗ tạm</b> bảo dưỡng đến hạn (theo ngày, giờ chạy, km), ngừng dùng: không xếp việc vào khoảng này.</li>
           </ol>
         </section>
       </div>
@@ -579,7 +636,7 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
                     <td className="text-[12.5px]">{span(op)}</td></tr>
                 );
               })}
-              <tr><td><b>Kiểm tra, đóng gói</b></td><td className="text-[12.5px]">NV3, NV4</td><td className="text-[12.5px]">theo quy cách đóng gói</td><td className="text-[12.5px]">1 ca</td>
+              <tr><td><b>Kiểm tra, đóng gói</b></td><td className="text-[12.5px]">{who('CD6') !== '—' ? who('CD6') : 'tổ đóng gói'}</td><td className="text-[12.5px]">theo quy cách đóng gói</td><td className="text-[12.5px]">1 ca</td>
                 <td><b>Xong {dd(f?.finDate)}</b> · hạn {dd(o.due)} {f ? <FinishPill {...f} due={o.due} /> : null}</td></tr>
             </tbody>
           </table></div>
@@ -853,8 +910,8 @@ async function Maint({ kh, view, roles, userId }: { kh: Kh; view: View | null; r
               <tr key={m.code}>
                 <td><b>{m.code}</b><div className="text-[12px] text-muted">{m.name}</div></td>
                 <td><StatusPill map={M_STATUS} value={m.status ?? 'IDLE'} />{m.status_since && <div className="text-[12px] text-muted">từ {df(m.status_since, true)}</div>}{m.status_note && <div className="text-[12px] text-muted">{m.status_note}</div>}</td>
-                <td className="text-[13px]">{m.status === 'DOWN' || m.status === 'MAINT' ? (m.status_eta ? df(m.status_eta, true) : <span className="text-bad">chưa có, tạm tính 1 ngày</span>) : '—'}</td>
-                <td className="text-[12.5px]">{wins.length ? wins.map((w) => <div key={w.from}>{w.kind === 'PM' ? 'Giữ chỗ ' : 'Không xếp việc: '}{w.label}</div>) : <span className="text-muted">Chạy bình thường</span>}</td>
+                <td className="text-[13px]">{m.status === 'DOWN' || m.status === 'MAINT' || m.status === 'STOP' ? (m.status_eta ? df(m.status_eta, true) : <span className="text-bad">chưa có, tạm tính hết ngày làm việc kế tiếp</span>) : '—'}</td>
+                <td className="text-[12.5px]">{wins.length ? wins.map((w) => <div key={w.from}>{w.kind === 'PM' ? (w.tentative ? 'Giữ chỗ tạm ' : 'Giữ chỗ ') : 'Không xếp việc: '}{w.label}</div>) : <span className="text-muted">Chạy bình thường</span>}</td>
                 <td>{m.id ? <Link className="link text-[13px]" href={`/may/${m.id}`}>Hồ sơ máy</Link> : null}</td>
               </tr>
             );
@@ -913,7 +970,7 @@ async function Maint({ kh, view, roles, userId }: { kh: Kh; view: View | null; r
           </table>
         )}
         <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">
-          Trong ca: phiếu đã chốt thành khối giữ chỗ trên lịch máy (bấm Xếp lại lịch để lịch tránh khối này). Gộp lần đổi máy lớn: làm trong lúc thay khuôn, xả nhựa, không mất thêm giờ máy.
+          Bảo dưỡng đến hạn (theo ngày, giờ chạy, km) chưa chốt: MES giữ chỗ tạm (nét đứt) đầu ngày đến hạn, vẫn trừ giờ máy. Trong ca: phiếu đã chốt thành khối giữ chỗ trên lịch máy (bấm Xếp lại lịch để lịch tránh khối này). Gộp lần đổi máy lớn: làm trong lúc thay khuôn, xả nhựa, không mất thêm giờ máy.
           Ngoài giờ ca: sau 17:00 hoặc ngày nghỉ, không trừ năng lực. Đổi ngày sau khi chốt thì phải chốt lại.
         </p>
       </section>

@@ -1,6 +1,6 @@
 // Kiểm thử thuật toán xếp lịch theo thông số (máy trộn là nguồn cấp, hạn dùng silicone, gối đầu theo bobin, bộ tối ưu)
 // trên dữ liệu thật KH-2610-03 (cấu hình Supabase 28/10/2026). Chạy: node --experimental-strip-types web/tests/kh-flow.test.ts
-import { type Config, type FlowCfg, type MachineInfo, type OperatorInfo, type Order, type Op, type Window, makeCalendar, schedule, finishInfo } from '../lib/kh/scheduler.ts';
+import { type Config, type FlowCfg, type MachineInfo, type OperatorInfo, type Order, type Op, type PeopleCfg, type Window, makeCalendar, schedule, finishInfo } from '../lib/kh/scheduler.ts';
 import { validateSchedule } from '../lib/kh/validate.ts';
 import { optimize, groupLoads, scoreOf } from '../lib/kh/optimize.ts';
 
@@ -32,11 +32,13 @@ const L = (i: number, code: string, size: number, colors: string[], qty: number,
 const ORD = [L(1, 'CFR-2C-1', 1, ['Lõi 1', 'Lõi 2'], 10000, 'M1', 10.456, '2026-10-31'), L(2, 'PFR-2C-1P5', 1.5, ['Nâu', 'Trắng'], 80000, 'M1.5', 13.695),
   L(3, 'PFR-2C-2P5', 2.5, ['Nâu', 'Trắng'], 50000, 'M2.5', 20.345), L(4, 'PFR-3C-1P5', 1.5, ['Nâu', 'Nâu', 'Trắng'], 20000, 'M1.5', 20.542)];
 
-type Sc = { mpo?: number; kgh?: number; flow?: FlowCfg; machines?: MachineInfo[]; ops?: OperatorInfo[]; orders?: Order[]; win?: (D: (d: number) => number) => Window[] };
+type Sc = { mpo?: number; kgh?: number; flow?: FlowCfg; people?: PeopleCfg; avail?: Config['avail']; machines?: MachineInfo[]; ops?: OperatorInfo[]; orders?: Order[]; win?: (D: (d: number) => number) => Window[] };
 function ctxOf(sc: Sc) {
   const cfg: Config = JSON.parse(JSON.stringify(baseCfg));
   if (sc.kgh) { const r = cfg.rates.find((x) => x.op_code === 'CD0')!; r.rate_small = r.rate_large = sc.kgh; }
   cfg.flow = sc.flow ?? {};
+  if (sc.people) cfg.people = sc.people;
+  if (sc.avail) cfg.avail = sc.avail;
   if (sc.mpo) cfg.machines_per_operator = sc.mpo;
   const cal = makeCalendar(cfg, '2026-10-28');
   const D = (d: number) => d * cal.S * cal.SPD;
@@ -90,16 +92,24 @@ if (off.sch.slots.some((s) => s.machine === 'EXT-SI-02')) bad('line ngừng dùn
 // 6. Người: thiếu NV5; không ai đứng máy trộn → line silicone không chạy (báo chưa xếp, không treo)
 const noNv5 = run('vắng NV5', { ops: baseOps.filter((o) => o.code !== 'NV5') });
 if (noNv5.score.makespan < k30.score.makespan - 0.05) bad('thiếu người không được nhanh hơn');
+// Máy trộn cần người đứng liên tục: không ai có tay nghề máy trộn (và không ai kiêm nhiệm) thì line silicone không có silicone → báo, không treo
 const noMixer = run('không ai biết đứng máy trộn', { ops: baseOps.map((o) => ({ ...o, skills: o.skills.filter((x) => x !== 'SIL-MIX') })) }, false);
-if (noMixer.v.length) bad('không ai đứng máy trộn: không có người trộn thì không ràng buộc người (phải xếp được)');
-const oneLane = run('1 người/1 máy, chỉ NV1 biết trộn', { mpo: 1 }, false);
-if (oneLane.v.length) bad(`1 người/1 máy: ${oneLane.v[0]}`);
-// NV1 đứng máy trộn thì không đứng line cùng lúc: line silicone chạy cùng lúc máy trộn có việc chỉ do NV5 đứng
-for (const s of oneLane.sch.slots) if (s.op === 'CD2' && s.machine.startsWith('EXT-SI') && s.operator === 'NV1') bad('1 người/1 máy: NV1 vừa trộn vừa đứng line silicone');
+if (!noMixer.sch.unplaced.length || !(noMixer.sch.warnings ?? []).some((w) => w.includes('chưa có người đứng'))) bad('không ai đứng máy trộn: phải báo chưa xếp được và thiếu người trộn');
+// Kiêm nhiệm tạm: NV5 kiêm máy trộn (chưa có tay nghề) thì xếp được, MES ghi kiêm nhiệm tạm
+const coverMix = run('NV5 kiêm nhiệm tạm máy trộn', { ops: baseOps.map((o) => ({ ...o, skills: o.skills.filter((x) => x !== 'SIL-MIX') })),
+  people: { covers: [{ code: 'NV5', machine: 'SIL-MIX', from: '2026-10-01', to: '2027-01-31' }] } });
+if (coverMix.sch.unplaced.length) bad('kiêm nhiệm tạm máy trộn: phải xếp được');
+if (!coverMix.sch.slots.some((s) => s.op === 'CD0' && s.operator === 'NV5')) bad('kiêm nhiệm tạm máy trộn: NV5 phải là người trộn');
+if (!coverMix.sch.slots.some((s) => (s.attend ?? []).some((a) => a.c))) bad('kiêm nhiệm tạm: phải đánh dấu kiêm nhiệm tạm trên khối');
+// Người đang trộn không rời máy trộn: không có đoạn khởi động / thay bobin nào của NV1 trong giờ NV1 đang trộn (validateSchedule kiểm chồng giờ)
+const nv1Mix = k30.sch.slots.filter((s) => s.op === 'CD0').flatMap((s) => s.attend ?? []).filter((a) => a.p === 'NV1');
+const nv1Line = k30.sch.slots.filter((s) => s.op !== 'CD0').flatMap((s) => s.attend ?? []).filter((a) => a.p === 'NV1');
+if (nv1Mix.some((a) => nv1Line.some((b) => b.f < a.t - 1e-6 && a.f < b.t - 1e-6))) bad('NV1 vừa trộn vừa thay bobin / khởi động line');
 const mixOff = run('máy trộn ngừng dùng', { win: () => [{ machine: 'SIL-MIX', from: 0, to: Infinity, kind: 'OFF', label: 'SIL-MIX ngừng dùng' }] }, false);
 if (!mixOff.sch.unplaced.length) bad('máy trộn ngừng dùng: việc bọc silicone phải báo chưa xếp được');
 // 7. Hai máy trộn
-const two = run('hai máy trộn', { machines: [...baseMachines, mk('SIL-MIX-2', 'MIXER')], ops: baseOps.map((o) => o.code === 'NV1' ? { ...o, skills: [...o.skills, 'SIL-MIX-2'] } : o) });
+// Hai máy trộn cần hai người trộn (mỗi máy một người đứng liên tục): thêm NV6 đứng máy trộn 2
+const two = run('hai máy trộn', { machines: [...baseMachines, mk('SIL-MIX-2', 'MIXER')], ops: [...baseOps, op('NV6', ['SIL-MIX-2'])] });
 if (!(two.score.makespan < k30.score.makespan - 1)) bad('hai máy trộn phải nhanh hơn rõ rệt');
 // 8. Mã không cần trộn (không có silicone trong BOM) chạy bình thường
 run('mã không cần trộn', { orders: [...ORD, L(5, 'HFR-2C-1P5', 1.5, ['Đỏ', 'Đen'], 20000, 'M1.5', null)] });
@@ -191,6 +201,101 @@ for (const kgh of [30, 50]) {
   console.log('thiếu thông số:', w.slice(0, 2).join(' | '));
   // Ngưỡng cỡ lớn là thông số: hạ xuống 1,5 mm² thì mã 1,5 mm² dùng tốc độ cỡ lớn (chậm hơn) → lâu hơn
   const a = schedule(c.orders, c), b = schedule(c.orders, { ...c, cfg: { ...c.cfg, flow: { size_large_mm2: 1.5 } } });
-  if (!(scoreOf(b, c.cal, c.orders).makespan > scoreOf(a, c.cal, c.orders).makespan)) bad('ngưỡng cỡ lớn 1,5 mm² phải làm lịch dài hơn');
+  const runOf = (x: typeof a) => x.slots.filter((s) => s.op === 'CD1' || s.op === 'CD2').reduce((acc, s) => acc + (s.end - s.runStart), 0);
+  if (!(runOf(b) > runOf(a))) bad('ngưỡng cỡ lớn 1,5 mm² phải làm bện, bọc chạy lâu hơn');
+}
+// 12. Mô hình người đứng máy (quyết định 28/10/2026)
+{
+  const runPack = (s: ReturnType<typeof run>) => s.sch.slots.filter((x) => x.op === 'CD6').reduce((a, x) => a + (x.end - x.runStart), 0);
+  // Đóng gói mặc định 2 người; TP SX đặt 1 người cho mọi ngày → tốc độ 50 % (chạy lâu gấp đôi), MES vẫn ghi đủ người có mặt suốt khối
+  const two = k30;
+  const days = Array.from({ length: 60 }, (_, i) => { const d = new Date(Date.UTC(2026, 9, 28 + i)); return d.toISOString().slice(0, 10); });
+  const one = run('đóng gói 1 người mọi ngày', { people: { crews: days.map((d) => ({ date: d, machine: 'PACK-01', crew: 1 })) } });
+  const r = runPack(one) / runPack(two);
+  if (!(r > 1.9 && r < 2.1)) bad(`đóng gói 1 người phải chạy lâu gấp đôi (được ${r.toFixed(2)})`);
+  if (!two.sch.slots.filter((x) => x.op === 'CD6').every((x) => x.crew === 2)) bad('đóng gói mặc định 2 người');
+  if (!one.sch.slots.filter((x) => x.op === 'CD6').every((x) => x.crew === 1)) bad('đóng gói 1 người: khối phải ghi 1 người');
+  for (const s of two.sch.slots.filter((x) => x.op === 'CD6')) {
+    const ps = new Set((s.attend ?? []).filter((a) => a.k === 'RUN').map((a) => a.p));
+    if (ps.size !== 2) { bad(`khối đóng gói ${s.key} phải có 2 người có mặt`); break; }
+  }
+  // Tổ đóng gói đặt sẵn người cụ thể
+  const named = run('tổ đóng gói chỉ định NV4', { people: { crews: days.map((d) => ({ date: d, machine: 'PACK-01', crew: 1, members: ['NV4'] })) } });
+  if (named.sch.slots.filter((x) => x.op === 'CD6').some((x) => (x.attend ?? []).some((a) => a.k === 'RUN' && a.p !== 'NV4'))) bad('tổ đóng gói chỉ định NV4: chỉ NV4 đứng máy');
+  // TP SX chọn 1 người nhưng tổ 2 người: thêm người có tay nghề cho đủ tổ
+  const pick1 = run('tổ 2 người, TP SX chọn NV3', { people: { crews: days.map((d) => ({ date: d, machine: 'PACK-01', crew: 2, members: ['NV3'] })) } });
+  if (!pick1.sch.slots.filter((x) => x.op === 'CD6').every((x) => x.crew === 2 && (x.attend ?? []).some((a) => a.p === 'NV3'))) bad('tổ 2 người chọn NV3: phải đủ 2 người, có NV3');
+  // Một người trong tổ vắng nửa ca sau: buổi sáng 2 người, buổi chiều 1 người vẫn đóng gói (không bỏ trống cả ngày)
+  {
+    const D = k30.c.D(1);
+    // ngày đóng gói kín cả ngày trên lịch gốc (có khối qua giữa ngày)
+    const packDay = k30.sch.slots.filter((x) => x.op === 'CD6').map((x) => Math.floor(x.start / D))
+      .find((d) => k30.sch.slots.some((x) => x.op === 'CD6' && x.start < d * D + D / 2 - 30 && x.end > d * D + D / 2 + 30))!;
+    const date = k30.c.cal.days[packDay];
+    const pm = run(`NV3 vắng chiều ${date}`, { people: { absences: [{ code: 'NV3', from: date, to: date, part: 'PM' }] } });
+    const onDay = pm.sch.slots.filter((x) => x.op === 'CD6' && Math.floor(x.start / D) === packDay);
+    const half = packDay * D + D / 2;
+    if (!onDay.some((x) => x.crew === 2 && x.start < half)) bad('vắng nửa ca sau: buổi sáng vẫn đóng gói 2 người');
+    if (!onDay.some((x) => x.crew === 1 && x.end > half)) bad('vắng nửa ca sau: buổi chiều đóng gói 1 người');
+    if (pm.score.makespan > k30.score.makespan + 0.3) bad('một người vắng nửa ca không được làm chậm cả ngày');
+  }
+  // Người đóng gói kiêm thay bobin máy xoắn: đóng gói ngắt quãng ngắn, không bỏ trống cả ngày
+  const pk2 = run('NV4 kiêm máy xoắn', { ops: baseOps.map((o) => o.code === 'NV4' ? { ...o, skills: ['PACK-01', 'TWS-01'] } : o) });
+  if (pk2.score.makespan > k30.score.makespan + 0.3) bad('người đóng gói kiêm thay bobin máy khác không được làm chậm cả ngày');
+  // NV3 nghỉ phép cả tháng: đóng gói còn 1 người (NV4) → chậm như tổ 1 người, không ai vắng mà vẫn được xếp
+  const abs = run('NV3 nghỉ phép', { people: { absences: [{ code: 'NV3', from: '2026-10-28', to: '2026-12-31', part: 'FULL' }] } });
+  if (abs.sch.slots.some((x) => (x.attend ?? []).some((a) => a.p === 'NV3'))) bad('NV3 nghỉ phép vẫn có việc');
+  if (!(runPack(abs) > runPack(two) * 1.9)) bad('NV3 nghỉ phép: đóng gói còn 1 người phải chậm');
+  // NV2 (bện, xoắn) nghỉ 2 ngày đầu: không có đoạn có mặt của NV2 trong 2 ngày đó; máy bện/xoắn không khởi động khi không ai đứng
+  const abs2 = run('NV2 nghỉ 2 ngày đầu', { people: { absences: [{ code: 'NV2', from: '2026-10-28', to: '2026-10-29', part: 'FULL' }] } });
+  const D2 = abs2.c.D(2);
+  if (abs2.sch.slots.some((x) => (x.attend ?? []).some((a) => a.p === 'NV2' && a.f < D2 - 1e-6))) bad('NV2 vắng 2 ngày đầu vẫn được xếp có mặt');
+  if (abs2.sch.slots.some((x) => (x.machine === 'BUN-01' || x.machine === 'TWS-01') && x.start < D2 - 1e-6)) bad('máy bện/xoắn khởi động khi người đứng máy vắng');
+  // Vắng nửa ca sau ngày đầu: không có mặt sau giờ nghỉ trưa
+  const half = run('NV2 vắng chiều ngày đầu', { people: { absences: [{ code: 'NV2', from: '2026-10-28', to: '2026-10-28', part: 'PM' }] } });
+  const H = half.c.cal.S / 2, D1 = half.c.D(1);
+  if (half.sch.slots.some((x) => (x.attend ?? []).some((a) => a.p === 'NV2' && a.t > H + 1e-6 && a.f < D1 - 1e-6))) bad('NV2 vắng chiều vẫn được xếp có mặt buổi chiều');
+  // Người đang học không tự đứng máy: NV2 chỉ "đang học" máy bện → máy bện không chạy
+  const learn = run('chỉ có người đang học máy bện', { ops: baseOps.map((o) => o.code === 'NV2' ? { ...o, skills: ['TWS-01'], learning: ['BUN-01'] } : o) }, false);
+  if (learn.sch.slots.some((x) => x.machine === 'BUN-01')) bad('người đang học không được tự đứng máy bện');
+  // Kiêm nhiệm tạm theo khoảng ngày: NV1 kiêm máy bện từ 30/10 → máy bện chỉ chạy từ 30/10 với người NV1
+  const cov = run('NV1 kiêm nhiệm máy bện từ 30/10', { ops: baseOps.map((o) => o.code === 'NV2' ? { ...o, skills: ['TWS-01'] } : o),
+    people: { covers: [{ code: 'NV1', machine: 'BUN-01', from: '2026-10-30', to: '2026-12-31' }] } });
+  const D30 = cov.c.D(2);
+  const bun = cov.sch.slots.filter((x) => x.machine === 'BUN-01');
+  if (!bun.length || bun.some((x) => x.start < D30 - 1e-6)) bad('kiêm nhiệm từ 30/10: máy bện chỉ chạy từ 30/10');
+  if (bun.some((x) => (x.attend ?? []).some((a) => a.p !== 'NV1' || !a.c))) bad('kiêm nhiệm tạm: người có mặt ở máy bện phải là NV1, đánh dấu kiêm nhiệm');
+  // Máy tự chạy: người chỉ có mặt lúc khởi động (phút đổi máy + 20 phút) và mỗi lần thay bobin (5 phút), không giữ người suốt khối
+  const s1 = k30.sch.slots.find((x) => x.machine === 'BUN-01')!;
+  const st = (s1.attend ?? []).filter((a) => a.k === 'START'), bob = (s1.attend ?? []).filter((a) => a.k === 'BOB');
+  const presence = (s1.attend ?? []).reduce((a, x) => a + x.t - x.f, 0);
+  if (st.length !== 1 || Math.abs(st[0].t - st[0].f - ((s1.runStart - s1.start) + 20)) > 1e-6) bad('khởi động: người có mặt = phút đổi máy + 20 phút');
+  if (!bob.length || bob.some((a) => Math.abs(a.t - a.f - 5) > 1e-6)) bad('thay bobin: mỗi lần 5 phút');
+  if (presence > (s1.end - s1.start) * 0.5) bad('máy tự chạy: người không đứng suốt khối');
+  // Số lần thay bobin ≈ mét ÷ mét một bobin (10.000 m ở bện)
+  const bunAll = k30.sch.slots.filter((x) => x.op === 'CD1');
+  const nBob = bunAll.reduce((a, x) => a + (x.attend ?? []).filter((y) => y.k === 'BOB').length, 0);
+  const meters = bunAll.reduce((a, x) => a + x.qty, 0);
+  if (Math.abs(nBob - meters / 10000) > bunAll.length + 1) bad(`số lần thay bobin bện ${nBob} lệch xa ${(meters / 10000).toFixed(1)}`);
+  // Thông số phút thay bobin lớn hơn → người bận hơn, không nhanh hơn
+  const slowBob = run('thay bobin 30 phút', { people: { bobbin_min: 30, start_min: 60 } });
+  if (slowBob.score.makespan < k30.score.makespan - 0.05) bad('khởi động / thay bobin lâu hơn không được nhanh hơn');
+  // Ngưỡng cảnh báo số máy/người: chỉ cảnh báo, không chặn
+  const w1 = run('cảnh báo quá 1 máy/người', { people: { watch_max: 1 } });
+  if (!(w1.sch.warnings ?? []).some((w) => w.includes('quá 1 máy'))) bad('watch_max 1: phải cảnh báo một người phụ trách nhiều máy');
+  if (Math.abs(w1.score.makespan - k30.score.makespan) > 1e-6) bad('watch_max chỉ cảnh báo, không đổi lịch');
+  // Tỷ lệ xếp lịch riêng: máy xoắn 60 % (hỏng nhiều) → xoắn chạy chậm theo tỷ lệ, lịch không nhanh hơn
+  const av = run('máy xoắn tỷ lệ riêng 60 %', { kgh: 200, avail: { 'TWS-01': { fill: 60 } } });
+  const twRun = (s: ReturnType<typeof run>) => s.sch.slots.filter((x) => x.machine === 'TWS-01').reduce((a, x) => a + (x.end - x.runStart), 0);
+  const av0 = run('máy xoắn tỷ lệ chung', { kgh: 200 });
+  const ratio = twRun(av) / twRun(av0);
+  if (!(ratio > 1.4 && ratio < 1.6)) bad(`tỷ lệ riêng 60 %/90 %: máy xoắn phải chạy lâu hơn ~1,5 lần (được ${ratio.toFixed(2)})`);
+  if (av.score.makespan < av0.score.makespan - 0.05) bad('tỷ lệ riêng thấp hơn không được nhanh hơn');
+  // Máy Dừng (STOP) có giờ chạy lại: chặn lịch như máy hỏng
+  const stop = run('EXT-SI-02 dừng 3 ngày', { win: (D) => [{ machine: 'EXT-SI-02', from: 0, to: D(3), kind: 'STOP', label: 'EXT-SI-02 dừng' }] });
+  if (stop.sch.slots.some((x) => x.machine === 'EXT-SI-02' && x.start < stop.c.D(3) - 1e-6)) bad('máy Dừng vẫn có việc trước giờ chạy lại');
+  // Bảo dưỡng giữ chỗ tạm (chưa chốt) vẫn trừ giờ máy
+  const pm = run('BUN-01 bảo dưỡng giữ chỗ tạm ngày 2', { win: (D) => [{ machine: 'BUN-01', from: D(1), to: D(1) + 240, kind: 'PM', label: 'BD tạm', tentative: true }] });
+  if (pm.sch.slots.some((x) => x.machine === 'BUN-01' && x.start < pm.c.D(1) + 240 - 1e-6 && x.end > pm.c.D(1) + 1e-6)) bad('bảo dưỡng giữ chỗ tạm: máy bện vẫn chạy trong giờ giữ chỗ');
 }
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

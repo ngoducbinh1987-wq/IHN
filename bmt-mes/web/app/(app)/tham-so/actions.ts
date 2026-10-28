@@ -25,7 +25,6 @@ export async function saveConfig(form: FormData) {
     fill_pct: num(form, 'fill_pct', 'Tỷ lệ xếp lịch', e), frozen_days: num(form, 'frozen_days', 'Vùng khóa', e), cutoff_time: cutoff,
     downtime_reason_min: num(form, 'downtime_reason_min', 'Dừng máy bắt buộc lý do', e), plc_dev_pct: num(form, 'plc_dev_pct', 'Ngưỡng lệch PLC', e),
     auto_shifts: num(form, 'auto_shifts', 'Số ca đạt liên tiếp', e), plc_loss_min: num(form, 'plc_loss_min', 'Mất kết nối PLC', e),
-    machines_per_operator: num(form, 'machines_per_operator', 'Số máy 1 người đứng', e),
     group_days: num(form, 'group_days', 'Khung gom lô', e),
   };
   const db = await createClient();
@@ -131,4 +130,34 @@ export async function saveFlow(form: FormData) {
   const { data, error } = await db.schema('app').rpc('kh_save_flow', { p, p_reason: String(form.get('reason') ?? '') });
   if (error) go('err', error.message, e);
   done(Number(data));
+}
+
+// Người đứng máy (Giám đốc, TP KT/QA) và tỷ lệ xếp lịch riêng từng máy (Giám đốc)
+export async function savePeople(form: FormData) {
+  const e = String(form.get('sec') ?? 'people');
+  const p: Record<string, unknown> = {};
+  if (e === 'people') {
+    p.start_min = num(form, 'start_min', 'Phút khởi động', e); p.bobbin_min = num(form, 'bobbin_min', 'Phút thay bobin', e);
+    p.watch_max = num(form, 'watch_max', 'Ngưỡng cảnh báo số máy', e); p.pack_crew = num(form, 'pack_crew', 'Số người đóng gói', e);
+    p.pack_one_pct = num(form, 'pack_one_pct', 'Tốc độ đóng gói 1 người', e);
+  } else {
+    p.avail_learn = form.get('avail_learn') === '1';
+    p.avail_days = num(form, 'avail_days', 'Số ngày tính tỷ lệ hỏng', e); p.avail_min_days = num(form, 'avail_min_days', 'Ngày tối thiểu có dữ liệu', e);
+    p.avail_floor_pct = num(form, 'avail_floor_pct', 'Sàn tỷ lệ riêng', e);
+  }
+  const db = await createClient();
+  const { data, error } = await db.schema('app').rpc('kh_save_people', { p, p_reason: String(form.get('reason') ?? '') });
+  if (error) go('err', error.message, e);
+  done(Number(data));
+}
+
+// Giám đốc bỏ qua / tính lại một lần hỏng khi tính tỷ lệ xếp lịch riêng
+export async function availExclude(form: FormData) {
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('avail_exclude', {
+    p_event: String(form.get('event')), p_exclude: form.get('exclude') === '1', p_reason: String(form.get('reason') ?? ''),
+  });
+  if (error) go('err', error.message);
+  revalidatePath('/tham-so'); revalidatePath('/lich-may');
+  redirect(`/tham-so?ok=${encodeURIComponent('Đã tính lại tỷ lệ xếp lịch riêng')}#ty-le-rieng`);
 }

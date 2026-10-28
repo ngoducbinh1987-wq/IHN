@@ -74,7 +74,7 @@ export function OptimizeTab({ kh, sp, roles, userId, ots }: { kh: Kh; sp: Record
           </table></div>
         </section>
         <section className="card">
-          <div className="card-h"><h2>Nếu thêm giờ thì sao</h2><span className="text-[12.5px] text-muted">mỗi dòng thêm riêng một nhóm</span></div>
+          <div className="card-h"><h2>Nếu thêm giờ, thêm người thì sao</h2><span className="text-[12.5px] text-muted">mỗi dòng thêm riêng một nhóm</span></div>
           <div className="overflow-x-auto"><table className="tbl">
             <thead><tr><th>Thêm</th><th className="text-right">Xong sau (ngày làm việc)</th><th className="text-right">Nhanh hơn</th></tr></thead>
             <tbody>{best.whatIf.map((w) => (
@@ -82,7 +82,8 @@ export function OptimizeTab({ kh, sp, roles, userId, ots }: { kh: Kh; sp: Record
                 <td className={`text-right ${w.gain > 0.05 ? 'font-semibold text-ok' : 'text-muted'}`}>{w.gain > 0.05 ? `${h1(w.gain)} ngày` : 'không đáng kể'}</td></tr>
             ))}</tbody>
           </table></div>
-          <p className="px-4 pb-3 text-[12.5px] text-muted">Silicone đã pha chỉ dùng trong {h1(F.pot_life_h)} giờ: tăng ca riêng máy trộn thường không có ích, phải tăng ca cùng line silicone. Trộn sớm trước ca là trộn sẵn trước giờ line chạy.</p>
+          <p className="px-4 pb-3 text-[12.5px] text-muted">Silicone đã pha chỉ dùng trong {h1(F.pot_life_h)} giờ: tăng ca riêng máy trộn thường không có ích, phải tăng ca cùng line silicone. Trộn sớm trước ca là trộn sẵn trước giờ line chạy.
+            &quot;Thêm 1 người kiêm nhiệm&quot;: một người nữa được đứng các máy của nhóm (khởi động, thay bobin; máy trộn, đóng gói đứng suốt) – nhanh hơn nhiều thì TP SX phân công kiêm nhiệm tạm ở <a className="link" href="/nhan-su-xuong">Nhân sự xưởng</a>.</p>
         </section>
       </div>
       <section className="card">

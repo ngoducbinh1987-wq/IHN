@@ -8,7 +8,7 @@
 //     (chế độ "due") hoặc khi lợi ích nhỏ hơn ngưỡng (chế độ "fastest"), không vượt giới hạn tăng ca.
 import {
   type Calendar, type Config, type FlowCfg, type MachineInfo, type OperatorInfo, type Order, type Schedule, type ScheduleOpts,
-  dayIndex, finishInfo, flowOf, schedule,
+  dayIndex, finishInfo, flowOf, peopleOf, schedule,
 } from './scheduler.ts';
 
 export type Ctx = { cfg: Config; cal: Calendar; machines: MachineInfo[]; operators: OperatorInfo[] };
@@ -31,7 +31,7 @@ export type Levers = {
 export type Score = { unplaced: number; late: number; lateLots: number; makespan: number; setup: number; flow: number };
 export type GroupLoad = { group: string; machines: string[]; busyDays: number; util: number; waitSilicone_h: number };
 export type Proposal = { group: string; machines: string[]; extra_min: number; persons: number; days: number; hours: number; overMonth: boolean };
-export type WhatIf = { label: string; days: number; gain: number };
+export type WhatIf = { label: string; days: number; gain: number; kind?: 'hour' | 'person'; group?: string };
 export type OptResult = {
   orders: Order[]; flow: FlowCfg; sch: Schedule; score: Score;
   base: { sch: Schedule; score: Score };       // lịch theo cách xếp thường (không đổi thứ tự, không thêm giờ)
@@ -87,7 +87,7 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   const otMax = lv.ot_max_min ?? 240, otStep = lv.ot_step_min ?? 60, monthH = lv.ot_month_h ?? 40;
   const earlyMax = lv.early_max_h ?? 0, earlyStep = lv.early_step_h ?? 1;
   const mode = lv.mode ?? 'due', minGain = lv.min_gain_day_per_10h ?? 0.1;
-  const mpo = Math.max(1, Number(ctx.cfg.machines_per_operator) || 1);
+  const P0 = peopleOf(ctx.cfg);
   const F0 = flowOf(ctx.cfg);
   let evals = 0;
   const t0 = Date.now(), timeMs = lv.time_ms ?? 15000;
@@ -130,7 +130,9 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   const groups = (lv.groups ?? [...new Set(ctx.machines.map((m) => m.machine_type))])
     .filter((g) => cur.sch.slots.some((s) => ctx.machines.find((m) => m.code === s.machine)?.machine_type === g));
   const machinesOf = (g: string) => ctx.machines.filter((m) => m.machine_type === g && m.status !== 'OFF').map((m) => m.code);
-  const personsOf = (g: string) => Math.ceil(machinesOf(g).length / mpo);
+  // Số người tăng ca theo nhóm: máy đóng gói đủ tổ, máy trộn mỗi máy 1 người, máy tự chạy 1 người trông tối đa watch_max máy
+  const personsOf = (g: string) => g === 'PACKER' ? P0.pack_crew * machinesOf(g).length : g === 'MIXER' ? machinesOf(g).length
+    : Math.max(1, Math.ceil(machinesOf(g).length / P0.watch_max));
   const hasMixer = ctx.machines.some((m) => m.machine_type === 'MIXER');
   type Lever = { kind: 'ot'; group: string } | { kind: 'early' };
   const levers: Lever[] = [...groups.map((g) => ({ kind: 'ot' as const, group: g })), ...(hasMixer && earlyMax > 0 ? [{ kind: 'early' as const }] : [])];
@@ -148,7 +150,18 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   for (const l of levers) {
     const f = apply(baseFlow, [l]); if (!f || over()) continue;
     const r = run(cur.ords, f);
-    whatIf.push({ label: l.kind === 'early' ? `Trộn sớm ${earlyStep} giờ trước ca` : `${groupName(l.group)} thêm ${otStep / 60} giờ/ngày`, days: r.score.makespan, gain: cur.score.makespan - r.score.makespan });
+    whatIf.push({ label: l.kind === 'early' ? `Trộn sớm ${earlyStep} giờ trước ca` : `${groupName(l.group)} thêm ${otStep / 60} giờ/ngày`, days: r.score.makespan, gain: cur.score.makespan - r.score.makespan,
+      kind: 'hour', group: l.kind === 'ot' ? l.group : 'MIXER' });
+  }
+  // Nếu thêm 1 người kiêm nhiệm cho từng nhóm máy (người cổ chai): lô xong sớm hơn bao nhiêu ngày
+  for (const g of groups) {
+    if (over()) break;
+    const ms = machinesOf(g); if (!ms.length) continue;
+    const extra: OperatorInfo = { code: 'NV+', job: 'Người kiêm nhiệm thêm (giả định)', extra: null, is_deputy: false, keeps_fg: false, skills: ms, learning: [] };
+    evals++;
+    const sch = schedule(cur.ords, { ...ctx, operators: [...ctx.operators, extra], cfg: { ...ctx.cfg, flow: baseFlow } }, opt);
+    const sc = scoreOf(sch, ctx.cal, cur.ords);
+    whatIf.push({ label: `Thêm 1 người kiêm nhiệm ${groupName(g).toLowerCase()}`, days: sc.makespan, gain: cur.score.makespan - sc.makespan, kind: 'person', group: g });
   }
 
   // 3. Thêm giờ từng bước: thử mọi tổ hợp 1–3 nhóm, chọn bước lợi nhất trên mỗi giờ công
