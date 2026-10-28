@@ -328,8 +328,26 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
   const monIdx = dayIndex(cal, addDays(today, -dow));
   const startDay = Math.max(0, monIdx + w * 6);
   const days = cal.days.slice(startDay, startDay + 6);
-  const N = days.length * SPD, W0 = startDay * SPD * S, W = N * S;
-  const X = (t: number) => (Math.max(0, Math.min(W, t - W0)) / W) * 100;
+  const W0 = startDay * SPD * S, W = days.length * SPD * S, DAY = S * SPD;
+  // Ca hiện trên biểu đồ: ca 1 luôn có; ca 2, ca 3 chỉ khi trong tuần có máy chạy ca đó (theo bảng ca tuần Giám đốc duyệt)
+  const msx = kh.cfg.machine_shifts ?? [];
+  const factory = (code: string) => Boolean(kh.cfg.shifts.find((x) => x.code === code)?.active);
+  const vis = cal.shifts.map((sh, j) => j === 0 || factory(sh.code) || days.some((d) => kh.machines.some((m) => shiftsOn(msx, m.code, d) >= shiftNoOf(sh.code))));
+  const visIdx: number[] = []; let K = 0;
+  vis.forEach((v, j) => { visIdx[j] = v ? K++ : -1; });
+  const N = days.length * K;
+  // phút xếp lịch → % ngang: mỗi ngày chia đều cho các ca đang hiện (ca không máy nào chạy trong tuần thì không chiếm chỗ)
+  const X = (t: number) => {
+    const tt = Math.max(0, Math.min(W, t - W0));
+    if (tt >= W) return 100;
+    const i = Math.floor(tt / DAY), r = tt - i * DAY, j = Math.min(SPD - 1, Math.floor(r / S)), x = (r - j * S) / S;
+    let pos: number;
+    if (visIdx[j] >= 0) pos = visIdx[j] + x;
+    else { let q = j - 1; while (q >= 0 && visIdx[q] < 0) q--; pos = q >= 0 ? visIdx[q] + 1 : 0; }
+    return ((i * K + pos) / N) * 100;
+  };
+  const hh = (t: string) => (t.slice(3, 5) === '00' ? t.slice(0, 2) : t.slice(0, 5));
+  const shTimes = (j: number) => `${hh(cal.shifts[j].start_time)}–${hh(cal.shifts[j].end_time)}`;
   const sel = sp.sel ? view.sch.slots.find((s) => s.id === sp.sel) : null;
   const orderOf = new Map(kh.orders.map((o) => [o.id, o]));
   const pastPct = Math.max(0, Math.min(100, ((kh.todayIdx - startDay) / days.length) * 100));
@@ -346,9 +364,7 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
     const o = orderOf.get(sl.lineId); const k = o ? o.route.indexOf(sl.op) : -1;
     return k > 0 && o ? `Chờ ${OP_NAME[o.route[k - 1]].toLowerCase()}` : 'Trống';
   };
-  // Máy chạy 2–3 ca: ca 2, ca 3 máy không chạy (không được duyệt thêm ca) tô xám, không tính là trống
-  const msx = kh.cfg.machine_shifts ?? [];
-  const factory = (code: string) => Boolean(kh.cfg.shifts.find((x) => x.code === code)?.active);
+  // Máy chạy 2–3 ca: ca 2, ca 3 máy không chạy (không có trong bảng ca tuần) tô xám, không tính là trống
   const closedSegs = (code: string): [number, number][] => SPD > 1 ? days.flatMap((d, i) => cal.shifts.map((sh, j) => ({ sh, j }))
     .filter(({ sh, j }) => j > 0 && !factory(sh.code) && shiftsOn(msx, code, d) < shiftNoOf(sh.code))
     .map(({ j }) => [(startDay + i) * SPD * S + j * S, (startDay + i) * SPD * S + (j + 1) * S] as [number, number])) : [];
@@ -359,8 +375,20 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
     const els: React.ReactNode[] = [];
     const cl = closedSegs(m.code);
     const nShift = Math.max(1, ...days.map((d) => shiftsOn(msx, m.code, d)));
+    const extraDays = days.filter((d) => shiftsOn(msx, m.code, d) > 1).length;
     const closedIn = (a: number, b: number) => cl.reduce((acc, [x, y]) => acc + Math.max(0, Math.min(b, y) - Math.max(a, x)), 0);
-    for (const [x, y] of cl) els.push(<div key={'c' + x} className="absolute inset-y-0 bg-ink/[0.1]" style={{ left: `${X(x)}%`, width: `${X(y) - X(x)}%` }} title="Máy không chạy ca này" />);
+    // ca máy không chạy: nền xám kẻ chéo, ghi "nghỉ ca"; ca thêm máy chạy: nền xanh nhạt
+    for (const [x, y] of cl) {
+      if (X(y) - X(x) < 0.01) continue;
+      const no = shiftNoOf(cal.shifts[Math.round((x - Math.floor(x / DAY) * DAY) / S)]?.code ?? 'A');
+      els.push(<div key={'c' + x} className="absolute inset-y-0 flex items-end justify-center bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.07)_0_4px,rgba(0,0,0,0.02)_4px_8px)] pb-0.5 text-[10.5px] text-muted" style={{ left: `${X(x)}%`, width: `${X(y) - X(x)}%` }} title={`${m.code} không chạy ca ${no}`}>{K <= 2 ? `nghỉ ca ${no}` : ''}</div>);
+    }
+    if (SPD > 1) days.forEach((d, i) => cal.shifts.forEach((sh, j) => {
+      if (j === 0 || factory(sh.code) || visIdx[j] < 0 || shiftsOn(msx, m.code, d) < shiftNoOf(sh.code)) return;
+      const a = (startDay + i) * DAY + j * S;
+      els.push(<div key={'e' + i + j} className="absolute inset-y-0 bg-info/[0.07]" style={{ left: `${X(a)}%`, width: `${X(a + S) - X(a)}%` }} title={`${m.code} chạy ca ${shiftNoOf(sh.code)} (${shTimes(j)})`} />);
+    }));
+    const openW = W - closedIn(W0, W0 + W);
     slots.forEach((sl) => {
       if (sl.start - prevEnd - closedIn(prevEnd, sl.start) > S / 2) {
         const why = idleWhy(sl);
@@ -401,7 +429,7 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
       els.push(<div key="tail" className="absolute inset-y-1.5 flex items-center overflow-hidden rounded border border-dashed border-muted/60 px-1.5 text-[11.5px] text-muted" style={{ left: `${X(prevEnd)}%`, width: `calc(${100 - X(prevEnd)}% - 3px)` }}>{lab}</div>);
       if (prevEnd < kh.frozenTo * SPD * S && kh.frozenTo > startDay) idleNotes.push(`${m.code}: ${lc(lab)} từ ${fmtT(kh, Math.max(prevEnd, kh.frozenFrom * SPD * S))}`);
     }
-    return { m, els, used, nShift };
+    return { m, els, used, nShift, extraDays, openW };
   });
   const seen = new Set<string>();
   const notes = idleNotes.filter((n) => { const k = n.split(':')[0]; if (seen.has(k)) return false; seen.add(k); return true; });
@@ -413,13 +441,12 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
         <Link className="btn btn-sm" href={qs({ w: String(w - 1) })} scroll={false}><ChevronLeft size={15} />Tuần trước</Link>
         <Link className="btn btn-sm" href={qs({ w: undefined })} scroll={false}>Tuần này</Link>
         <Link className="btn btn-sm" href={qs({ w: String(w + 1) })} scroll={false}>Tuần sau<ChevronRight size={15} /></Link>
-        <span className="text-[13px] text-muted">{days.length ? `${dd(days[0])} – ${dd(days[days.length - 1])}` : ''} · bấm vào khối để xem căn cứ xếp</span>
+        <span className="text-[13px] text-muted">{days.length ? `${dd(days[0])} – ${dd(days[days.length - 1])}` : ''} · bấm vào khối để xem căn cứ xếp · máy chạy ca nào theo <Link className="link" href={`/nhan-su-xuong?tab=ca&w=${addDays(days[0] ?? today, -((new Date((days[0] ?? today) + 'T00:00:00Z').getUTCDay() + 6) % 7))}`}>bảng ca tuần</Link></span>
       </div>
-      <MachineShifts kh={kh} view={view} days={days} startDay={startDay} />
       <section className="card overflow-x-auto">
         <div className="min-w-[980px]">
           <div className="grid grid-cols-[180px_1fr] border-b border-line">
-            <div className="px-3 py-2 text-[13px]"><b>Máy · người</b><div className="text-[12px] text-muted">{SPD} ca/ngày</div></div>
+            <div className="px-3 py-2 text-[13px]"><b>Máy · người</b><div className="text-[12px] text-muted">{K > 1 ? `${K} ca/ngày` : `1 ca/ngày (${shTimes(0)})`}</div></div>
             <div>
               <div className="grid" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
                 {days.map((d, i) => (
@@ -428,17 +455,19 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
                   </div>
                 ))}
               </div>
-              {SPD > 1 && (
-                <div className="grid border-t border-line" style={{ gridTemplateColumns: `repeat(${N}, 1fr)` }}>
-                  {Array.from({ length: N }, (_, s) => <div key={s} className="border-l border-line px-1 text-[11px] text-muted">Ca {shiftNoOf(cal.shifts[s % SPD].code)}</div>)}
-                </div>
-              )}
+              <div className="grid border-t border-line" style={{ gridTemplateColumns: `repeat(${N}, 1fr)` }}>
+                {days.flatMap((d) => cal.shifts.map((sh, j) => ({ d, sh, j })).filter(({ j }) => visIdx[j] >= 0)).map(({ d, sh, j }) => (
+                  <div key={d + sh.code} className={`truncate border-l border-line px-1 py-0.5 text-[11px] ${j > 0 ? 'bg-info/[0.06] text-info' : 'text-muted'}`} title={`Ca ${shiftNoOf(sh.code)} ${shTimes(j)}`}>
+                    <b>Ca {shiftNoOf(sh.code)}</b>{K <= 2 ? ` ${shTimes(j)}` : ''}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-          {rows.map(({ m, els, used, nShift }) => (
+          {rows.map(({ m, els, used, nShift, extraDays, openW }) => (
             <div key={m.code} className="grid grid-cols-[180px_1fr] border-b border-line last:border-b-0">
-              <div className="px-3 py-2 text-[12.5px] leading-snug"><b className="text-[13px]">{m.code}</b>{nShift > 1 && <> <Pill tone="info">{nShift} ca</Pill></>}<div className="truncate text-muted">{m.name}</div>
-                <div className="text-muted">{m.operators.join(', ') || <span className="text-bad">chưa có người</span>} · tải {pc(used / W)}</div></div>
+              <div className="px-3 py-2 text-[12.5px] leading-snug"><b className="text-[13px]">{m.code}</b>{' '}<Pill tone={nShift > 1 ? 'info' : 'mute'}>{nShift > 2 ? 'Ca 1 + 2 + 3' : nShift > 1 ? 'Ca 1 + 2' : 'Ca 1'}{nShift > 1 && extraDays < days.length ? ` · ${extraDays} ngày` : ''}</Pill><div className="truncate text-muted">{m.name}</div>
+                <div className="text-muted">{m.operators.join(', ') || <span className="text-bad">chưa có người</span>} · tải {pc(openW > 0 ? used / openW : 0)}</div></div>
               <div className="relative h-[64px]" style={{ backgroundImage: grid }}>
                 {pastPct > 0 && <div className="absolute inset-y-0 left-0 bg-ink/[0.05]" style={{ width: `${pastPct}%` }} />}
                 {fz1 > fz0 && <div className="absolute inset-y-0 bg-info/[0.07]" style={{ left: `${fz0}%`, width: `${fz1 - fz0}%` }} />}
@@ -457,7 +486,8 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-bad" />Máy dừng, hỏng, ngừng dùng</span>
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-info" />Bảo dưỡng đã chốt</span>
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-dashed border-info" />Bảo dưỡng giữ chỗ tạm</span>
-          {SPD > 1 && <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm bg-ink/10" />Máy không chạy ca này</span>}
+          {K > 1 && <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm bg-info/20" />Máy chạy ca thêm</span>}
+          {K > 1 && <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.15)_0_3px,transparent_3px_6px)]" />Máy nghỉ ca này</span>}
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-0.5 bg-bad" />Bây giờ</span>
           <span>Đổi máy cả tuần: {nf(setupWeek)} phút</span>
         </div>
@@ -465,44 +495,6 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
       <PeopleRows kh={kh} view={view} days={days} startDay={startDay} X={X} W0={W0} W={W} grid={grid} />
       <div id="chi-tiet">{sel ? <SlotDetail kh={kh} view={view} sel={sel} canPlan={canPlan} /> : <div className="card px-4 py-3 text-[13px] text-muted">Bấm vào một khối trên lịch để xem người đứng máy, căn cứ xếp, cách tính thời gian và ngày dự kiến xong.</div>}</div>
     </div>
-  );
-}
-
-// Máy nào chạy ca nào từng ngày (bảng ca tuần Giám đốc duyệt): ca có việc theo lịch in đậm, ca không có việc in nhạt
-function MachineShifts({ kh, view, days, startDay }: { kh: Kh; view: View; days: string[]; startDay: number }) {
-  const msx = kh.cfg.machine_shifts ?? [];
-  const S = view.sch.S, SPD = kh.cal.SPD, DAY = S * SPD;
-  const segOf = (no: number) => kh.cal.shifts.findIndex((x) => shiftNoOf(x.code) === no);
-  const work = (m: string, i: number, no: number) => {
-    const j = segOf(no);
-    if (j < 0) return false;
-    const f = (startDay + i) * DAY + j * S, t = f + S;
-    return (view.sch.byMachine.get(m) ?? []).some((x) => x.end > f + 1 && x.start < t - 1);
-  };
-  const any = days.some((d) => kh.machines.some((m) => shiftsOn(msx, m.code, d) > 1));
-  const times = (no: number) => { const x = kh.cfg.shifts.find((y) => shiftNoOf(y.code) === no); return x ? `${x.start_time.slice(0, 5)}–${x.end_time.slice(0, 5)}` : ''; };
-  return (
-    <section className="card overflow-x-auto" id="ca-may">
-      <div className="card-h"><h2>Máy chạy ca nào</h2><span className="text-[12.5px] text-muted">ca 1 {times(1)}{any ? ` · ca 2 ${times(2)}` : ''} · theo bảng ca tuần Giám đốc duyệt · <Link className="link" href={`/nhan-su-xuong?tab=ca&w=${days[0] ?? ''}`}>Bảng ca tuần</Link></span></div>
-      <table className="tbl">
-        <thead><tr><th>Máy</th>{days.map((d) => <th key={d} className="text-center">{wdl(d)} {dd(d)}</th>)}</tr></thead>
-        <tbody>{kh.machines.map((m) => (
-          <tr key={m.code}><td className="whitespace-nowrap"><b>{m.code}</b></td>
-            {days.map((d, i) => {
-              const n = shiftsOn(msx, m.code, d);
-              return (
-                <td key={d} className={`text-center text-[12.5px] ${n > 1 ? 'bg-info/10' : ''}`}>
-                  {Array.from({ length: n }, (_, k) => k + 1).map((no) => (
-                    <span key={no} className={`mx-0.5 ${work(m.code, i, no) ? 'font-semibold' : 'text-muted'}`} title={work(m.code, i, no) ? 'Có việc theo lịch' : 'Không có việc theo lịch'}>Ca {no}</span>
-                  ))}
-                </td>
-              );
-            })}
-          </tr>
-        ))}</tbody>
-      </table>
-      <p className="border-t border-line px-4 py-2 text-[12.5px] text-muted">In đậm: ca có việc theo lịch đang dùng; in nhạt: máy chạy ca đó nhưng lịch chưa có việc (bảng ca vừa duyệt thì bấm Xếp lại lịch).</p>
-    </section>
   );
 }
 

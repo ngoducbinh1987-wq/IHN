@@ -845,9 +845,10 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
     await page.goto(`${BASE}/lich-may?tab=lich&w=1`);
     let gb = await page.innerText('main');
     if (/Application error|PGRST/i.test(gb)) fail('Lịch máy lỗi sau khi duyệt bảng ca');
-    if (!gb.includes('Máy chạy ca nào') || !gb.includes('Ca 2')) fail('Lịch máy tuần sau phải ghi máy nào chạy ca 1, ca 2');
+    if (gb.includes('Máy chạy ca nào')) fail('Ca máy phải nằm trong biểu đồ lịch máy, không tách bảng riêng');
+    if (!gb.includes('Ca 1 + 2') || !gb.includes('Ca 2 14–22') || !gb.includes('nghỉ ca 2')) fail('Biểu đồ lịch máy tuần sau phải có cột Ca 1/Ca 2, máy chạy "Ca 1 + 2", máy khác "nghỉ ca 2"');
     await page.screenshot({ path: `${SHOTS}/22-lich-may-2-ca.png`, fullPage: true });
-    ok('Lịch máy ghi máy chạy ca 1 / ca 2 theo bảng ca tuần đã duyệt');
+    ok('Biểu đồ lịch máy: cột Ca 1/Ca 2 từng ngày, máy chạy Ca 1 + 2, máy khác nghỉ ca 2 (theo bảng ca tuần đã duyệt)');
     // Bản in bảng ca, sổ giờ
     const rid = await page.evaluate(async (u) => { const r = await fetch(u); const t = await r.text(); return (t.match(/\/in\/bang-ca\?id=([0-9a-f-]{36})/) || [])[1] || ''; }, `${BASE}/nhan-su-xuong?tab=ca&w=${W}`);
     if (rid) {
