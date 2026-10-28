@@ -7,26 +7,11 @@ import { Empty, Flash, Toolbar } from '@/components/ui';
 import { df, nf, parseNum } from '@/lib/format';
 import { SCRAP_CAT, errText, keeps, withMsg } from '@/lib/kho';
 import { flushEmailOutbox } from '@/lib/notify';
-import { can, requireMe } from '@/lib/session';
+import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { str } from '../util';
 
 export const metadata = { title: 'Phế liệu' };
-
-async function recordScrap(form: FormData) {
-  'use server';
-  const qty = parseNum(form.get('qty_kg'));
-  if (qty === null || Number.isNaN(qty) || qty <= 0) redirect(withMsg('/kho/phe', 'err', 'Nhập số kg phế (cân)'));
-  const [wo, op] = str(form, 'wo_op').split('|');
-  const supabase = await createClient();
-  const { error } = await supabase.schema('inv').rpc('record_scrap', {
-    p_wo: wo, p_op_code: op, p_material_code: str(form, 'scrap_code'), p_qty_kg: qty, p_reason: str(form, 'reason'),
-    p_machine: str(form, 'machine_id') || null, p_note: str(form, 'note') || null,
-  });
-  if (error) redirect(withMsg('/kho/phe', 'err', errText(error.message)));
-  revalidatePath('/kho/phe');
-  redirect(withMsg('/kho/phe', 'ok', `Đã ghi ${nf(qty, 2)} kg phế vào kho phế liệu`));
-}
 
 async function scrapSale(form: FormData) {
   'use server';
@@ -50,43 +35,22 @@ export default async function ScrapPage({ searchParams }: { searchParams: Promis
   const me = await requireMe();
   const supabase = await createClient();
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
-  const [{ data: wos }, { data: mats }, { data: reasons }, { data: machines }, { data: recs }, { data: bags }] = await Promise.all([
-    supabase.schema('app').from('v_wo_for_scrap').select('*').order('wo_no', { ascending: false }),
-    supabase.schema('master').from('materials').select('code, name').eq('is_scrap', true).order('code'),
-    supabase.schema('master').from('reason_codes').select('code, name').eq('kind', 'SCRAP').order('code'),
-    supabase.schema('master').from('machines').select('id, code, name').eq('active', true).order('code'),
+  const [{ data: recs }, { data: bags }] = await Promise.all([
     supabase.schema('app').rpc('loss_scrap', { p_from: today, p_to: today }),
     keeps(me, 'KPL') ? supabase.schema('app').from('v_hu').select('id, hu_no, item_code, item_name, qty, location_code, lot_no').eq('warehouse_code', 'KPL').eq('status', 'ACTIVE').order('hu_no') : Promise.resolve({ data: [] as never[] }),
   ]);
-  const canRecord = can(me, 'production', 'create');
   type Rec = { reason_name: string; category: string; op_code: string; machine_code: string | null; scrap_code: string; kg: number; times: number };
   return (
     <>
       <Toolbar title="Phế liệu" reload="/kho/phe" actions={<Link className="btn btn-soft" href="/bao-cao/hao-hut">Báo cáo hao hụt</Link>} />
       <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
-      <p className="mb-3 text-[13px] text-muted">NV4 gom và cân phế theo từng lệnh sản xuất, ghi đúng công đoạn và nguyên nhân (Quy chuẩn mục 4). Phế nhập kho phế liệu với giá trị 0.</p>
+      <p className="mb-3 text-[13px] text-muted">Phế cân theo lý do, ghi trên phiếu hoàn thành và báo cáo ca; nhập kho phế liệu với giá trị 0. Bán phế: Kế toán SX kiểm tra, Giám đốc duyệt.</p>
       <div className="grid gap-4 lg:grid-cols-2">
-        {canRecord && (
-          <section className="card">
-            <div className="card-h">Ghi phế theo lệnh</div>
-            {wos && wos.length > 0 ? (
-              <form action={recordScrap} className="grid gap-3 p-4 sm:grid-cols-2">
-                <label className="lbl sm:col-span-2"><span className="req">Lệnh SX · công đoạn</span>
-                  <select className="inp inp-y" name="wo_op" required>
-                    {wos.flatMap((w) => (w.ops ?? []).map((op: string) => <option key={w.id + op} value={`${w.id}|${op}`}>{w.wo_no} · {w.product_code} · {op}</option>))}
-                  </select></label>
-                <label className="lbl"><span className="req">Loại phế</span>
-                  <select className="inp inp-y" name="scrap_code" required>{(mats ?? []).map((m) => <option key={m.code} value={m.code}>{m.code} · {m.name}</option>)}</select></label>
-                <label className="lbl"><span className="req">Số kg (cân)</span><input className="inp inp-y text-right" name="qty_kg" inputMode="decimal" required /></label>
-                <label className="lbl"><span className="req">Nguyên nhân</span>
-                  <select className="inp inp-y" name="reason" required>{(reasons ?? []).map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}</select></label>
-                <label className="lbl">Máy<select className="inp" name="machine_id" defaultValue=""><option value="">Theo công đoạn</option>{(machines ?? []).map((m) => <option key={m.id} value={m.id}>{m.code} · {m.name}</option>)}</select></label>
-                <label className="lbl sm:col-span-2">Ghi chú<input className="inp" name="note" /></label>
-                <div className="sm:col-span-2"><SubmitButton>Ghi phế</SubmitButton></div>
-              </form>
-            ) : <Empty>Chưa có lệnh sản xuất đang chạy.</Empty>}
-          </section>
-        )}
+        <section className="card p-4 text-[14px]">
+          <div className="mb-1 font-medium">Phế vào kho phế tự động</div>
+          <p className="text-muted">Phế ghi trên <Link className="link" href="/phieu-hoan-thanh">phiếu hoàn thành bobin</Link> và <Link className="link" href="/ghi-nhan-ca">báo cáo ca</Link> (cân theo lý do, phế đồng để thùng riêng).
+            Khi TP SX chốt ca, MES tự nhập phế của ca vào kho phế theo mã phế (mỗi mã một bao/ngày, giá trị 0); phần còn lại nhập khi Kế toán SX gửi báo cáo ngày.</p>
+        </section>
         <section className="card overflow-x-auto">
           <div className="card-h">Phế hôm nay</div>
           {recs && (recs as Rec[]).length > 0 ? (

@@ -57,19 +57,27 @@ begin
 end $$;
 set client_min_messages = notice;
 
-with u(code) as (values ('V_CT'),('V_GD'),('V_SXKH'),('V_MUATP'),('V_VH')),
+with u(code) as (values ('V_CT'),('V_GD'),('V_SXKH'),('V_MUATP'),('V_VH'),('V_MUANV'),('V_KT')),
 ins as (insert into auth.users (id, email) select gen_random_uuid(), lower(code) || '@bmt.test' from u returning id, email)
 insert into core.profiles (id, employee_code, full_name, status)
 select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
-select p.id, u.role from core.profiles p join (values ('V_CT','BGD'),('V_GD','BGD'),('V_SXKH','SX_KH'),('V_MUATP','MUA_TP'),('V_VH','VAN_HANH')) u(code, role)
+select p.id, u.role from core.profiles p join (values ('V_CT','BGD'),('V_GD','BGD'),('V_SXKH','SX_KH'),('V_MUATP','MUA_TP'),('V_VH','VAN_HANH'),('V_MUANV','MUA_NV'),('V_KT','KT_KHO')) u(code, role)
   on u.code = p.employee_code;
 update core.profiles set status = 'LOCKED' where (employee_code is null or employee_code !~ '^V_') and status = 'ACTIVE';
 -- PR: TP Mua duyệt → Giám đốc duyệt (migration 4600)
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_MUATP')] where doc_type = 'PR' and seq = 1;
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_GD')] where (doc_type = 'PR' and seq = 2) or (doc_type = 'PLAN_ADJ' and seq = 1);
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_CT')] where doc_type = 'PLAN_ADJ' and seq = 2;
-update wf.approval_flows set submit_role = null, submit_user_ids = '{}' where doc_type in ('PR', 'PLAN_ADJ');
+update wf.approval_flows set submit_role = null, submit_user_ids = '{}' where doc_type in ('PR', 'PLAN_ADJ', 'PO');
+-- Đơn mua (migration 5100): NV mua duyệt gửi → TP Mua → Giám đốc
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_MUATP')] where doc_type = 'PO' and seq = 1;
+update wf.approval_steps set assignee_ids = array[pg_temp.uid('V_GD')] where doc_type = 'PO' and seq = 2;
+-- số lượng một vật tư trong các đơn mua (chưa hủy) sinh theo một đề xuất hiệu chỉnh
+create function pg_temp.poq(p_adj uuid, p_code text) returns numeric language sql as $$
+  select coalesce(sum(l.qty), 0) from purchase.po_lines l join purchase.purchase_orders po on po.id = l.po_id and po.status <> 'CANCELLED'
+  join master.materials m on m.id = l.material_id and m.code = p_code where po.adjustment_id = p_adj
+$$;
 
 do $$ begin
   if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5') <> 'RELEASED' then
@@ -141,24 +149,39 @@ select pg_temp.ok(not exists (select 1 from pr1_before b left join purchase.pr_l
                               where l.qty is distinct from b.qty), 'PR1 Giám đốc đã duyệt giữ nguyên');
 select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_SXKH') and title like 'Kế hoạch tháng đã hiệu chỉnh%' and body like '%mua thêm%'),
   'TP SX được báo vật tư cần mua thêm');
--- TP SX lập đề xuất mua bổ sung PR2 từ MRP hiệu chỉnh, gửi Giám đốc (chưa duyệt)
-select pg_temp.as_user('V_SXKH');
-insert into t select 'pr2', plan.create_pr_from_mrp((select mrp_run_id from plan.plan_adjustments where id = pg_temp.v('up')));
-insert into t select 'pr2_req', wf.submit('PR', pg_temp.v('pr2'), (select pr_no from purchase.purchase_requests where id = pg_temp.v('pr2')), 'bổ sung');
+-- Migration 5100: duyệt xong MES tự lập đơn mua PO2 (nháp) cho phần mua thêm → NV mua kiểm tra, gửi → TP Mua duyệt (báo Kế toán) → chờ Giám đốc
+insert into t select 'po2', id from purchase.purchase_orders where adjustment_id = pg_temp.v('up') and status = 'DRAFT' and source = 'MRP' order by po_no limit 1;
+select pg_temp.ok((select count(*) = 1 from purchase.purchase_orders where adjustment_id = pg_temp.v('up'))
+  and pg_temp.poq(pg_temp.v('up'), 'CU-024') = (select (pg_temp.row(v, 'CU-024') ->> 'buy_more')::numeric from j where k = 'up')
+  and (select (v -> 'po' ->> 'count')::int = 1 from j where k = 'up'),
+  'Hiệu chỉnh được duyệt: MES tự lập đơn mua PO2 đúng số mua thêm (chưa có NCC: một đơn)');
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_MUANV') and title like 'Đơn mua hàng chờ NV mua kiểm tra%')
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_SXKH') and title like 'Kế hoạch tháng đã hiệu chỉnh%' and body like '%đã lập đơn mua%'),
+  'NV mua nhận đơn mua chờ kiểm tra; TP SX được báo đã lập đơn mua');
+select pg_temp.as_user('V_MUANV');
+select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po2'), 'x', 'x')$$, 'chọn nhà cung cấp', 'Chưa chọn NCC: không gửi được');
+insert into t select 'sup', app.save_supplier('NCC thử 5100', '0100000051', 'Anh A', null);
+select app.po_save_header(pg_temp.v('po2'), pg_temp.v('sup'), pg_temp.today() + 7, '30 ngày', 'thử', false);
+select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po2'), 'x', 'x')$$, 'đơn giá', 'Thiếu đơn giá: không gửi được');
+select app.po_save_line(pg_temp.v('po2'), l.id, null, l.qty, 100000, null, null) from purchase.po_lines l where l.po_id = pg_temp.v('po2');
+insert into t select 'po2_req', wf.submit('PO', pg_temp.v('po2'), 'x', 'Đơn mua bổ sung');
 select pg_temp.as_user('V_MUATP');
-select wf.act(pg_temp.v('pr2_req'), 'APPROVE', null);
+select pg_temp.ok(wf.act(pg_temp.v('po2_req'), 'APPROVE', null) = 'PENDING', 'TP Mua duyệt PO2, chuyển Giám đốc');
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_KT') and title like 'PO-%: TP Mua duyệt đơn mua hàng xong, chờ Giám đốc%'),
+  'Kế toán nhận thông báo khi TP Mua duyệt, chuyển Giám đốc');
 select pg_temp.as_user('V_SXKH');
-insert into j select 'cu2', to_jsonb(pg_temp.prq(pg_temp.v('pr2'), 'CU-024'));
-insert into j select 'pv2', to_jsonb(pg_temp.prq(pg_temp.v('pr2'), 'PVC-FR'));
-select pg_temp.ok((select (v #>> '{}')::numeric > 0 from j where k = 'cu2') and (select (v #>> '{}')::numeric > 0 from j where k = 'pv2'),
-  'PR2 (bổ sung) có đồng, nhựa vỏ, đang chờ Giám đốc duyệt');
+insert into j select 'cu2', to_jsonb(pg_temp.poq(pg_temp.v('up'), 'CU-024'));
+insert into j select 'pv2', to_jsonb(pg_temp.poq(pg_temp.v('up'), 'PVC-FR'));
+select pg_temp.ok((select (v #>> '{}')::numeric > 0 from j where k = 'cu2') and (select (v #>> '{}')::numeric > 0 from j where k = 'pv2')
+  and (select status = 'PENDING_APPROVAL' from purchase.purchase_orders where id = pg_temp.v('po2')),
+  'PO2 có đồng, nhựa vỏ, đang chờ Giám đốc duyệt');
 insert into t select 'run_re', app.plan_run_mrp(pg_temp.v('plan'));
-select pg_temp.ok((select ml.requested >= pg_temp.prq(pg_temp.v('pr2'), 'CU-024') and ml.suggest_qty = 0
+select pg_temp.ok((select ml.requested >= pg_temp.poq(pg_temp.v('up'), 'CU-024') and ml.suggest_qty = 0
                    from plan.mrp_lines ml join master.materials m on m.id = ml.material_id and m.code = 'CU-024'
                    where ml.run_id = pg_temp.v('run_re')),
-  'Chạy lại MRP: đề xuất mua nháp/chờ duyệt tính vào "đã đề xuất", không đề xuất trùng');
+  'Chạy lại MRP: đơn mua nháp/chờ duyệt tính vào "đã đề xuất", không đề xuất trùng');
 
--- ================================================================ 4. Hiệu chỉnh giảm 14.000 → 12.000 m: giảm PR2 chưa duyệt
+-- ================================================================ 4. Hiệu chỉnh giảm 14.000 → 12.000 m: giảm PO2 chưa duyệt
 select pg_temp.as_user('V_SXKH');
 insert into t select 'dn', app.adj_create(pg_temp.v('plan'), 'Khách giảm đơn');
 select app.adj_save(pg_temp.v('dn'), null, jsonb_build_array(jsonb_build_object('kind', 'QTY', 'plan_line_id', pg_temp.v('line'), 'qty_m', 12000)));
@@ -167,11 +190,11 @@ select pg_temp.ok((select pg_temp.row(v, 'PVC-FR') ->> 'action' = 'CUT'
                           and (pg_temp.row(v, 'PVC-FR') ->> 'pending_before')::numeric = (select (v #>> '{}')::numeric from j where k = 'pv2')
                           and (pg_temp.row(v, 'PVC-FR') ->> 'pending_after')::numeric < (pg_temp.row(v, 'PVC-FR') ->> 'pending_before')::numeric
                           and (pg_temp.row(v, 'PVC-FR') ->> 'buy_more')::numeric = 0 from j where k = 'dn_preview'),
-  'Xem trước MRP hiệu chỉnh: nhựa vỏ thừa → giảm PR2 chưa duyệt, không mua thêm');
+  'Xem trước MRP hiệu chỉnh: nhựa vỏ thừa → giảm PO2 chưa duyệt, không mua thêm');
 select pg_temp.ok((select qty_m = 14000 from plan.plan_lines where id = pg_temp.v('line'))
-  and pg_temp.prq(pg_temp.v('pr2'), 'PVC-FR') = (select (v #>> '{}')::numeric from j where k = 'pv2')
+  and pg_temp.poq(pg_temp.v('up'), 'PVC-FR') = (select (v #>> '{}')::numeric from j where k = 'pv2')
   and (select status = 'DRAFT' from plan.plan_adjustments where id = pg_temp.v('dn')),
-  'Xem trước không đổi kế hoạch, đề xuất mua (chạy thử rồi hủy)');
+  'Xem trước không đổi kế hoạch, đơn mua (chạy thử rồi hủy)');
 insert into t select 'dn_req', app.adj_submit(pg_temp.v('dn'));
 select pg_temp.as_user('V_CT');
 select pg_temp.fails($$select wf.act(pg_temp.v('dn_req'), 'APPROVE', null)$$, '', 'Chủ tịch chưa duyệt khi Giám đốc chưa duyệt');
@@ -180,15 +203,16 @@ select pg_temp.ok(wf.act(pg_temp.v('dn_req'), 'APPROVE', null) = 'PENDING', 'Gi�
 select pg_temp.as_user('V_CT');
 select pg_temp.ok(wf.act(pg_temp.v('dn_req'), 'APPROVE', null) = 'APPROVED', 'Chủ tịch duyệt bước 2');
 insert into j select 'dn', mrp_result from plan.plan_adjustments where id = pg_temp.v('dn');
-select pg_temp.ok(pg_temp.prq(pg_temp.v('pr2'), 'PVC-FR') = (select (pg_temp.row(v, 'PVC-FR') ->> 'pending_after')::numeric from j where k = 'dn_preview')
-  and pg_temp.prq(pg_temp.v('pr2'), 'PVC-FR') < (select (v #>> '{}')::numeric from j where k = 'pv2')
-  and (select status = 'PENDING_APPROVAL' from purchase.purchase_requests where id = pg_temp.v('pr2')),
-  'Duyệt xong: MES giảm nhựa vỏ trong PR2 đúng số đã xem trước, PR2 vẫn chờ Giám đốc duyệt');
-select pg_temp.ok(exists (select 1 from wf.approval_actions where request_id = pg_temp.v('pr2_req') and comment like '[Giảm theo hiệu chỉnh kế hoạch PDC-%PVC-FR%')
-  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_GD') and title like 'Đề xuất mua % giảm theo hiệu chỉnh%'),
-  'Lịch sử duyệt PR2 ghi lần giảm; Giám đốc (người duyệt PR2) được báo');
-select pg_temp.ok((select wf.doc_hash('purchase.purchase_requests', pg_temp.v('pr2')) = data_hash from wf.approval_requests where id = pg_temp.v('pr2_req')),
-  'Mã kiểm PR2 cập nhật: Giám đốc vẫn duyệt được');
+select pg_temp.ok(pg_temp.poq(pg_temp.v('up'), 'PVC-FR') = (select (pg_temp.row(v, 'PVC-FR') ->> 'pending_after')::numeric from j where k = 'dn_preview')
+  and pg_temp.poq(pg_temp.v('up'), 'PVC-FR') < (select (v #>> '{}')::numeric from j where k = 'pv2')
+  and (select status = 'PENDING_APPROVAL' from purchase.purchase_orders where id = pg_temp.v('po2')),
+  'Duyệt xong: MES giảm nhựa vỏ trong PO2 đúng số đã xem trước, PO2 vẫn chờ Giám đốc duyệt');
+select pg_temp.ok(exists (select 1 from wf.approval_actions where request_id = pg_temp.v('po2_req') and comment like '[Giảm theo hiệu chỉnh kế hoạch PDC-%PVC-FR%')
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_GD') and title like 'Đơn mua % giảm theo hiệu chỉnh%')
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_MUANV') and title like 'Đơn mua % giảm theo hiệu chỉnh%'),
+  'Lịch sử duyệt PO2 ghi lần giảm; Giám đốc (người đang duyệt) và NV mua được báo');
+select pg_temp.ok((select wf.doc_hash('purchase.purchase_orders', pg_temp.v('po2')) = data_hash from wf.approval_requests where id = pg_temp.v('po2_req')),
+  'Mã kiểm PO2 cập nhật: Giám đốc vẫn duyệt được');
 select pg_temp.ok(not exists (select 1 from pr1_before b left join purchase.pr_lines l on l.pr_id = pg_temp.v('pr1') and l.material_id = b.material_id
                               where l.qty is distinct from b.qty), 'PR1 Giám đốc đã duyệt vẫn giữ nguyên khi giảm sản lượng');
 select pg_temp.ok((select ml.projected >= 0 and ml.suggest_qty = 0 from plan.mrp_lines ml join master.materials m on m.id = ml.material_id and m.code = 'CU-024'
@@ -197,13 +221,13 @@ select pg_temp.ok((select ml.projected >= 0 and ml.suggest_qty = 0 from plan.mrp
 select pg_temp.ok((select (pg_temp.row(v, 'CU-024') ->> 'action' = 'PACK' and (pg_temp.row(v, 'CU-024') ->> 'pending_after')::numeric = (select (v #>> '{}')::numeric from j where k = 'cu2'))
                           or (pg_temp.row(v, 'CU-024') ->> 'action' = 'CUT')
                    from j where k = 'dn'),
-  'Đồng: giảm theo bội số đóng gói; dư chưa đủ một bội số thì giữ dòng PR2, ghi rõ lý do (PACK)');
+  'Đồng: giảm theo bội số đóng gói; dư chưa đủ một bội số thì giữ dòng PO2, ghi rõ lý do (PACK)');
 
--- ================================================================ 5. Giảm sâu 12.000 → 8.000 m (dưới kế hoạch gốc): hủy PR2, giữ PR1
+-- ================================================================ 5. Giảm sâu 12.000 → 8.000 m (dưới kế hoạch gốc): hủy PO2, giữ PR1
 select pg_temp.revise('down', 8000);
-select pg_temp.ok((select status = 'CANCELLED' from purchase.purchase_requests where id = pg_temp.v('pr2'))
-  and (select status = 'CANCELLED' from wf.approval_requests where id = pg_temp.v('pr2_req')),
-  'PR2 chưa duyệt không còn cần: MES hủy đề xuất và dừng quy trình duyệt');
+select pg_temp.ok((select status = 'CANCELLED' from purchase.purchase_orders where id = pg_temp.v('po2'))
+  and (select status = 'CANCELLED' from wf.approval_requests where id = pg_temp.v('po2_req')),
+  'PO2 chưa duyệt không còn cần: MES hủy đơn mua và dừng quy trình duyệt');
 select pg_temp.ok(not exists (select 1 from pr1_before b left join purchase.pr_lines l on l.pr_id = pg_temp.v('pr1') and l.material_id = b.material_id
                               where l.qty is distinct from b.qty)
   and (select status = 'APPROVED' from purchase.purchase_requests where id = pg_temp.v('pr1')),

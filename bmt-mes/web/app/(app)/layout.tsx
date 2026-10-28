@@ -9,7 +9,7 @@ import { signOut } from '../login/actions';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   // Hồ sơ người dùng và các số đếm trên menu chạy song song (một lượt hỏi database thay vì hai)
-  const [me, { count: myTurn }, { count: unread }, { count: maintAll }, { count: qcWait }, { data: safetyBelow }] = await Promise.all([
+  const [me, { count: myTurn }, { count: unread }, { count: maintAll }, { count: qcWait }, { data: safetyBelow }, { count: poDraft }] = await Promise.all([
     requireMe(),
     supabase.schema('app').from('v_approvals').select('id', { count: 'exact', head: true }).eq('my_turn', true),
     supabase.schema('app').from('v_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
@@ -19,7 +19,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     supabase.schema('inv').from('lots').select('id', { count: 'exact', head: true }).eq('qc_status', 'PENDING'),
     // Vật tư dưới mức tồn dự phòng (hàm tự kiểm quyền mua hàng / kho / Ban giám đốc)
     supabase.schema('app').rpc('safety_below_count'),
+    // Đơn mua MES tự sinh chờ NV mua kiểm tra (RLS: người xem được mua hàng)
+    supabase.schema('purchase').from('purchase_orders').select('id', { count: 'exact', head: true }).eq('status', 'DRAFT'),
   ]);
+  const buyer = me.roles.includes('MUA_NV') || me.roles.includes('MUA_TP');
   const maintDue = can(me, 'machine', 'view') ? maintAll : 0;
 
   // Menu theo bộ phận: mục nào hiện do Quản trị tick ở Hệ thống → Phân quyền (core.role_pages); trang tự kiểm lại (requirePage)
@@ -30,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ];
   const PAGES: (NavItem & { key: string })[] = [
     { key: 'de-xuat', href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' },
+    { key: 'don-mua', href: '/don-mua', label: 'Đơn mua hàng', icon: 'receive', group: 'Mua hàng', badge: buyer ? poDraft ?? 0 : 0 },
     { key: 'du-phong', href: '/de-xuat/du-phong', label: 'Tồn dự phòng', icon: 'warehouse', group: 'Mua hàng', badge: Number(safetyBelow ?? 0) },
     { key: 'vat-tu', href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' },
     { key: 'ke-hoach', href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' },

@@ -58,7 +58,7 @@ select p.id, u.role from core.profiles p join (values ('A_ADM','ADMIN'),('A_BGD'
   ('A_KD','KD_NV'),('A_KTT','KTT'),('A_KHO','THU_KHO'),('A_QC','QC'),('A_SX','SX_TP'),('A_MIX','MUA_NV'),('A_MIX','THU_KHO')) u(code, role) on u.code = p.employee_code;
 
 -- ================================================================ 1. Danh mục mục + mặc định theo ma trận đã duyệt
-select pg_temp.ok((select count(*) from core.pages) = 32, 'Danh mục có 32 mục menu theo bộ phận (thêm Nhân sự xưởng, bỏ Kiểm tra năng lực 28/10)');
+select pg_temp.ok((select count(*) from core.pages) = 33, 'Danh mục có 33 mục menu theo bộ phận (thêm Nhân sự xưởng, Đơn mua hàng, bỏ Kiểm tra năng lực 28/10)');
 select pg_temp.ok((select count(distinct role_code) from core.role_pages where page_key in ('kh-chung', 'may', 'may-bao-duong')) =
                   (select count(*) from core.roles where code <> 'ADMIN')
   and not exists (select 1 from core.roles ro where ro.code <> 'ADMIN' and
@@ -86,7 +86,7 @@ select pg_temp.ok(pg_temp.pages('A_KTT') ?& array['kho-phieu', 'kho-so-cai', 'ph
 select pg_temp.ok(pg_temp.pages('A_KHO') ?& array['kho', 'kho-ton', 'kho-phieu', 'kho-kiem-ke', 'kho-qc', 'lenh-ngay', 'phieu-xuat-nvl', 'ke-hoach'],
   'Thủ kho: mục Kho, QC, Lệnh SX ngày, Phiếu xuất NVL, xem kế hoạch');
 select pg_temp.ok(pg_temp.pages('A_MIX') ?& array['de-xuat', 'kho-phieu'], 'Người giữ hai vai trò được vào tổng các mục');
-select pg_temp.ok(jsonb_array_length(pg_temp.pages('A_ADM')) = 32 and (app.me() ->> 'is_admin')::boolean, 'Quản trị hệ thống vào mọi mục');
+select pg_temp.ok(jsonb_array_length(pg_temp.pages('A_ADM')) = 33 and (app.me() ->> 'is_admin')::boolean, 'Quản trị hệ thống vào mọi mục');
 select pg_temp.ok(not pg_temp.pages('A_BGD') ? 'quan-tri-phan-quyen' and pg_temp.pages('A_BGD') ? 'quan-tri'
   and not coalesce((app.me() ->> 'is_admin')::boolean, false), 'Giám đốc xem Người dùng nhưng không phải Quản trị');
 -- Ủy quyền vai trò Quản trị không làm người nhận thành Quản trị

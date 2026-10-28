@@ -169,11 +169,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === 'dau-ky' && (
         hasRole(me, 'KT_KHO') ? (
           <form action={createOpening} className="card grid gap-3 p-4 md:grid-cols-[1fr_1fr]">
-            <label className="lbl"><span className="req">Kho</span><select className="inp inp-y" name="warehouse_id" required>{(whs ?? []).map((w) => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}</select></label>
+            <label className="lbl"><span className="req">Kho</span><select className="inp inp-y" name="warehouse" required>{(whs ?? []).map((w) => <option key={w.id} value={`${w.id}|${w.code}`}>{w.code} · {w.name}</option>)}</select></label>
             <label className="lbl">Ngày tồn đầu kỳ<input className="inp" type="date" name="doc_date" /></label>
-            <label className="lbl md:col-span-2"><span className="req">Mỗi dòng: MÃ; số lượng; đơn giá; vị trí; số đơn vị; HSD (dd/mm/yyyy); thương hiệu</span>
-              <textarea className="inp inp-y font-mono" name="lines" rows={8} required placeholder={'CU-024; 420; 268000; KNL-CU; 3\nSIL-9710G; 200; 95000; KNL-SI; 8; 30/03/2027\nPFR-2C-1P5; 1500; ; KTP-A; 3; ; KAVIX'} /></label>
-            <p className="text-[12.5px] text-muted md:col-span-2">Số lượng chia đều cho số đơn vị (ống/bao/bobin), mỗi đơn vị một tem QR. Nguyên vật liệu bắt buộc có đơn giá. Kế toán trưởng duyệt xong mới ghi sổ (Quy chuẩn mục 8).</p>
+            <label className="lbl md:col-span-2"><span className="req">Mỗi dòng một bao/ống (NVL), một bobin (BTP) hoặc một chủng loại cuộn (thành phẩm), các cột cách nhau bởi dấu ;</span>
+              <textarea className="inp inp-y font-mono" name="lines" rows={8} required placeholder={'KNL:  CU-024; 420; 268000; KNL-CU; 3\nKBTP: PFR-2C-1P5; CD5; B015; 1600; 210\nKTP:  PFR-2C-1P5; KAVIX; 500; 38'} /></label>
+            <div className="text-[12.5px] text-muted md:col-span-2">
+              <p><b>Kho NVL, phế:</b> MÃ; số lượng; đơn giá; vị trí; số bao/ống; HSD (dd/mm/yyyy) – số lượng chia đều cho số bao/ống, mỗi bao/ống một tem QR, NVL bắt buộc có đơn giá.</p>
+              <p><b>Kho BTP (mỗi dòng một bobin):</b> MÃ SP; công đoạn đã làm xong (CD1 bện … CD5 bọc vỏ); số bobin (đã khai báo ở Kho → Bobin); số mét (ruột bện để trống: MES ước tính từ kg); kg cân (MES trừ bì bobin); vị trí.</p>
+              <p><b>Kho thành phẩm:</b> MÃ SP; nhãn (KAVIX/HEIZKA); quy cách mét/cuộn; số cuộn; mét mỗi cuộn (trống = quy cách, đoạn lẻ ghi mét thực); kiểu đóng gói (Bobin gỗ/Cuộn PE); vị trí – cuộn chỉ dán tem QC PASS, không in QR.</p>
+              <p>Hàng tồn đầu kỳ coi là đã QC Đạt. Kế toán trưởng duyệt xong mới ghi sổ (Quy chuẩn mục 8).</p>
+            </div>
             <div><SubmitButton>Lập tồn đầu kỳ, gửi duyệt</SubmitButton></div>
           </form>
         ) : <div className="card"><Empty>Tồn đầu kỳ do Kế toán SX lập, Kế toán trưởng duyệt.</Empty></div>

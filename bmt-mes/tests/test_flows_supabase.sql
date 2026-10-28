@@ -133,8 +133,11 @@ select pg_temp.fails($$select wf.act((select v from t where k='req_plan'), 'APPR
 select pg_temp.as_user('U_CT');   select wf.act((select v from t where k='req_plan'), 'APPROVE');
 select pg_temp.ok((select status from plan.production_plans where plan_no = 'KH-2611-01') = 'APPROVED', 'Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT chốt');
 select pg_temp.as_user('U_SXKH');
-insert into t select 'pr1', plan.create_pr_from_mrp((select v from t where k='run1'));
-select pg_temp.ok((select count(*) from purchase.pr_lines where pr_id = (select v from t where k='pr1')) > 5, 'Sinh PR từ MRP sau khi BGĐ duyệt kế hoạch');
+-- Migration 5100: Chủ tịch chốt kế hoạch → MES tự sinh đơn mua nháp từ MRP (NV mua kiểm tra → TP Mua → Giám đốc), không sinh PR
+select pg_temp.ok((select count(*) from purchase.po_lines l join purchase.purchase_orders po on po.id = l.po_id
+                   where po.mrp_run_id = (select v from t where k='run1') and po.status = 'DRAFT' and po.source = 'MRP') > 5,
+  'Chủ tịch chốt kế hoạch: MES tự sinh đơn mua nháp từ MRP');
+select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k='run1'))$$, 'tự sinh đơn mua', 'Không sinh đề xuất mua trùng đơn mua tự sinh');
 
 -- ================================================================ 4. PO + kiểm tra sửa sau khi gửi duyệt
 select pg_temp.as_user('U_MUANV');

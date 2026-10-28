@@ -35,7 +35,8 @@ export default async function DocDetail({ params, searchParams }: { params: Prom
   const canPrice = kt && d.price_pending && d.status === 'DRAFT';
   const canReverse = kt && d.status === 'POSTED' && !d.reversal_of && !d.reversed_by && REVERSIBLE.includes(d.doc_type);
   const canCheck = hasRole(me, 'MUA_NV', 'MUA_TP') && gr && !gr.checked_at;
-  const hus = (lines ?? []).filter((l) => l.hu_id && Number(l.qty) > 0).map((l) => l.hu_id);
+  // Cuộn thành phẩm không in tem QR (chỉ dán tem QC PASS)
+  const hus = (lines ?? []).filter((l) => l.hu_id && Number(l.qty) > 0 && l.item_kind !== 'FG').map((l) => l.hu_id);
   const total = (prices ?? []).reduce((s: number, p: { amount: number | null }) => s + Number(p.amount ?? 0), 0);
   return (
     <>

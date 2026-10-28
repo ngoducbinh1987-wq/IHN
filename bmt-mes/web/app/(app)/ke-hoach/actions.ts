@@ -101,15 +101,6 @@ export async function submitPlan(form: FormData) {
   back(planId, 'ok', 'Đã gửi duyệt. Giám đốc đã nhận thông báo, duyệt xong chuyển Chủ tịch HĐQT chốt.');
 }
 
-export async function createPr(form: FormData) {
-  const planId = String(form.get('plan_id'));
-  const supabase = await createClient();
-  const { data, error } = await supabase.schema('plan').rpc('create_pr_from_mrp', { p_run: String(form.get('run_id')) });
-  if (error) back(planId, 'err', error.message);
-  const { data: pr } = await supabase.schema('purchase').from('purchase_requests').select('pr_no').eq('id', data as string).single();
-  redirect(`/de-xuat/${data}?ok=` + encodeURIComponent(`Đã sinh ${pr?.pr_no ?? 'PR'} từ kết quả MRP. Kiểm tra rồi gửi duyệt.`));
-}
-
 // Điều chỉnh kết quả MRP: quyền, khóa chứng từ, giá trị gốc và lịch sử do database kiểm tra/ghi (app.adjust_mrp_line)
 export async function adjustMrp(form: FormData) {
   const planId = String(form.get('plan_id'));

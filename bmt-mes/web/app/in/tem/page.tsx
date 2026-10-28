@@ -47,6 +47,9 @@ export default async function PrintTags({ searchParams }: { searchParams: Promis
     title = `Tem vị trí ${code}`;
   }
 
+  // Cuộn thành phẩm chỉ dán tem QC PASS, không in tem QR (anh Bình chốt 28/10/2026)
+  const fgSkipped = hus.filter((h) => h.item_kind === 'FG').length;
+  hus = hus.filter((h) => h.item_kind !== 'FG');
   const huSvgs = await Promise.all(hus.map((h) => qr(h.qr_payload || `BMT|${h.hu_no}`)));
   const locSvgs = await Promise.all(locs.map((l) => qr(`LOC|${l.code}`)));
   const reprint = hus.filter((h) => h.print_count > 0).length;
@@ -65,6 +68,7 @@ export default async function PrintTags({ searchParams }: { searchParams: Promis
         </div>
         {hus.length > 0 ? <PrintLabels ids={hus.map((h) => h.id)} reprint={reprint} /> : locs.length > 0 ? <PrintButton /> : null}
       </div>
+      {fgSkipped > 0 && <p className="mb-3 text-[13px] text-muted print:hidden">{fgSkipped} cuộn thành phẩm không in tem QR: cuộn thành phẩm chỉ dán tem QC PASS, xuất kho theo số cuộn.</p>}
       {empty && <p className="text-muted">Không có tem nào để in.</p>}
 
       <div className="flex flex-wrap gap-4 print:block">

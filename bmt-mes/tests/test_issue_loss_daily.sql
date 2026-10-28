@@ -162,6 +162,10 @@ select app.kh_confirm_report((select v from t where k = 'rep1'), null);
 select pg_temp.ok((select count(*) = 1 and sum(sr.qty_kg) = 2 and bool_and(m.code = 'PL-CU') from mfg.scrap_records sr join master.materials m on m.id = sr.scrap_material_id
                    where sr.shift_report_id = (select v from t where k = 'rep1')),
   'TP SX chốt ca: phế cả ca ghi vào sổ phế đồng của lô');
+select pg_temp.ok((select bool_and(sr.lot_id is not null) from mfg.scrap_records sr where sr.shift_report_id = (select v from t where k = 'rep1'))
+  and exists (select 1 from inv.stock_docs d join inv.stock_doc_lines dl on dl.doc_id = d.id join inv.lots l on l.id = dl.lot_id
+              where d.doc_type = 'SCRAP_IN' and d.status = 'POSTED' and l.lot_no = 'PL-CU-' || to_char(pg_temp.today(), 'YYMMDD')),
+  'Chốt ca: phế của ca tự nhập kho phế (migration 5100)');
 
 -- ================================================================ 5. Hao hụt theo công đoạn (tính đến hết hôm nay)
 select pg_temp.as_user('D_BGD');

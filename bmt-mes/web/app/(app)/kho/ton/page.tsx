@@ -4,6 +4,7 @@ import { df, nf } from '@/lib/format';
 import { KIND_NAMES, QC_STATUS } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { kindLabel, type FgGroup } from '../xuat-ban/items-fields';
 
 export const metadata = { title: 'Tồn kho' };
 
@@ -66,7 +67,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   if (loc === 'le') q = q.eq('is_remnant', true);
   const term = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
   if (term) q = q.or(`item_code.ilike.*${term}*,item_name.ilike.*${term}*,lot_no.ilike.*${term}*,hu_no.ilike.*${term}*,location_code.ilike.*${term}*`);
-  const { data } = await q.returns<Row[]>();
+  const [{ data }, { data: fg }] = await Promise.all([
+    q.returns<Row[]>(),
+    // Thành phẩm đếm theo cuộn, chủng loại (mã · nhãn · quy cách): cuộn chỉ dán tem QC PASS, xuất theo số cuộn
+    kho === 'KTP' && !detail ? supabase.schema('app').from('v_fg_stock').select('*').order('product_code').order('brand').returns<FgGroup[]>() : Promise.resolve({ data: [] as FgGroup[] }),
+  ]);
   const rows = data ?? [];
 
   // Gộp theo mã hàng + kho
@@ -90,6 +95,21 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <Link className={`btn btn-sm ${!detail ? 'btn-pri' : ''}`} href={qs({ xem: undefined })}>Theo mã hàng</Link>
         <Link className={`btn btn-sm ${detail ? 'btn-pri' : ''}`} href={qs({ xem: 'ct' })}>Chi tiết từng ống/bao/bobin</Link>
       </div>
+      {(fg ?? []).length > 0 && (
+        <section className="card mb-4 overflow-x-auto" id="theo-cuon">
+          <div className="card-h"><span>Thành phẩm theo cuộn</span><Link className="btn btn-sm btn-soft" href="/kho/xuat-ban">Lập lệnh giao</Link></div>
+          <table className="tbl">
+            <thead><tr><th>Chủng loại</th><th className="num">Chờ QC</th><th className="num">Chờ nhập kho</th><th className="num">Trong kho</th><th className="num">Mét</th><th className="num">Đã hứa giao</th><th className="num">Còn giao được</th><th className="num">Giữ lại</th></tr></thead>
+            <tbody>{(fg ?? []).map((g) => (
+              <tr key={`${g.product_code}|${g.brand}|${g.pack_m}`}>
+                <td>{kindLabel(g.product_code, g.brand, g.pack_m)}</td><td className="num">{g.qc_wait_coils || '—'}</td><td className="num">{g.putaway_coils || '—'}</td>
+                <td className="num font-medium">{g.store_coils}</td><td className="num">{nf(g.store_m)}</td><td className="num">{g.committed_coils || '—'}</td>
+                <td className="num font-medium text-brand">{g.free_coils}</td><td className="num">{g.hold_coils || '—'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </section>
+      )}
       <section className="card overflow-x-auto">
         {rows.length === 0 ? <Empty>Không có hàng phù hợp.</Empty> : !detail ? (
           <table className="tbl">

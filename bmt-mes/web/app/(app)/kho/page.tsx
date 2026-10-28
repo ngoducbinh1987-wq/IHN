@@ -27,16 +27,16 @@ export default async function KhoHome({ searchParams }: { searchParams: Promise<
   const kt = hasRole(me, 'KT_KHO');
   const qc = can(me, 'quality', 'edit');
   const tiles: { href: string; label: string; icon: typeof Warehouse; show: boolean; hint?: string }[] = [
-    { href: '/kho/nhan-hang', label: 'Nhận hàng', icon: PackagePlus, show: keeps(me, 'KNL'), hint: 'Nhập mua, in tem QR' },
+    { href: '/kho/nhan-hang', label: 'Nhận hàng', icon: PackagePlus, show: keeps(me, 'KNL'), hint: 'Theo đơn mua đã duyệt, in tem QR' },
     { href: '/kho/qc', label: 'Kiểm tra chất lượng', icon: FlaskConical, show: can(me, 'quality', 'view'), hint: 'Giải phóng lô chờ QC' },
     { href: '/phieu-xuat-nvl', label: 'Phiếu xuất NVL, NVL thừa', icon: ClipboardList, show: can(me, 'inventory', 'view') || can(me, 'production', 'view'), hint: 'Theo lô, phiếu giấy' },
     { href: '/kho/chuyen', label: 'Chuyển vị trí', icon: ArrowLeftRight, show: keeps(me, 'KNL') || keeps(me, 'KTP') },
     { href: '/kho/ton', label: 'Tồn kho', icon: Warehouse, show: can(me, 'inventory', 'view') },
     { href: '/kho/phieu', label: 'Phiếu kho', icon: BookOpen, show: can(me, 'inventory', 'view'), hint: kt ? 'Duyệt trong ngày' : undefined },
     { href: '/kho/kiem-ke', label: 'Kiểm kê', icon: ClipboardCheck, show: can(me, 'inventory', 'view') },
-    { href: '/kho/phe', label: 'Phế liệu', icon: Recycle, show: can(me, 'production', 'create') || keeps(me, 'KPL') },
-    { href: '/kho/xuat-ban', label: 'Xuất giao hàng', icon: Truck, show: keeps(me, 'KTP') || hasRole(me, 'BGD', 'KT_TP') || can(me, 'sales', 'view') },
-    { href: '/kho/thanh-pham', label: 'Cắt bobin, hàng trả', icon: Scissors, show: keeps(me, 'KTP') || hasRole(me, 'KT_TP') },
+    { href: '/kho/phe', label: 'Phế liệu', icon: Recycle, show: can(me, 'production', 'create') || keeps(me, 'KPL') || kt, hint: 'Phế tự vào kho khi chốt ca; bán phế' },
+    { href: '/kho/xuat-ban', label: 'Xuất giao hàng', icon: Truck, show: keeps(me, 'KTP') || hasRole(me, 'BGD', 'KT_TP', 'KT_KHO') || can(me, 'sales', 'view'), hint: 'Theo số cuộn, chủng loại' },
+    { href: '/kho/thanh-pham', label: 'Thành phẩm: nhập kho, cắt cuộn', icon: Scissors, show: keeps(me, 'KTP') || hasRole(me, 'KT_TP', 'KT_KHO', 'SX_TP', 'ADMIN'), hint: 'Phiếu giấy người giữ kho TP ký' },
     { href: '/kho/bobin', label: 'Bobin trung gian', icon: Disc3, show: can(me, 'production', 'view') || can(me, 'inventory', 'view') },
     { href: '/kho/so-cai', label: 'Nhập – xuất – tồn', icon: BookOpen, show: can(me, 'inventory', 'view') },
     { href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: BarChart3, show: can(me, 'production', 'view') || can(me, 'inventory', 'view') || can(me, 'cost', 'view') },

@@ -14,8 +14,9 @@ type Line = { id: string; line_no: number; kind: string; plan_line_id: string | 
 type PlanLine = { id: string; product_code: string; qty_m: number; due_date: string | null };
 type MrpRow = { code: string; name: string; uom: string; old_need: number; new_need: number; delta: number; available: number; incoming: number; approved: number;
   pending_before: number; pending_after: number; buy_more: number; projected_after: number; amount: number | null; action: string };
-type Cut = { pr_id: string; pr_no: string; status: string; material_code: string; uom: string; old: number; new: number };
-type Revise = { rows?: MrpRow[]; reductions?: Cut[]; buy_count?: number; cut_count?: number; preview?: boolean; applied?: boolean; error?: string; at?: string };
+type Cut = { doc_type?: string; pr_id: string; pr_no: string; status: string; material_code: string; uom: string; old: number; new: number };
+type Revise = { rows?: MrpRow[]; reductions?: Cut[]; buy_count?: number; cut_count?: number; preview?: boolean; applied?: boolean; error?: string; at?: string;
+  po?: { count?: number; po_ids?: string[]; po_nos?: string[] } };
 
 const KIND: Record<string, string> = { ADD: 'Thêm mã / lô ngoài kế hoạch', QTY: 'Đổi sản lượng', DUE: 'Đổi hạn giao, ưu tiên', REMOVE: 'Bỏ mã' };
 const STATUS: Record<string, [string, 'ok' | 'warn' | 'info' | 'mute']> = {
@@ -25,7 +26,7 @@ const ACTION: Record<string, [string, 'ok' | 'warn' | 'bad' | 'info' | 'mute']> 
   BUY: ['Mua thêm', 'bad'], CUT: ['Giảm đề xuất chưa duyệt', 'warn'], PACK: ['Giữ (dư chưa đủ một bội số đóng gói)', 'mute'],
   KEEP: ['Giữ nguyên: đã duyệt mua', 'info'], LESS: ['Giảm nhu cầu', 'mute'], ENOUGH: ['Đủ, không mua thêm', 'ok'], SAME: ['Không đổi', 'mute'],
 };
-const PR_ST: Record<string, string> = { DRAFT: 'nháp', PENDING_APPROVAL: 'chờ Giám đốc duyệt' };
+const PR_ST: Record<string, string> = { DRAFT: 'nháp', PENDING_APPROVAL: 'đang duyệt' };
 const dmy = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—');
 
 export default async function AdjustmentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
@@ -65,7 +66,7 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
       <section className="card mb-4 flex flex-wrap items-center gap-3 px-4 py-3">
         <Pill tone={STATUS[a.status]?.[1] ?? 'mute'}>{STATUS[a.status]?.[0] ?? a.status}</Pill>
         <span className="text-[13.5px]">Lập bởi {a.created_by_name} · {df(a.created_at, true)}{a.applied_at ? ` · áp vào kế hoạch ${df(a.applied_at, true)}` : ''}</span>
-        <span className="text-[12.5px] text-muted">TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT duyệt. Duyệt xong MES áp vào kế hoạch tháng, chạy MRP hiệu chỉnh: giảm đề xuất mua chưa duyệt của kế hoạch, giữ nguyên vật tư Giám đốc đã duyệt mua; thiếu thì TP SX lập đề xuất mua bổ sung; xếp lại lịch máy.</span>
+        <span className="text-[12.5px] text-muted">TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT duyệt. Duyệt xong MES áp vào kế hoạch tháng, chạy MRP hiệu chỉnh: giảm đơn mua, đề xuất mua chưa duyệt của kế hoạch, giữ nguyên vật tư Giám đốc đã duyệt mua; thiếu thì MES tự sinh đơn mua thêm (NV mua kiểm tra → TP Mua → Giám đốc); xếp lại lịch máy.</span>
       </section>
 
       {canEdit ? (
@@ -143,13 +144,14 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
         )}
         {cuts.length > 0 && (
           <div className="border-t border-line px-4 py-3 text-[13.5px]">
-            <b>{rv.applied ? 'Đề xuất mua đã giảm' : 'Đề xuất mua sẽ giảm khi duyệt'}:</b>{' '}
-            {cuts.map((c, i) => <span key={i}>{i > 0 && '; '}<Link className="link" href={`/de-xuat/${c.pr_id}`}>{c.pr_no}</Link> ({PR_ST[c.status] ?? c.status}) {c.material_code} {nf(c.old, 2)} → <b>{nf(c.new, 2)}</b> {c.uom}</span>)}
+            <b>{rv.applied ? 'Đơn mua / đề xuất mua đã giảm' : 'Đơn mua / đề xuất mua sẽ giảm khi duyệt'}:</b>{' '}
+            {cuts.map((c, i) => <span key={i}>{i > 0 && '; '}<Link className="link" href={`/${c.doc_type === 'PO' ? 'don-mua' : 'de-xuat'}/${c.pr_id}`}>{c.pr_no}</Link> ({PR_ST[c.status] ?? c.status}) {c.material_code} {nf(c.old, 2)} → <b>{nf(c.new, 2)}</b> {c.uom}</span>)}
           </div>
         )}
         <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">
-          Đã duyệt mua: đề xuất mua của kế hoạch này Giám đốc đã duyệt (giữ nguyên, không giảm). Đề xuất chưa duyệt: nháp hoặc đang chờ Giám đốc duyệt, MES giảm phần thừa (làm tròn theo bội số đóng gói, hết thì hủy đề xuất).
-          {(rv.buy_count ?? 0) > 0 && <> Mua thêm: sau khi duyệt, TP SX bấm “Sinh đề xuất mua (PR)” ở trang kế hoạch.</>}
+          Đã duyệt mua: đơn mua, đề xuất mua của kế hoạch này Giám đốc đã duyệt (giữ nguyên, không giảm). Chưa duyệt: nháp hoặc đang duyệt, MES giảm phần thừa (làm tròn theo bội số đóng gói, hết thì hủy đơn / đề xuất).
+          {(rv.po?.count ?? 0) > 0 ? <> Mua thêm: MES đã lập đơn mua {(rv.po?.po_ids ?? []).map((pid, i) => <span key={pid}>{i > 0 && ', '}<Link className="link" href={`/don-mua/${pid}`}>{rv.po?.po_nos?.[i]}</Link></span>)}, chờ NV mua kiểm tra.</>
+            : (rv.buy_count ?? 0) > 0 && <> Mua thêm: duyệt xong MES tự lập đơn mua, NV mua kiểm tra → TP Mua → Giám đốc duyệt.</>}
         </p>
       </section>
     </>

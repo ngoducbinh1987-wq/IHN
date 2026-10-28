@@ -14,7 +14,7 @@ import { approve, comment, reject } from './actions';
 export const metadata = { title: 'Chi tiết quy trình' };
 
 // Chứng từ người đang duyệt sửa được trên trang chứng từ (database: wf.review_request); thêm loại mới khi có màn hình sửa
-const EDITABLE_BY_REVIEWER = ['PLAN', 'PR', 'PLAN_ADJ', 'SAFETY_STOCK']; // PLAN còn có khung nhắc trong Thông tin chung
+const EDITABLE_BY_REVIEWER = ['PLAN', 'PR', 'PLAN_ADJ', 'SAFETY_STOCK', 'PO', 'DELIVERY']; // PLAN còn có khung nhắc trong Thông tin chung
 
 const ACTION: Record<string, [string, 'ok' | 'bad' | 'info']> = {
   APPROVE: ['Chuyển giai đoạn', 'ok'], REJECT: ['Trả lại', 'bad'], COMMENT: ['Trao đổi', 'info'],
@@ -224,6 +224,54 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
               ))}
             </tbody>
             {canSeePrice && <tfoot><tr><td colSpan={8} className="px-3 py-2 text-right font-medium">Tổng (dòng có giá)</td><td className="num px-3 font-medium">{nf(total)} đ</td></tr></tfoot>}
+          </table>
+        </div>
+      </div>
+    );
+  }
+  if (a.doc_type === 'PO') {
+    const [{ data: po }, { data: lines }] = await Promise.all([
+      supabase.schema('app').from('v_pos').select('*').eq('id', a.doc_id).maybeSingle(),
+      supabase.schema('app').from('v_po_lines').select('*').eq('po_id', a.doc_id).order('line_no'),
+    ]);
+    const total = (lines ?? []).reduce((s, l) => s + (l.unit_price === null ? 0 : Number(l.qty) * Number(l.unit_price)), 0);
+    return (
+      <div className="flex flex-col gap-3">
+        <Field label="Nhà cung cấp">{po?.supplier_name ?? <span className="text-warn">Chưa chọn</span>}</Field>
+        <Field label="Nguồn">{po?.source_label}{po?.plan_no ? ` · ${po.plan_no}` : ''}{po?.adj_no ? ` · ${po.adj_no}` : ''}{po?.pr_no ? ` · ${po.pr_no}` : ''}</Field>
+        <Field label="Ngày hàng về">{df(po?.expected_date)}{po?.payment_terms ? ` · thanh toán: ${po.payment_terms}` : ''}</Field>
+        <div className="overflow-x-auto rounded border border-line">
+          <table className="tbl">
+            <thead><tr><th>Mã VT</th><th>Vật tư</th><th className="num">Nhu cầu SX</th><th className="num">Tồn đạt QC</th><th className="num">Số mua</th><th>ĐVT</th>{canSeePrice && <th className="num">Đơn giá</th>}{canSeePrice && <th className="num">Thành tiền</th>}<th>Ngày về</th></tr></thead>
+            <tbody>{(lines ?? []).map((l) => (
+              <tr key={l.id}><td className="mono font-medium">{l.material_code}</td><td>{l.material_name}</td><td className="num">{nf(l.need_qty, 2)}</td><td className="num">{nf(l.available, 2)}</td>
+                <td className="num font-medium">{nf(l.qty, 2)}{l.mrp_qty !== null && Number(l.mrp_qty) !== Number(l.qty) && <div className="text-[12px] font-normal text-warn">MES đề nghị {nf(l.mrp_qty, 2)}</div>}</td><td>{l.uom}</td>
+                {canSeePrice && <td className="num">{l.unit_price === null ? <Pill tone="warn">Chưa có giá</Pill> : nf(l.unit_price)}</td>}
+                {canSeePrice && <td className="num">{l.unit_price === null ? '—' : nf(Number(l.qty) * Number(l.unit_price))}</td>}
+                <td>{df(l.expected_date)}</td></tr>
+            ))}</tbody>
+            {canSeePrice && <tfoot><tr><td colSpan={9} className="px-3 py-2 text-right font-medium">Tổng: {nf(total)} đ</td></tr></tfoot>}
+          </table>
+        </div>
+      </div>
+    );
+  }
+  if (a.doc_type === 'DELIVERY') {
+    const [{ data: d }, { data: items }] = await Promise.all([
+      supabase.schema('app').from('v_deliveries').select('*').eq('id', a.doc_id).maybeSingle(),
+      supabase.schema('app').from('v_delivery_items').select('*').eq('delivery_id', a.doc_id).order('line_no'),
+    ]);
+    return (
+      <div className="flex flex-col gap-3">
+        <Field label="Khách hàng">{d?.customer_name}</Field>
+        <Field label="Ngày giao">{df(d?.ship_date)}{d?.note ? ` · ${d.note}` : ''}</Field>
+        <div className="overflow-x-auto rounded border border-line">
+          <table className="tbl">
+            <thead><tr><th>Mã</th><th>Nhãn</th><th>Quy cách</th><th className="num">Số cuộn</th><th className="num" title="Cuộn QC Đạt đã nhập kho, chưa hứa giao cho lệnh khác">Kho còn giao được</th></tr></thead>
+            <tbody>{(items ?? []).map((i) => (
+              <tr key={i.id}><td className="mono font-medium">{i.product_code}</td><td>{i.brand}</td><td>{i.pack_m ? `${nf(i.pack_m)} m/cuộn` : 'Cuộn lẻ'}</td>
+                <td className="num font-medium">{i.coils}</td><td className={`num ${Number(i.free_coils) < i.coils ? 'text-bad' : ''}`}>{i.free_coils}</td></tr>
+            ))}</tbody>
           </table>
         </div>
       </div>

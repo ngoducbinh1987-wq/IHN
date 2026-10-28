@@ -19,7 +19,7 @@ type Target = {
 type Slip = {
   id: string; slip_no: string; paper_no: string | null; status: string; void_reason: string | null; recorded_at: string; op_code: string; op_name: string;
   wo_no: string; product_code: string; machine_code: string | null; carrier_code: string | null; operator_code: string; ended_at: string | null;
-  gross_kg: number; net_kg: number; qty_m: number; qty_estimated: boolean; scrap_kg: number | null; lot_no: string; qc_status: string;
+  gross_kg: number; net_kg: number; qty_m: number; qty_estimated: boolean; coils: number; scrap_kg: number | null; lot_no: string; qc_status: string;
   inputs: { code: string; left_kg: number | null; used_m: number }[]; recorded_by_name: string | null; true_m: number | null; true_used_kg: number | null;
 };
 type Hu = { hu_no: string; carrier_code: string | null; lot_no: string; qty: number; gross_kg: number | null; tare_kg: number | null; op_code: string | null; qc_status: string; color: string | null };
@@ -136,7 +136,11 @@ export default async function SlipsPage({ searchParams }: { searchParams: Promis
                     <label className="lbl"><span className="req">Đồng hồ mét lúc bắt đầu</span><input className="inp inp-y text-right" name="meter_start" inputMode="decimal" required /></label>
                     <label className="lbl"><span className="req">Đồng hồ mét lúc xong</span><input className="inp inp-y text-right" name="meter_end" inputMode="decimal" required /></label>
                   </>}
-                  {isCd6 && <label className="lbl"><span className="req">Chiều dài cuộn (m)</span><input className="inp inp-y text-right" name="qty_m" inputMode="decimal" required /></label>}
+                  {isCd6 && <>
+                    <label className="lbl"><span className="req">Số cuộn</span><input className="inp inp-y text-right" name="coils" inputMode="numeric" defaultValue="1" required /></label>
+                    <label className="lbl"><span className="req">Mét mỗi cuộn</span><input className="inp inp-y text-right" name="m_each" inputMode="decimal" defaultValue={sel.m_per_pack ? String(sel.m_per_pack) : ''} required /></label>
+                    <span className="self-end pb-2 text-[12.5px] text-muted">Cuộn chỉ dán tem QC PASS, không in QR; kg cân là tổng các cuộn.</span>
+                  </>}
                   {(sel.op_code === 'CD2' || sel.op_code === 'CD5') && <>
                     <label className="lbl">Cao áp: số lần báo lỗi<input className="inp text-right" name="spark_faults" inputMode="numeric" /></label>
                     <label className="lbl">OD đọc trên chuyền (mm)<input className="inp text-right" name="od_mm" inputMode="decimal" /></label>
@@ -187,7 +191,7 @@ export default async function SlipsPage({ searchParams }: { searchParams: Promis
                 <td><span className="mono">{s.wo_no}</span><div className="text-[12px] text-muted">{s.product_code}</div></td>
                 <td>{s.op_code}</td><td>{s.machine_code ?? '—'}</td><td className="mono">{s.carrier_code ?? '—'}</td><td>{s.operator_code}</td>
                 <td className="num">{nf(s.net_kg, 2)}</td>
-                <td className="num">{nf(s.qty_m, 1)}{s.qty_estimated ? <div className="text-[12px] text-muted">ước tính{s.true_m ? ` · thật ${nf(s.true_m)} m / ${nf(s.true_used_kg, 1)} kg (line đùn)` : ''}</div> : null}</td>
+                <td className="num">{nf(s.qty_m, 1)}{s.coils > 1 ? <div className="text-[12px] text-muted">{s.coils} cuộn</div> : null}{s.qty_estimated ? <div className="text-[12px] text-muted">ước tính{s.true_m ? ` · thật ${nf(s.true_m)} m / ${nf(s.true_used_kg, 1)} kg (line đùn)` : ''}</div> : null}</td>
                 <td className="text-[12.5px]">{(s.inputs ?? []).map((i) => `${i.code}${i.left_kg ? ` (dư ${nf(i.left_kg, 1)} kg)` : ''}`).join(', ') || '—'}</td>
                 <td className="mono text-[12.5px]">{s.lot_no}</td>
                 <td>{s.status === 'VOID' ? <Pill tone="mute">Đã hủy</Pill> : <StatusPill map={QC_STATUS} value={s.qc_status} />}</td>

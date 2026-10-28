@@ -7,7 +7,7 @@ import { type Kh, loadKh, vnNow } from '@/lib/kh/load';
 import { addDays, dayIndex, isWorkday, peopleOf } from '@/lib/kh/scheduler';
 import { requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { deleteAbsence, deleteCover, saveAbsence, saveCover, saveOperator, setCrew, setOperatorActive, setSkill } from './actions';
+import { deleteAbsence, deleteCover, saveAbsence, saveCover, saveOperator, setCrew, setFgKeeper, setOperatorActive, setSkill } from './actions';
 
 export const metadata = { title: 'Nhân sự xưởng' };
 
@@ -131,7 +131,7 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
               <thead><tr><th>Mã</th><th>Họ tên</th><th>Công việc</th><th>Đứng máy</th><th>Tài khoản</th><th>Trạng thái</th>{canEdit && <th>Sửa</th>}</tr></thead>
               <tbody>{ops.map((o) => (
                 <tr key={o.code} className={o.active ? '' : 'opacity-60'}>
-                  <td className="mono"><b>{o.code}</b>{o.is_deputy && <div className="text-[12px] text-muted">Tổ phó</div>}</td>
+                  <td className="mono"><b>{o.code}</b>{o.is_deputy && <div className="text-[12px] text-muted">Tổ phó</div>}{o.keeps_fg && <div className="text-[12px] text-brand">Giữ kho TP</div>}</td>
                   <td>{o.full_name ?? <span className="text-muted">Chưa nhập</span>}{o.note && <div className="text-[12px] text-muted">{o.note}</div>}</td>
                   <td className="text-[12.5px]">{o.job}{o.extra && <div className="text-muted">{o.extra}</div>}</td>
                   <td className="text-[12.5px]">{o.skills.length ? o.skills.map((s) => <div key={s.machine}>{s.machine} · {s.level === 'MAIN' ? 'đứng chính' : 'đang học'}{s.signed ? ' ✓' : ''}</div>) : <span className="text-muted">Chưa giao máy</span>}</td>
@@ -153,6 +153,10 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
                           <input name="reason" className="inp py-1" placeholder="Lý do sửa" aria-label={`Lý do sửa ${o.code}`} />
                           <SubmitButton className="btn btn-sm" pendingText="…">Lưu</SubmitButton>
                         </form>
+                        <form action={setFgKeeper} className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
+                          {tabIn}{hidden('code', o.code)}{hidden('on', o.keeps_fg ? '0' : '1')}
+                          <SubmitButton className="btn btn-sm" pendingText="…">{o.keeps_fg ? 'Thôi giữ kho thành phẩm' : 'Giao giữ kho thành phẩm'}</SubmitButton>
+                        </form>
                         <form action={setOperatorActive} className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
                           {tabIn}{hidden('code', o.code)}{hidden('active', o.active ? '0' : '1')}
                           <input name="reason" className="inp w-[150px] py-1" placeholder="Lý do (bắt buộc)" aria-label={`Lý do ${o.active ? 'ngừng' : 'làm lại'} ${o.code}`} required />
@@ -164,7 +168,7 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
                 </tr>
               ))}</tbody>
             </table>
-            <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Liên kết tài khoản để MES chặn người làm tự ký QC bobin của mình. Người ngừng làm không được xếp lịch, giữ lịch sử phiếu, báo cáo.</p>
+            <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Người giữ kho thành phẩm ký phiếu nhập kho TP và phiếu xuất giao; Kế toán SX chọn đúng người này khi nhập phiếu vào MES. Liên kết tài khoản để MES chặn người làm tự ký QC bobin của mình. Người ngừng làm không được xếp lịch, giữ lịch sử phiếu, báo cáo.</p>
           </section>
           {canEdit && (
             <section className="card" id="them-nguoi">

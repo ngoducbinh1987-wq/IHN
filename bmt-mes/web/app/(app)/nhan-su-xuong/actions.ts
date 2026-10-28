@@ -27,6 +27,15 @@ export async function saveOperator(f: FormData) {
   done(f, txt(f, 'code') ? `Đã lưu ${String(data)}` : `Đã thêm ${String(data)}. Giao máy ở bảng Người × máy (TP KT/QA ký tay nghề).`);
 }
 
+// Người giữ kho thành phẩm (ký phiếu nhập kho TP, phiếu xuất giao) – biến số, TP SX khai báo
+export async function setFgKeeper(f: FormData) {
+  const db = await createClient();
+  const on = txt(f, 'on') === '1';
+  const { error } = await db.schema('app').rpc('kh_set_fg_keeper', { p_code: txt(f, 'code'), p_on: on, p_reason: null });
+  if (error) back(f, 'err', friendly(error.message));
+  done(f, `${txt(f, 'code')} ${on ? 'được giao giữ kho thành phẩm' : 'thôi giữ kho thành phẩm'}`);
+}
+
 export async function setOperatorActive(f: FormData) {
   const db = await createClient();
   const active = txt(f, 'active') === '1';

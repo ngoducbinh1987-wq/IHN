@@ -278,34 +278,42 @@ select pg_temp.fails(format($$select inv.move_hu(%L, inv.loc('KTP-A'))$$, (selec
 select pg_temp.as_user('NV5');
 select inv.move_hu(h.id, inv.loc('KTP-A')) from inv.handling_units h where h.lot_id in ((select v from t where k = 'bb1'), (select v from t where k = 'bb2'));
 
--- ================================================================ 12. Giữ hàng, lệnh giao (TP KT/QA + Giám đốc duyệt), xuất đúng bobin
+-- ================================================================ 12. Lệnh giao theo số cuộn (migration 5100): Kinh doanh/Kế toán SX lập → Giám đốc duyệt
+--    → người giữ kho TP (khai báo ở Nhân sự xưởng) xuất theo phiếu giấy, Kế toán SX nhập "đã giao"; cuộn không QR, MES tự chọn lô cũ trước
+reset role;
+update master.operators set keeps_fg = (code = 'NV3') where code in ('NV1', 'NV2', 'NV3', 'NV4', 'NV5');
 select pg_temp.as_user('KD');
-insert into sales.sales_orders (so_no, customer_id, label_brand, required_date, status)
-select 'SO-K1', id, 'KAVIX', pg_temp.today() + 7, 'APPROVED' from core.partners where code = 'KAVIX';
-insert into sales.so_lines (so_id, line_no, product_id, spec_id, qty_m, pack_type, m_per_pack)
-select so.id, 1, p.id, p.current_spec_id, 505, 'Bobin gỗ', 500 from sales.sales_orders so, master.products p where so.so_no = 'SO-K1' and p.code = 'PFR-2C-1P5';
-select sales.reserve_so((select id from sales.sales_orders where so_no = 'SO-K1'));
-select pg_temp.ok((select count(*) = 1 and sum(qty_m) = 505 from sales.so_reservations where hu_id is not null), 'Giữ hàng theo từng bobin');
-select pg_temp.ok((select reserved_qty = 505 from inv.stock_balances where lot_id = (select v from t where k = 'bb1')), 'Tồn ghi nhận phần đã giữ');
-select pg_temp.as_user('NV5');
-select pg_temp.fails(format($$select inv.split_hu(%L, array[200]::numeric[], 0, 'thử')$$, (select h.id from inv.handling_units h where h.lot_id = (select v from t where k = 'bb1'))),
-  'đang được giữ', 'Không cắt bobin đang giữ cho đơn');
-insert into t select 'dv', sales.create_delivery((select id from sales.sales_orders where so_no = 'SO-K1'),
-  array[(select h.id from inv.handling_units h where h.lot_id = (select v from t where k = 'bb1'))], pg_temp.today(), null);
-select pg_temp.as_user('QLSX');
-select pg_temp.fails($$select wf.act((select id from wf.approval_requests where doc_id=(select v from t where k='dv')), 'APPROVE')$$, 'cần vai trò', 'Bước 1 lệnh giao: TP Kỹ thuật/QA');
-select pg_temp.as_user('TPKT'); select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k = 'dv')), 'APPROVE', 'CQ đủ');
-select pg_temp.as_user('GD');   select wf.act((select id from wf.approval_requests where doc_id = (select v from t where k = 'dv')), 'APPROVE');
-select pg_temp.ok((select status = 'APPROVED' from sales.deliveries where id = (select v from t where k = 'dv')), 'Giám đốc duyệt lệnh giao');
-select pg_temp.as_user('NV5');
-select pg_temp.fails(format($$select inv.ship_delivery(%L, array[%L]::uuid[])$$, (select v from t where k = 'dv'),
-  (select h.id from inv.handling_units h where h.lot_id = (select v from t where k = 'bb2'))), 'chưa khớp', 'Quét sai bobin → báo thiếu/thừa');
-select inv.ship_delivery((select v from t where k = 'dv'), array[(select h.id from inv.handling_units h where h.lot_id = (select v from t where k = 'bb1'))]);
-select pg_temp.ok((select delivered_m = 505 and reserved_m = 0 and line_status = 'DELIVERED' from sales.so_lines l join sales.sales_orders s on s.id = l.so_id where s.so_no = 'SO-K1'),
-  'Xuất giao: trừ tồn, trả phần đã giữ, ghi đã giao');
-select pg_temp.ok((select count(*) = 0 from inv.stock_balances where lot_id = (select v from t where k = 'bb1') and qty > 0), 'Bobin đã giao hết tồn');
+select pg_temp.ok((select store_coils = 2 and free_coils = 2 and store_m = 985 from app.v_fg_stock
+                   where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m = 500),
+  'Tồn thành phẩm đếm theo cuộn: 2 cuộn quy cách 500 m (985 m) đã nhập kho, giao được');
+insert into t select 'dv', app.delivery_save(null, jsonb_build_object('customer_name', 'Đại lý thử', 'ship_date', pg_temp.today(),
+  'items', jsonb_build_array(jsonb_build_object('product_code', 'PFR-2C-1P5', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 3))));
+select pg_temp.fails($$select app.delivery_submit((select v from t where k = 'dv'))$$, 'chỉ còn 2 cuộn', 'Không gửi lệnh giao quá số cuộn trong kho');
+select app.delivery_save((select v from t where k = 'dv'), jsonb_build_object('customer_name', 'Đại lý thử', 'ship_date', pg_temp.today(),
+  'items', jsonb_build_array(jsonb_build_object('product_code', 'PFR-2C-1P5', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 1))));
+insert into t select 'dv_req', app.delivery_submit((select v from t where k = 'dv'));
+select pg_temp.ok((select jsonb_array_length(flow_snapshot -> 'steps') = 1 and flow_snapshot #>> '{steps,0,role}' = 'BGD'
+                   from wf.approval_requests where id = (select v from t where k = 'dv_req')),
+  'Lệnh giao: chỉ Giám đốc duyệt (MES chỉ cho xuất cuộn QC Đạt nên bỏ bước TP KT/QA)');
+select pg_temp.as_user('TPKT');
+select pg_temp.fails($$select wf.act((select v from t where k = 'dv_req'), 'APPROVE')$$, 'cần vai trò', 'TP KT/QA không còn duyệt lệnh giao');
+select pg_temp.as_user('GD');   select wf.act((select v from t where k = 'dv_req'), 'APPROVE');
+select pg_temp.ok((select status = 'APPROVED' from sales.deliveries where id = (select v from t where k = 'dv'))
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('KTSX') and title like 'Lệnh giao đã duyệt%'),
+  'Giám đốc duyệt lệnh giao; Kế toán SX được báo in phiếu xuất');
+select pg_temp.as_user('KTSX');
+select pg_temp.fails(format($$select app.delivery_ship(%L, '{"giver_code":"NV1"}')$$, (select v from t where k = 'dv')), 'giữ kho thành phẩm',
+  'Người ký giao phải là người giữ kho TP đã khai báo');
+select app.delivery_ship((select v from t where k = 'dv'), '{"giver_code":"NV3","paper_no":"PX-01"}');
+select pg_temp.ok((select status = 'SHIPPED' and giver_code = 'NV3' from sales.deliveries where id = (select v from t where k = 'dv'))
+  and (select shipped_coils = 1 and shipped_m = 505 from sales.delivery_items where delivery_id = (select v from t where k = 'dv'))
+  and (select count(*) = 0 from inv.stock_balances where lot_id = (select v from t where k = 'bb1') and qty > 0),
+  'Kế toán SX nhập đã giao 1 cuộn: MES tự chọn cuộn lô cũ trước (BB-K1-01, 505 m), trừ tồn');
+select pg_temp.ok((select review_status = 'PENDING' and receiver_code = 'NV3' and paper_no = 'PX-01' from inv.stock_docs where ref_id = (select v from t where k = 'dv') and doc_type = 'SALE'),
+  'Phiếu xuất bán ghi người giao, số phiếu giấy; chờ đối soát cuối ngày');
 
 -- ================================================================ 13. Cắt bobin, đoạn lẻ
+select pg_temp.as_user('NV5');   -- người giữ kho TP có tài khoản vẫn tự thao tác được
 insert into t select 'sp', inv.split_hu(h.id, array[300]::numeric[], 2, 'Khách cần 300 m') from inv.handling_units h where h.lot_id = (select v from t where k = 'bb2') and h.status = 'ACTIVE';
 select pg_temp.ok((select qty = 178 from inv.handling_units where lot_id = (select v from t where k = 'bb2') and parent_hu_id is null), 'Bobin mẹ còn 480 − 300 − 2 = 178 m');
 select pg_temp.ok((select count(*) = 1 from inv.handling_units where lot_id = (select v from t where k = 'bb2') and parent_hu_id is not null and qty = 300 and not is_remnant), 'Đoạn 300 m có tem mới');

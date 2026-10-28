@@ -18,8 +18,10 @@ export async function sendDailyReport(form: FormData) {
   if (error) redirect(withMsg(back, 'err', errText(error.message)));
   after(async () => { await flushEmailOutbox(); });
   revalidatePath('/bao-cao/ngay');
-  const c = (data as { counts: Record<string, number> }).counts ?? {};
-  redirect(withMsg(back, 'ok', `Đã gửi báo cáo ngày cho TP SX, Kế toán SX, Giám đốc, tổ trưởng (${c.RED ?? 0} đỏ, ${c.YELLOW ?? 0} vàng)`));
+  const r = data as { counts: Record<string, number>; confirmed_docs?: number };
+  const c = r.counts ?? {};
+  const conf = r.confirmed_docs ? `; đã xác nhận ${r.confirmed_docs} phiếu kho nhập từ phiếu giấy` : '';
+  redirect(withMsg(back, 'ok', `Đã gửi báo cáo ngày cho TP SX, Kế toán SX, Giám đốc, tổ trưởng (${c.RED ?? 0} đỏ, ${c.YELLOW ?? 0} vàng)${conf}. Phế còn lại đã nhập kho phế.`));
 }
 
 // TP SX giải trình mục vàng/đỏ (Giám đốc ghi chỉ đạo)

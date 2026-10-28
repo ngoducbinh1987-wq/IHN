@@ -10,6 +10,8 @@ import { DOC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { deletePrLine, savePrHeader, savePrLine, setPrKind, submitPr } from '../actions';
+import { poFromPr } from '../../don-mua/actions';
+import { PO_STATUS, isBuyer } from '@/lib/purchase';
 
 export const metadata = { title: 'Đề xuất mua hàng' };
 
@@ -22,11 +24,12 @@ export default async function PrDetail({ params, searchParams }:
   const supabase = await createClient();
   const { data: pr } = await supabase.schema('app').from('v_prs').select('*').eq('id', id).maybeSingle();
   if (!pr) notFound();
-  const [{ data: lines }, { data: req }, { data: mats }, { data: flow }] = await Promise.all([
+  const [{ data: lines }, { data: req }, { data: mats }, { data: flow }, { data: pos }] = await Promise.all([
     supabase.schema('app').from('v_pr_lines').select('*').eq('pr_id', id).order('material_code'),
     pr.request_id ? supabase.schema('app').from('v_approvals').select('*').eq('id', pr.request_id).maybeSingle<Approval>() : Promise.resolve({ data: null }),
     supabase.schema('app').from('v_materials').select('code, name, uom').order('code'),
     supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code, enabled').eq('doc_type', 'PR').eq('enabled', true).order('seq'),
+    supabase.schema('app').from('v_pos').select('id, po_no, status, supplier_name, line_count').eq('pr_id', id).order('po_no'),
   ]);
   const draft = pr.status === 'DRAFT';
   // Người lập sửa khi nháp; người đang giữ bước duyệt sửa khi chờ duyệt (database kiểm lại, ghi lịch sử duyệt)
@@ -55,6 +58,9 @@ export default async function PrDetail({ params, searchParams }:
               <input type="hidden" name="pr_id" value={id} /><input type="hidden" name="pr_no" value={pr.pr_no} /><input type="hidden" name="note" value={pr.note ?? ''} />
               <SubmitButton className="btn btn-pri"><Send size={15} />Gửi duyệt</SubmitButton>
             </form>
+          )}
+          {['APPROVED', 'PARTIAL_PO'].includes(pr.status) && isBuyer(me.roles) && (
+            <form action={poFromPr}><input type="hidden" name="pr_id" value={id} /><SubmitButton className="btn btn-pri">Lập đơn mua hàng</SubmitButton></form>
           )}
           <Link className="btn" href="/de-xuat">Đóng</Link>
         </>} />
@@ -119,6 +125,15 @@ export default async function PrDetail({ params, searchParams }:
         </section>
 
         <aside className="card p-4">
+          {(pos ?? []).length > 0 && (
+            <div className="mb-3 border-b border-line pb-3">
+              <h2 className="mb-1 text-[16px] font-medium">Đơn mua từ đề xuất này</h2>
+              <ul className="text-[14px]">{(pos ?? []).map((o) => (
+                <li key={o.id} className="flex flex-wrap items-center gap-2 py-0.5"><Link className="link mono" href={`/don-mua/${o.id}`}>{o.po_no}</Link>
+                  <span className="text-muted">{o.supplier_name ?? 'chưa chọn NCC'}</span><StatusPill map={PO_STATUS} value={o.status} /></li>
+              ))}</ul>
+            </div>
+          )}
           <h2 className="mb-2 text-[16px] font-medium">Thông tin đề xuất</h2>
           {editable ? (
             <form action={savePrHeader} className="flex flex-col gap-3">

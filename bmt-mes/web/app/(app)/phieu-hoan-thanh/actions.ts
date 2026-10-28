@@ -38,17 +38,18 @@ export async function recordBobbin(form: FormData) {
     operator_code: str(form, 'operator_code'), started_at: str(form, 'started_at'), ended_at: str(form, 'ended_at'),
     gross_kg: num(form, 'gross_kg', 'Khối lượng cân', back), meter_start: num(form, 'meter_start', 'Đồng hồ mét lúc bắt đầu', back),
     meter_end: num(form, 'meter_end', 'Đồng hồ mét lúc xong', back), qty_m: num(form, 'qty_m', 'Chiều dài cuộn', back),
+    coils: num(form, 'coils', 'Số cuộn', back), m_each: num(form, 'm_each', 'Mét mỗi cuộn', back),
     color: str(form, 'color'), paper_no: str(form, 'paper_no'), inputs, materials: str(form, 'materials'),
     scrap_kg: num(form, 'scrap_kg', 'Kg phế', back), scrap_reason: str(form, 'scrap_reason'), readings, note: str(form, 'note'),
   };
   const supabase = await createClient();
   const { data, error } = await supabase.schema('app').rpc('record_bobbin', { p: payload });
   if (error) redirect(withMsg(back, 'err', errText(error.message)));
-  const r = data as { slip_no: string; lot_no: string; qty_m: number; estimated: boolean; net_kg: number };
+  const r = data as { slip_no: string; lot_no: string; qty_m: number; estimated: boolean; net_kg: number; coils?: number };
   after(async () => { await flushEmailOutbox(); });
   revalidatePath('/phieu-hoan-thanh');
   revalidatePath('/kho/qc');
-  redirect(withMsg(back, 'ok', `${r.slip_no}: bobin ${r.lot_no} · ${nf(r.net_kg, 2)} kg · ${nf(r.qty_m, 1)} m${r.estimated ? ' (ước tính từ kg)' : ''} → Chờ QC, đã báo QC`));
+  redirect(withMsg(back, 'ok', `${r.slip_no}: ${(r.coils ?? 1) > 1 ? `${r.coils} cuộn` : 'bobin'} ${r.lot_no} · ${nf(r.net_kg, 2)} kg · ${nf(r.qty_m, 1)} m${r.estimated ? ' (ước tính từ kg)' : ''} → Chờ QC, đã báo QC`));
 }
 
 // Hủy phiếu nhập sai (Kế toán SX): đảo phiếu kho, trả bobin đầu vào

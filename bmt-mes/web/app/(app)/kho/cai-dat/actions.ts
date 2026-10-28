@@ -58,27 +58,46 @@ export async function saveMaterialStock(form: FormData) {
   go('ok', `Đã lưu ${str(form, 'code')}`, 'vat-tu');
 }
 
-// Tồn đầu kỳ: mỗi dòng "MÃ; số lượng; đơn giá; vị trí; số đơn vị; HSD (dd/mm/yyyy); thương hiệu"
+// Tồn đầu kỳ theo kho: NVL/phế "MÃ; số lượng; đơn giá; vị trí; số đơn vị; HSD"; BTP "MÃ; công đoạn; số bobin; mét; kg cân; vị trí";
+// thành phẩm "MÃ; nhãn; quy cách m/cuộn; số cuộn; mét mỗi cuộn; kiểu đóng gói; vị trí"
 export async function createOpening(form: FormData) {
+  const [whId, whCode] = str(form, 'warehouse').split('|');
   const lines: Record<string, unknown>[] = [];
+  const num = (v: string | undefined, row: string, what: string) => {
+    if (!v) return null;
+    const n = parseNum(v);
+    if (n === null || Number.isNaN(n)) go('err', `Dòng "${row}": ${what} "${v}" không hợp lệ`, 'dau-ky');
+    return n;
+  };
   for (const row of str(form, 'lines').split(/\r?\n/)) {
     if (!row.trim()) continue;
-    const c = row.split(/[;\t]/).map((x) => x.trim());
-    const qty = parseNum(c[1] ?? '');
-    const cost = c[2] ? parseNum(c[2]) : null;
-    if (!c[0] || qty === null || Number.isNaN(qty) || qty <= 0 || (cost !== null && Number.isNaN(cost))) go('err', `Dòng "${row}" chưa đúng dạng`, 'dau-ky');
-    let exp: string | null = null;
-    if (c[5]) {
-      const m = c[5].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (!m) go('err', `HSD "${c[5]}" phải dạng dd/mm/yyyy`, 'dau-ky');
-      exp = `${m![3]}-${m![2].padStart(2, '0')}-${m![1].padStart(2, '0')}`;
+    const c = row.replace(/^\s*(KNL|KPL|KBTP|KTP)\s*:/i, '').split(/[;\t]/).map((x) => x.trim());
+    if (!c[0]) go('err', `Dòng "${row}" thiếu mã`, 'dau-ky');
+    if (whCode === 'KBTP') {
+      lines.push({ code: c[0].toUpperCase(), stage: (c[1] ?? '').toUpperCase(), carrier: (c[2] ?? '').toUpperCase(), qty: num(c[3], row, 'số mét'),
+        gross_kg: num(c[4], row, 'kg cân'), location_code: c[5] || null });
+    } else if (whCode === 'KTP') {
+      const coils = c[3] ? Number(c[3]) : 1;
+      if (!Number.isInteger(coils) || coils <= 0) go('err', `Dòng "${row}": số cuộn phải là số nguyên > 0`, 'dau-ky');
+      lines.push({ code: c[0].toUpperCase(), brand: (c[1] ?? '').toUpperCase() || null, pack_m: num(c[2], row, 'quy cách'), coils,
+        m_each: num(c[4], row, 'mét mỗi cuộn'), pack_type: c[5] || null, location_code: c[6] || null });
+    } else {
+      const qty = parseNum(c[1] ?? '');
+      const cost = c[2] ? parseNum(c[2]) : null;
+      if (qty === null || Number.isNaN(qty) || qty <= 0 || (cost !== null && Number.isNaN(cost))) go('err', `Dòng "${row}" chưa đúng dạng`, 'dau-ky');
+      let exp: string | null = null;
+      if (c[5]) {
+        const m = c[5].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (!m) go('err', `HSD "${c[5]}" phải dạng dd/mm/yyyy`, 'dau-ky');
+        exp = `${m![3]}-${m![2].padStart(2, '0')}-${m![1].padStart(2, '0')}`;
+      }
+      lines.push({ code: c[0].toUpperCase(), qty, unit_cost: cost, location_code: c[3] || null, units: c[4] ? Number(c[4]) : 1, exp_date: exp });
     }
-    lines.push({ code: c[0].toUpperCase(), qty, unit_cost: cost, location_code: c[3] || null, units: c[4] ? Number(c[4]) : 1, exp_date: exp, brand: c[6] || null });
   }
   if (!lines.length) go('err', 'Nhập ít nhất một dòng', 'dau-ky');
   const supabase = await createClient();
-  const { data, error } = await supabase.schema('inv').rpc('create_opening', { p_warehouse: str(form, 'warehouse_id'), p_doc_date: str(form, 'doc_date') || null, p_lines: lines });
+  const { data, error } = await supabase.schema('inv').rpc('create_opening', { p_warehouse: whId, p_doc_date: str(form, 'doc_date') || null, p_lines: lines });
   if (error) go('err', errText(error.message), 'dau-ky');
   after(async () => { await flushEmailOutbox(); });
-  redirect(withMsg(`/kho/phieu/${data}`, 'ok', 'Đã lập tồn đầu kỳ, gửi Kế toán trưởng duyệt. Duyệt xong hệ thống tự ghi sổ; in tem cho từng đơn vị.'));
+  redirect(withMsg(`/kho/phieu/${data}`, 'ok', 'Đã lập tồn đầu kỳ, gửi Kế toán trưởng duyệt. Duyệt xong hệ thống tự ghi sổ.'))
 }

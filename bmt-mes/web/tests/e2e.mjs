@@ -248,41 +248,69 @@ ok('Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch s
   ok('BGĐ thấy thành tiền CU-024 = 100 kg × 268.000 = 26.800.000 đ');
   await c.close();
 }
-// 6a'. TP Mua điều chỉnh kết quả MRP (bắt buộc lý do), PR dùng số đã điều chỉnh, sau đó khóa
-[ctx, page] = await ctxFor();
-await login(page, 'mua.tp@bmt.test');
-await page.goto(planUrl);
-await clickNav(page, 'tr:has-text("CU-024") a[title="Điều chỉnh"]');
-await page.fill('form input[name=qty]', '120');
-await page.fill('form input[name=note]', 'Gom đơn quý IV');
-await page.fill('form input[name=reason]', 'NCC giảm giá khi mua từ 120 kg');
-await clickNav(page, 'form button:has-text("Lưu")');
-await expectOk(page, 'TP Mua điều chỉnh CU-024 100 → 120 kg');
-const cuAdj = await page.locator('tr:has-text("CU-024")').first().innerText();
-if (!cuAdj.includes('120') || !cuAdj.includes('gốc 100') || !cuAdj.includes('Gom đơn quý IV')) fail(`Dòng MRP phải hiện số mới + gốc: ${cuAdj}`);
-if (!(await page.textContent('main')).includes('NCC giảm giá khi mua từ 120 kg')) fail('Lịch sử điều chỉnh phải có lý do');
-ok('MRP hiện số đã điều chỉnh, giữ số gốc 100 và lịch sử kèm lý do');
-await page.screenshot({ path: `${SHOTS}/05b-mrp-dieu-chinh.png`, fullPage: true });
-await ctx.close();
-[ctx, page] = await ctxFor();
-await login(page, 'sx.kh@bmt.test');
-await page.goto(planUrl);
-await clickNav(page, 'button:has-text("Sinh đề xuất mua (PR)")');
-if (!page.url().includes('/de-xuat/')) fail('Sinh PR phải chuyển sang trang đề xuất mua');
-await expectOk(page, 'Sinh PR sau khi BGĐ duyệt kế hoạch');
-if ((await page.inputValue('tr:has-text("CU-024") input[name=qty]')) !== '120') fail('PR phải dùng số đã điều chỉnh 120 kg');
-const prRow = await page.locator('tr:has-text("CU-024")').first().innerText();
-if (!prRow.includes('87,85') || !prRow.includes('MES đề nghị 100')) fail(`PR từ dự trù phải có cột nhu cầu 87,85 kg và số MES đề nghị: ${prRow}`);
-ok('Đề xuất mua từ dự trù có cột nhu cầu, tồn, đang về, tồn dự kiến; TP SX sửa được số mua');
-ok('PR sinh từ MRP dùng số lượng đã điều chỉnh (CU-024 120 kg)');
-await ctx.close();
+// 6a'. Chủ tịch chốt → MES tự sinh đơn mua từ MRP; NV mua kiểm tra (NCC, sửa số, giá), duyệt gửi → TP Mua → Giám đốc; MRP khóa
+let poUrl = null;
+let poNo = '';
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'mua.nv@bmt.test');
+  await p.goto(planUrl);
+  const hrefs = await p.locator('#don-mua a[href^="/don-mua/"]').evaluateAll((as) => as.map((x) => x.getAttribute('href')));
+  if (!hrefs.length) fail('Chủ tịch chốt kế hoạch: MES phải tự sinh đơn mua (khung Đơn mua hàng theo kế hoạch)');
+  if (await p.locator('button:has-text("Sinh đề xuất mua (PR)")').count()) fail('Không còn nút sinh đề xuất mua (PR) từ kế hoạch');
+  for (const h of hrefs) {
+    await p.goto(`${BASE}${h}`);
+    if ((await p.textContent('main')).includes('CU-024')) { poUrl = `${BASE}${h}`; break; }
+  }
+  if (!poUrl) fail('Không thấy đơn mua tự sinh có CU-024');
+  ok(`MES tự sinh ${hrefs.length} đơn mua nháp từ MRP khi Chủ tịch chốt kế hoạch`);
+  if (!(await p.locator('#buyer-check').count())) fail('Đơn nháp phải nhắc NV mua kiểm tra trước khi gửi');
+  if ((await p.inputValue('select[name=supplier_id]')) === '') {
+    await p.click('summary:has-text("Thêm nhà cung cấp mới")');
+    await p.fill('form:has(input[name=tax_code]) input[name=name]', 'NCC đồng thử E2E');
+    await clickNav(p, 'button:has-text("Thêm và chọn cho đơn này")');
+    await expectOk(p, 'NV mua thêm NCC mới ngay trên đơn mua');
+  }
+  await p.fill('tr:has-text("CU-024") input[name=qty]', '120');
+  await p.fill('tr:has-text("CU-024") input[name=unit_price]', '268.000');
+  await clickNav(p, 'tr:has-text("CU-024") button:has-text("Lưu")');
+  await expectOk(p, 'NV mua sửa CU-024 100 → 120 kg, giá 268.000 trên đơn mua');
+  const cuRow = await p.locator('tr:has-text("CU-024")').first().innerText();
+  if (!cuRow.includes('MES đề nghị 100')) fail(`Dòng đơn mua phải hiện số MES đề nghị: ${cuRow}`);
+  for (let i = 0; i < 40; i++) {
+    await p.goto(poUrl);
+    const empty = p.locator('tr:has(input[name=unit_price][value=""])').first();
+    if (!(await empty.count())) break;
+    await empty.locator('input[name=unit_price]').fill('1.000');
+    await clickNav(p, 'tr:has(input[name=unit_price][value=""]) button:has-text("Lưu")');
+  }
+  await p.goto(poUrl);
+  await clickNav(p, 'button:has-text("Duyệt, gửi TP Mua")');
+  await expectOk(p, 'NV mua duyệt, gửi TP Mua');
+  poNo = (await p.textContent('main h1')).split(' – ')[0].trim();
+  await p.screenshot({ path: `${SHOTS}/05b-don-mua.png`, fullPage: true });
+  await c.close();
+}
+await approveAs('mua.tp@bmt.test', poNo, 'TP Mua');
+await approveAs('bgd@bmt.test', poNo, 'Giám đốc');
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'mua.nv@bmt.test');
+  await p.goto(poUrl);
+  const body = await p.textContent('main');
+  if (!body.includes('Đã duyệt, chờ hàng') || !body.includes('120')) fail(`Đơn mua phải Đã duyệt với CU-024 120 kg: ${body.slice(0, 300)}`);
+  ok(`Đơn mua ${poNo}: NV mua → TP Mua → Giám đốc duyệt, dùng số NV mua đã sửa (CU-024 120 kg)`);
+  await p.goto(`${BASE}/don-mua?tab=cho-hang`);
+  if (!(await p.textContent('main')).includes(poNo)) fail('Danh sách Đơn mua hàng phải có đơn đã duyệt chờ hàng');
+  await c.close();
+}
 {
   const [c, p] = await ctxFor();
   await login(p, 'mua.tp@bmt.test');
   await p.goto(planUrl);
-  if (await p.locator('a[title="Điều chỉnh"]').count()) fail('Đã sinh PR: không còn nút điều chỉnh MRP');
+  if (await p.locator('a[title="Điều chỉnh"]').count()) fail('Đã sinh đơn mua: không còn nút điều chỉnh MRP');
   if (!(await p.textContent('main')).includes('Kết quả MRP đang khóa')) fail('Phải báo kết quả MRP đang khóa');
-  ok('Đã sinh PR: kết quả MRP bị khóa');
+  ok('Đã sinh đơn mua: kết quả MRP khóa, sửa số mua trên đơn mua');
   await c.close();
 }
 // 6a''. Đề xuất hiệu chỉnh kế hoạch tháng: Kế hoạch SX lập (đổi sản lượng 3.500 → 4.000 m), Giám đốc → Chủ tịch HĐQT duyệt, MES áp + MRP hiệu chỉnh
@@ -552,8 +580,8 @@ await ctx.close();
     || !(await inGroup('Kỹ thuật / QA')).includes('Tốc độ sản xuất') || !(await inGroup('Báo cáo')).includes('Lịch sử vận hành')
     || !(await inGroup('Báo cáo')).includes('Báo cáo bảo trì') || /Tốc độ|Lịch sử|Cài đặt/.test(await inGroup('Quản lý máy'))) fail('Nhóm menu chưa đúng phương án rà soát');
   if (!(await page.locator('header a[href="/thong-bao"]').count())) fail('Chuông thông báo trên đầu trang phải còn');
-  await page.goto(`${BASE}/may/kiem-tra`);
-  if (!/404|không tìm thấy|could not be found/i.test(await page.locator('body').innerText())) fail('Trang Kiểm tra năng lực phải bỏ');
+  const kt = await page.goto(`${BASE}/may/kiem-tra`);
+  if (kt?.status() !== 404 && !/404|không tìm thấy|could not be found/i.test(await page.locator('body').innerText())) fail('Trang Kiểm tra năng lực phải bỏ');
   ok('Rà soát menu: bỏ Thông báo, Kiểm tra năng lực, Checklist đầu ca; Tham số, Cài đặt máy ở Hệ thống & cài đặt; Tốc độ ở Kỹ thuật / QA; Lịch sử vận hành, Báo cáo bảo trì ở Báo cáo');
   await page.goto(`${BASE}/`);
   if (/Quét mã QR|Cấp NVL cho SX|Nhận NVL tại máy|Máy, người & tham số/.test(nav) || !nav.includes('Tham số xếp lịch')) fail('Menu còn mục thừa hoặc thiếu Tham số xếp lịch');
@@ -582,7 +610,8 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
     '/lich-may', '/lenh-ngay', '/ghi-nhan-ca', '/kh-thuc-te', '/tham-so', '/may', '/may/checklist', '/may/bao-duong', '/may/toc-do',
     '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut', '/phieu-hoan-thanh', '/kho/qc',
     '/phieu-xuat-nvl', '/bao-cao/ngay', '/in/phieu-xuat-nvl', '/in/bao-cao-ca', '/de-xuat/du-phong', '/de-xuat/du-phong?tab=phieu', '/ke-hoach/dieu-chinh',
-    '/lich-may?tab=toiuu', '/lich-may?tab=toiuu&mode=fastest', '/lich-may?tab=cancu', '/tham-so?sua=flow'];
+    '/lich-may?tab=toiuu', '/lich-may?tab=toiuu&mode=fastest', '/lich-may?tab=cancu', '/tham-so?sua=flow',
+    '/don-mua', '/don-mua?tab=tat-ca', '/kho/xuat-ban', '/kho/thanh-pham', '/in/nhap-kho-tp', '/kho/ton?kho=KTP', '/kho/phe', '/kho/cai-dat?tab=dau-ky', '/nhan-su-xuong'];
   for (const u of pages) {
     const res = await page.goto(`${BASE}${u}`);
     const body = await page.innerText('body');

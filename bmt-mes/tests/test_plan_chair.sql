@@ -173,8 +173,10 @@ select pg_temp.ok((select body like 'PFR-2C-1P5: 10.000 → 12.000 m (Test h_ct)
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 13000, 1, 'Bobin gỗ', 500, 'KAVIX', 'x')$$,
   'không ở trạng thái chờ duyệt', 'Đã chốt: không sửa trực tiếp nữa (dùng phiếu điều chỉnh)');
 select pg_temp.as_user('H_SXTP');
-insert into t select 'pr', plan.create_pr_from_mrp((select id from plan.mrp_runs where plan_id = (select v from t where k = 'plan') order by run_at desc, id limit 1));
-select pg_temp.ok((select count(*) > 0 from purchase.pr_lines where pr_id = (select v from t where k = 'pr')), 'TP SX sinh đề xuất mua từ MRP sau khi Chủ tịch chốt');
+select pg_temp.ok((select count(*) > 0 from purchase.po_lines l join purchase.purchase_orders po on po.id = l.po_id
+                   where po.mrp_run_id = (select id from plan.mrp_runs where plan_id = (select v from t where k = 'plan') order by run_at desc, id limit 1)
+                     and po.status = 'DRAFT' and po.source = 'MRP'),
+  'Chủ tịch chốt: MES tự sinh đơn mua nháp từ kết quả MRP cuối (chờ NV mua kiểm tra)');
 
 -- ================================================================ 5. Trả lại, Quản trị
 insert into plan.production_plans (plan_no, period_label, material_need_date) values ('KH-T42B', 'Thử 4200 B', pg_temp.today() + 10);

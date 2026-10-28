@@ -77,7 +77,8 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
           <section className="card mb-4 flex flex-wrap items-center gap-3 px-4 py-3">
             <div className="text-[13.5px]">
               {r.sent ? <>Đã gửi báo cáo lúc <b>{df(r.sent.sent_at, true)}</b> · {r.sent.auto ? 'MES tự gửi 19:30' : r.sent.by ?? ''}</> : 'Chưa gửi báo cáo ngày.'}
-              <div className="text-[12.5px] text-muted">Gửi cho TP SX, Kế toán SX, Giám đốc, tổ trưởng; mục đỏ báo riêng Giám đốc (email ngay). 19:30 MES tự gửi nếu chưa ai gửi.</div>
+              <div className="text-[12.5px] text-muted">Gửi cho TP SX, Kế toán SX, Giám đốc, tổ trưởng; mục đỏ báo riêng Giám đốc (email ngay). 19:30 MES tự gửi nếu chưa ai gửi.
+                Kế toán SX bấm gửi = xác nhận các phiếu kho mình nhập từ phiếu giấy (xuất NVL, NVL thừa, thành phẩm, xuất giao) đến hết ngày này; phế còn lại tự nhập kho phế.</div>
             </div>
             {canSend && d <= today && (
               <form action={sendDailyReport} className="ml-auto"><input type="hidden" name="d" value={d} />

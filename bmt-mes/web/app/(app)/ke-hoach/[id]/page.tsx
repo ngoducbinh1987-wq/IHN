@@ -11,7 +11,9 @@ import { DOC_STATUS, SPEC_STATUS, df, nf } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { approve } from '../../duyet/[id]/actions';
-import { adjustMrp, chairRemoveLine, chairSaveLine, createAdj, createPr, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
+import { adjustMrp, chairRemoveLine, chairSaveLine, createAdj, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
+import { poFromMrp } from '../../don-mua/actions';
+import { PO_STATUS, isBuyer } from '@/lib/purchase';
 
 const ADJ_STATUS: Record<string, [string, 'ok' | 'warn' | 'bad' | 'mute' | 'info']> = {
   DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ duyệt (Giám đốc → Chủ tịch)', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
@@ -49,11 +51,14 @@ export default async function PlanDetail({ params, searchParams }:
       ? supabase.schema('purchase').from('purchase_requests').select('id, pr_no').eq('mrp_run_id', plan.last_run_id).neq('status', 'CANCELLED')
       : Promise.resolve({ data: [] as { id: string; pr_no: string }[] }),
   ]);
-  const [{ data: levels }, { data: adjs }] = await Promise.all([
+  const [{ data: levels }, { data: adjs }, { data: pos }] = await Promise.all([
     plan.last_run_id
       ? supabase.schema('app').from('v_mrp_products').select('*').eq('run_id', plan.last_run_id).order('id')
       : Promise.resolve({ data: [] as Record<string, never>[] }),
     supabase.schema('app').from('v_plan_adjustments').select('*').eq('plan_id', id).neq('status', 'CANCELLED').order('created_at', { ascending: false }),
+    // Đơn mua MES tự sinh khi Chủ tịch chốt kế hoạch / khi hiệu chỉnh được duyệt (và đơn từ đề xuất của kế hoạch)
+    supabase.schema('app').from('v_pos').select('id, po_no, status, source_label, supplier_name, line_count, amount, adj_no, mrp_run_id, expected_date')
+      .eq('plan_id', id).order('created_at'),
   ]);
   const { data: chairEdits } = await supabase.schema('app').from('v_plan_chair_edits').select('*').eq('plan_id', id).order('edited_at', { ascending: false });
   const canAdj = plan.status === 'APPROVED' && (can(me, 'plan', 'create') || me.roles.includes('SX_TP'));
@@ -63,7 +68,8 @@ export default async function PlanDetail({ params, searchParams }:
   // (quy trình 28/10/2026: TP SX lập, chạy MRP → Giám đốc duyệt → Chủ tịch HĐQT chốt; database kiểm lại bằng wf.can_submit)
   const canSubmit = (flowHead?.submit_role ? me.roles.includes(flowHead.submit_role) : can(me, 'plan', 'create') || me.roles.includes('BGD'))
     && (!(flowHead?.submit_user_ids?.length) || flowHead.submit_user_ids.includes(me.id));
-  const canMakePr = can(me, 'plan', 'create') || can(me, 'purchase', 'create');
+  const runPos = (pos ?? []).filter((o) => o.mrp_run_id === plan.last_run_id && o.status !== 'CANCELLED');
+  const canMakePo = isBuyer(me.roles) || can(me, 'plan', 'create');
   const editable = draft && can(me, 'plan', 'edit');
   // Người đang giữ bước duyệt (Giám đốc duyệt, Chủ tịch HĐQT chốt) được sửa sản lượng, thêm, bỏ mã và đề nghị mua MRP rồi duyệt
   // (nguyên tắc 27/10/2026: người duyệt có quyền chỉnh sửa đề xuất; database kiểm lại: wf.review_request)
@@ -78,7 +84,8 @@ export default async function PlanDetail({ params, searchParams }:
   const buyerOrTech = me.roles.includes('MUA_TP') || me.roles.includes('KT_TP');
   const canAdjust = draft ? can(me, 'plan', 'create') || buyerOrTech : pending ? chairTurn : plan.status === 'APPROVED' && buyerOrTech;
   const mrpLock = !['DRAFT', 'PENDING_APPROVAL', 'APPROVED'].includes(plan.status) ? 'kế hoạch đã đóng'
-    : stale ? 'dòng kế hoạch đã thay đổi, cần chạy lại MRP' : pr ? `đã sinh ${pr.pr_no}` : null;
+    : stale ? 'dòng kế hoạch đã thay đổi, cần chạy lại MRP' : pr ? `đã sinh ${pr.pr_no}`
+    : runPos.length ? `đã sinh đơn mua ${runPos.map((o) => o.po_no).join(', ')}: NV mua, người duyệt sửa số mua trên đơn mua` : null;
   const canRunMrp = pending ? chairTurn : can(me, 'plan', 'create') && plan.status !== 'CLOSED';
   const adjustable = canAdjust && !mrpLock;
   const packs = packOpts ?? [];
@@ -101,8 +108,8 @@ export default async function PlanDetail({ params, searchParams }:
               <SubmitButton>Gửi duyệt kế hoạch</SubmitButton>
             </form>
           )}
-          {plan.status === 'APPROVED' && plan.mode === 'OFFICIAL' && plan.last_run_id && !stale && !pr && canMakePr && (
-            <form action={createPr}><input type="hidden" name="plan_id" value={id} /><input type="hidden" name="run_id" value={plan.last_run_id} /><SubmitButton>Sinh đề xuất mua (PR)</SubmitButton></form>
+          {plan.status === 'APPROVED' && plan.mode === 'OFFICIAL' && plan.last_run_id && !stale && !pr && runPos.length === 0 && toBuy > 0 && canMakePo && (
+            <form action={poFromMrp}><input type="hidden" name="plan_id" value={id} /><SubmitButton>Sinh đơn mua từ MRP</SubmitButton></form>
           )}
           <Link className="btn" href="/ke-hoach">Đóng</Link>
         </>} />
@@ -114,7 +121,7 @@ export default async function PlanDetail({ params, searchParams }:
       )}
       {stale && (
         <div role="alert" id="mrp-stale" className="mb-4 rounded border-l-4 border-warn bg-warn-soft px-4 py-2.5 text-[14px]">
-          Dòng kế hoạch đã thay đổi sau lần chạy MRP gần nhất. <b>Bấm “Chạy MRP”</b> để tính lại nhu cầu vật tư trước khi gửi duyệt hoặc sinh đề xuất mua.
+          Dòng kế hoạch đã thay đổi sau lần chạy MRP gần nhất. <b>Bấm “Chạy MRP”</b> để tính lại nhu cầu vật tư trước khi gửi duyệt.
         </div>
       )}
       {chairTurn && req && (
@@ -249,6 +256,27 @@ export default async function PlanDetail({ params, searchParams }:
             ))}</tbody>
           </table>
           <p className="px-4 py-3 text-[12.5px] text-muted">TP sẵn có: đạt QC, chưa giữ cho đơn, cùng nhãn. BTP: đạt hoặc đang chờ QC trong kho BTP; lõi, ruột quy ra mét cáp ÷ số lõi. Vật tư BOM tính theo mét của công đoạn tiêu thụ; thiếu ròng đã trừ tồn đạt QC, hàng đang về kịp và đề xuất mua chưa lên PO.</p>
+        </section>
+      )}
+
+      {(plan.status === 'APPROVED' || (pos ?? []).length > 0) && (
+        <section className="card mt-4 overflow-x-auto" id="don-mua">
+          <div className="card-h"><span>Đơn mua hàng theo kế hoạch</span><span className="text-[12.5px] font-normal text-muted">Chủ tịch chốt kế hoạch (hoặc duyệt hiệu chỉnh) thì MES tự sinh đơn mua từ MRP → NV mua kiểm tra → TP Mua → Giám đốc</span></div>
+          {(pos ?? []).length > 0 ? (
+            <table className="tbl">
+              <thead><tr><th>Đơn mua</th><th>Nguồn</th><th>Nhà cung cấp</th><th>Ngày về</th><th className="num">Dòng</th>{showPrice && <th className="num">Giá trị (đ)</th>}<th>Trạng thái</th></tr></thead>
+              <tbody>{(pos ?? []).map((o) => (
+                <tr key={o.id}>
+                  <td><Link className="link mono font-medium" href={`/don-mua/${o.id}`}>{o.po_no}</Link></td>
+                  <td>{o.source_label}{o.adj_no ? ` · ${o.adj_no}` : ''}</td>
+                  <td>{o.supplier_name ?? <span className="text-warn">Chưa chọn NCC</span>}</td>
+                  <td>{df(o.expected_date)}</td><td className="num">{o.line_count}</td>
+                  {showPrice && <td className="num">{o.amount === null ? '—' : nf(o.amount)}</td>}
+                  <td><StatusPill map={PO_STATUS} value={o.status} /></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          ) : <Empty>{toBuy > 0 ? 'Chưa có đơn mua (đơn bị hủy hết). NV mua / TP SX bấm “Sinh đơn mua từ MRP”.' : 'Kết quả MRP không cần mua thêm vật tư nào.'}</Empty>}
         </section>
       )}
 

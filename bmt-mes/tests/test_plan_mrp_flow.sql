@@ -171,15 +171,17 @@ select wf.check_sla();
 select pg_temp.ok((select count(*) = 0 from wf.notifications where request_id = (select v from t where k = 'req') and step_seq = 2),
   'Hồ sơ đã duyệt xong: job không cảnh báo nữa');
 
--- Sau duyệt: TP Mua chỉnh lần cuối, PR dùng số đã chỉnh, rồi khóa
+-- Sau duyệt (migration 5100): MES tự sinh đơn mua nháp từ MRP, dùng số đã chỉnh; kết quả MRP khóa, NV mua sửa trên đơn mua
+select pg_temp.ok((select count(*) >= 1 and bool_and(status = 'DRAFT' and source = 'MRP') from purchase.purchase_orders where mrp_run_id = (select v from t where k = 'run2')),
+  'Kế hoạch được duyệt: MES tự sinh đơn mua nháp từ kết quả MRP');
+select pg_temp.ok((select qty = 1000 and expected_date = current_date + 20 from purchase.po_lines where mrp_line_id = (select v from t where k = 'line')),
+  'Đơn mua dùng đúng số lượng, ngày cần đã điều chỉnh');
 select pg_temp.as_user('T_MUATP');
-select app.adjust_mrp_line((select v from t where k = 'line'), 1200, current_date + 25, 'Chốt với NCC', 'Chốt số lượng sau duyệt');
+select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), 1200, null, null, 'thử')$$, 'đơn mua', 'Đã sinh đơn mua: khóa kết quả MRP');
 select pg_temp.as_user('T_SXKH');
-insert into t select 'pr', plan.create_pr_from_mrp((select v from t where k = 'run2'));
-select pg_temp.ok((select qty = 1200 and need_date = current_date + 25 and note = 'Chốt với NCC' from purchase.pr_lines where mrp_line_id = (select v from t where k = 'line')),
-  'PR sinh từ MRP dùng đúng số lượng, ngày cần, ghi chú đã điều chỉnh');
-select pg_temp.as_user('T_MUATP');
-select pg_temp.fails($$select app.adjust_mrp_line((select v from t where k = 'line'), 5, null, null, 'thử')$$, 'Đã sinh đề xuất mua', 'Đã sinh PR: khóa kết quả MRP');
-select pg_temp.ok((select count(*) = 3 from plan.mrp_line_edits where plan_id = (select v from t where k = 'plan')), 'Lịch sử điều chỉnh còn đủ 3 lần');
+select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k = 'run2'))$$, 'tự sinh đơn mua', 'Không sinh đề xuất mua trùng với đơn mua tự sinh');
+select pg_temp.as_user('T_MUANV');
+select pg_temp.fails($$select app.po_from_mrp((select v from t where k = 'plan'))$$, 'Không còn vật tư', 'Sinh lại đơn mua: không lập trùng phần đã có đơn');
+select pg_temp.ok((select count(*) = 2 from plan.mrp_line_edits where plan_id = (select v from t where k = 'plan')), 'Lịch sử điều chỉnh còn đủ 2 lần');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;
