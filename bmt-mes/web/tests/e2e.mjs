@@ -744,51 +744,111 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
 }
 
 
-// 12. Thuật toán xếp lịch theo thông số: thẻ Tối ưu & tăng ca, TP KT/QA sửa thông số dòng chảy, TP SX đề xuất tăng ca → Giám đốc duyệt / kết thúc
+// 12. Thuật toán xếp lịch theo thông số + máy chạy 2–3 ca: TP KT/QA sửa thông số dòng chảy; thẻ Tối ưu & thêm ca;
+//     TP SX đề xuất máy trộn + line silicone chạy 2 ca → Giám đốc duyệt → lịch có ca 2; TP SX đặt người làm ca 2; kết thúc
 {
   [ctx, page] = await ctxFor();
   await login(page, 'kt.tp@bmt.test');
   await page.goto(`${BASE}/tham-so?sua=flow`);
-  const flowSec = page.locator('section', { hasText: 'Dòng chảy, máy trộn, tăng ca' }).first();
-  if (await flowSec.locator('input[name=ot_max_min]').count()) fail('TP KT/QA không được sửa giới hạn tăng ca');
+  const flowSec = page.locator('section', { hasText: 'Dòng chảy, máy trộn, giờ làm' }).first();
+  if (await flowSec.locator('input[name=ot_max_min]').count() || await flowSec.locator('input[name=day_max_h]').count()) fail('TP KT/QA không được sửa giờ làm, làm thêm');
   await flowSec.locator('input[name=pot_life_h]').fill('6');
   await flowSec.locator('input[name=qc_min]').fill('90');
   await flowSec.locator('textarea[name=reason]').fill('E2E: đo thực tế hạn dùng 6 giờ, QC 90 phút');
-  await clickNav(page, 'section:has-text("Dòng chảy, máy trộn, tăng ca") button:has-text("Lưu thay đổi")');
+  await clickNav(page, 'section:has-text("Dòng chảy, máy trộn, giờ làm") button:has-text("Lưu thay đổi")');
   await page.screenshot({ path: `${SHOTS}/21-tham-so-dong-chay.png`, fullPage: true });
   await expectOk(page, 'TP KT/QA sửa hạn dùng silicone, thời gian QC');
   const fb = await page.innerText('main');
   if (!/Hạn dùng silicone đã pha lưu hóa\s*6/.test(fb)) fail('Hạn dùng silicone chưa lưu 6 giờ');
   if (!fb.includes('Hạn dùng silicone đã pha lưu hóa (giờ)')) fail('Nhật ký tham số thiếu dòng hạn dùng silicone');
   await ctx.close();
+  // Giám đốc: giờ làm tối đa mỗi ngày (luật ≤ 12)
+  [ctx, page] = await ctxFor();
+  await login(page, 'bgd@bmt.test');
+  await page.goto(`${BASE}/tham-so?sua=flow`);
+  {
+    const fs = page.locator('section', { hasText: 'Dòng chảy, máy trộn, giờ làm' }).first();
+    await fs.locator('input[name=day_max_h]').fill('13');
+    await fs.locator('textarea[name=reason]').fill('E2E: thử 13 giờ');
+    await Promise.all([page.waitForURL(/ok=|err=/), fs.locator('button', { hasText: 'Lưu thay đổi' }).click()]);
+    if (!(await flash(page)).includes('12')) fail('Giờ làm tối đa 13 giờ/ngày phải bị chặn (luật ≤ 12)');
+    ok('Giám đốc: giờ làm tối đa mỗi ngày không quá 12 giờ');
+  }
+  await ctx.close();
   [ctx, page] = await ctxFor();
   await login(page, 'sx.tp@bmt.test');
   await page.goto(`${BASE}/lich-may?tab=toiuu&mode=fastest`);
   const ob = await page.innerText('main');
-  for (const t of ['Máy cổ chai', 'Nếu thêm giờ', 'Thứ tự lô và ngày xong', 'Tăng ca / trộn sớm', 'Thông số đang dùng']) if (!ob.includes(t)) fail(`Thẻ Tối ưu & tăng ca thiếu "${t}"`);
+  for (const t of ['Máy cổ chai', 'Nếu thêm ca', 'Thứ tự lô và ngày xong', 'Máy chạy 2 ca, 3 ca', 'Đề xuất thêm ca', 'Thông số đang dùng']) if (!ob.includes(t)) fail(`Thẻ Tối ưu & thêm ca thiếu "${t}"`);
   if (!ob.includes('hạn dùng silicone 6 giờ') || !ob.includes('90 phút')) fail('Thẻ Tối ưu không hiện thông số mới (hạn dùng 6 giờ, QC 90 phút)');
-  await page.screenshot({ path: `${SHOTS}/20-toi-uu-tang-ca.png`, fullPage: true });
-  ok('Thẻ Tối ưu & tăng ca: máy cổ chai, nếu thêm giờ, thứ tự lô, thông số đang dùng');
-  const form = page.locator('form:has(input[name=date_from])');
-  if (!(await form.count())) fail('TP SX phải thấy form đề xuất tăng ca');
+  if (/Application error|PGRST/i.test(ob)) fail('Thẻ Tối ưu & thêm ca lỗi');
+  await page.screenshot({ path: `${SHOTS}/20-toi-uu-them-ca.png`, fullPage: true });
+  ok('Thẻ Tối ưu & thêm ca: máy cổ chai, nếu thêm ca / thêm người, thứ tự lô, máy chạy 2–3 ca, thông số đang dùng');
+  const form = page.locator('form:has(select[name=n_SIL])');
+  if (!(await form.count())) fail('TP SX phải thấy form đề xuất thêm ca');
   {
-    const filled = await form.locator('input[name^=ot_]').evaluateAll((els) => els.some((e) => e.value));
-    if (!filled) await form.locator('input[name^=ot_]').first().fill('60');
-    await form.locator('input[name=reason]').fill('E2E: rút ngắn kế hoạch');
+    for (const sel of await form.locator('select[name^=n_]').all()) await sel.selectOption('1');
+    await form.locator('select[name=n_SIL]').selectOption('2');
+    await form.locator('input[name=reason]').fill('E2E: máy trộn là cổ chai');
     await Promise.all([page.waitForURL(/ok=|err=/), form.locator('button', { hasText: 'Đề xuất Giám đốc duyệt' }).click()]);
     const msg = await flash(page);
-    if (!msg.includes('Giám đốc duyệt')) fail(`Đề xuất tăng ca: ${msg}`);
-    ok('TP SX đề xuất tăng ca theo MES, gửi Giám đốc duyệt');
+    if (!msg.includes('Giám đốc duyệt')) fail(`Đề xuất thêm ca: ${msg}`);
+    ok('TP SX đề xuất máy trộn + line silicone chạy 2 ca, gửi Giám đốc duyệt');
+    if ((await page.locator('form:has(input[name=note]) button:has-text("Duyệt")').count())) fail('TP SX không được tự duyệt thêm ca');
     await ctx.close();
     [ctx, page] = await ctxFor();
     await login(page, 'bgd@bmt.test');
     await page.goto(`${BASE}/lich-may?tab=toiuu`);
     await clickNav(page, 'form:has(input[name=note]) button:has-text("Duyệt")');
-    await expectOk(page, 'Giám đốc duyệt tăng ca');
-    if (!(await page.innerText('main')).includes('Đang áp dụng')) fail('Tăng ca đã duyệt phải hiện Đang áp dụng');
+    await expectOk(page, 'Giám đốc duyệt thêm ca');
+    const ab = await page.innerText('main');
+    if (!ab.includes('Đang áp dụng') && !ab.includes('Đã duyệt, từ')) fail('Thêm ca đã duyệt phải hiện Đang áp dụng');
+    if (!/Đang duyệt: .*SIL-MIX 2 ca/.test(ab)) fail('Thẻ thêm ca phải liệt kê máy đang chạy 2 ca');
+    // Giám đốc xếp lại lịch: lịch có ca 2, máy trộn + line silicone ghi "2 ca"
+    await page.goto(`${BASE}/lich-may?tab=lich`);
+    const rbt = page.locator('form button', { hasText: /Xếp lại lịch|Xếp lịch/ }).first();
+    if (await rbt.count()) { await Promise.all([page.waitForURL(/ok=|err=/), rbt.click()]); await flash(page); }
+    await page.goto(`${BASE}/lich-may?tab=lich`);
+    let gb = await page.innerText('main');
+    if (!gb.includes('2 ca')) { await page.goto(`${BASE}/lich-may?tab=lich&w=1`); gb = await page.innerText('main'); }
+    if (/Application error|PGRST/i.test(gb)) fail('Lịch máy lỗi sau khi thêm ca');
+    if (!gb.includes('3 ca/ngày') || !gb.includes('Ca B') || !gb.includes('2 ca')) fail('Lịch máy sau khi thêm ca phải có ca B và máy ghi "2 ca"');
+    await page.screenshot({ path: `${SHOTS}/22-lich-may-2-ca.png`, fullPage: true });
+    ok('Lịch máy: máy trộn + line silicone chạy 2 ca (cột ca B, máy khác nghỉ giờ ca 2)');
+    await ctx.close();
+    // TP SX đặt người làm ca 2 ở Nhân sự xưởng (thứ Hai → thứ Bảy tuần sau: Chủ nhật nghỉ, đủ 12 giờ khi về ca 1)
+    [ctx, page] = await ctxFor();
+    await login(page, 'sx.tp@bmt.test');
+    await page.goto(`${BASE}/nhan-su-xuong?tab=ca`);
+    const nb = await page.innerText('main');
+    if (!nb.includes('Máy chạy 2 ca, 3 ca và người làm ca đó') || !nb.includes('Chưa có người')) fail('Nhân sự xưởng → Ca 2, ca 3 phải liệt kê máy chạy ca 2 thiếu người');
+    const now = new Date(Date.now() + 7 * 3600e3);
+    const mon = new Date(now); mon.setUTCDate(now.getUTCDate() + ((8 - now.getUTCDay()) % 7 || 7));
+    const sat = new Date(mon); sat.setUTCDate(mon.getUTCDate() + 5);
+    const fri = new Date(mon); fri.setUTCDate(mon.getUTCDate() + 4);
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const sf = page.locator('form:has(select[name=shift])');
+    await sf.locator('select[name=shift]').selectOption('2');
+    await sf.locator('input[name=from]').fill(iso(mon));
+    await sf.locator('input[name=to]').fill(iso(fri));
+    await Promise.all([page.waitForURL(/ok=|err=/), sf.locator('button', { hasText: 'Lưu' }).click()]);
+    if (!(await flash(page)).includes('12 giờ')) fail('Ca 2 đến thứ Sáu rồi thứ Bảy về ca 1 (nghỉ 10 giờ) phải bị chặn');
+    ok('Đổi ca phải nghỉ ít nhất 12 giờ: ca 2 thứ Hai–thứ Sáu rồi thứ Bảy ca 1 bị chặn');
+    const sf2 = page.locator('form:has(select[name=shift])');
+    await sf2.locator('select[name=shift]').selectOption('2');
+    await sf2.locator('input[name=from]').fill(iso(mon));
+    await sf2.locator('input[name=to]').fill(iso(sat));
+    await clickNav(page, 'form:has(select[name=shift]) button:has-text("Lưu")');
+    await expectOk(page, 'TP SX đặt người làm ca 2 (thứ Hai – thứ Bảy)');
+    if (!(await page.innerText('main')).includes('Ca 2')) fail('Bảng Ca của người phải có người làm ca 2');
+    await page.screenshot({ path: `${SHOTS}/23-nhan-su-ca-2.png`, fullPage: true });
+    await ctx.close();
+    [ctx, page] = await ctxFor();
+    await login(page, 'bgd@bmt.test');
+    await page.goto(`${BASE}/lich-may?tab=toiuu`);
     await page.locator('form:has(button:has-text("Kết thúc sớm")) input[name=note]').first().fill('E2E: đủ năng lực');
     await clickNav(page, 'button:has-text("Kết thúc sớm")');
-    await expectOk(page, 'Giám đốc kết thúc tăng ca sớm');
+    await expectOk(page, 'Giám đốc kết thúc thêm ca sớm');
   }
   await ctx.close();
 }

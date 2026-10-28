@@ -50,7 +50,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
   const isBgd = hasRole(me.roles, ROLE.params), isKt = hasRole(me.roles, ROLE.rates);
   const edit = sp.sua ?? null;
   const E = (s: string, ok: boolean) => ok && edit === s;
-  const mine = [isBgd && 'ca làm việc, tham số xếp lịch, cách nhập dữ liệu máy, giới hạn tăng ca, tỷ lệ xếp lịch riêng', isKt && 'tốc độ chuẩn, phút đổi máy, thông số dòng chảy (QC, mét/bobin, hạn dùng silicone)', (isBgd || isKt) && 'thông số người đứng máy'].filter(Boolean).join('; ');
+  const mine = [isBgd && 'ca làm việc, tham số xếp lịch, cách nhập dữ liệu máy, giờ làm và làm thêm, tỷ lệ xếp lịch riêng', isKt && 'tốc độ chuẩn, phút đổi máy, thông số dòng chảy (QC, mét/bobin, hạn dùng silicone)', (isBgd || isKt) && 'thông số người đứng máy'].filter(Boolean).join('; ');
   const head = (sec: string, title: string, ok: boolean, owner: string) => (
     <div className="card-h"><h2>{title}</h2>
       {E(sec, ok) ? <Pill tone="info">Đang sửa</Pill>
@@ -69,6 +69,8 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
     </div>
   );
   const shifts = ['A', 'B', 'C'].map((c) => cfg.shifts.find((s) => s.code === c)!).filter(Boolean);
+  const shA = shifts.find((s) => s.code === 'A'), shB = shifts.find((s) => s.code === 'B');
+  const overlapB = Boolean(shA && shB && shB.start_time.slice(0, 5) < shA.end_time.slice(0, 5) && shB.start_time.slice(0, 5) > shA.start_time.slice(0, 5));
   const lbl = (k: string) => k === 'cutoff_time' ? cfg.cutoff_time : nf((cfg as unknown as Record<string, number>)[k], k === 'plc_dev_pct' ? 1 : 0);
 
   return (
@@ -111,16 +113,16 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
             {head('shifts', 'Ca làm việc', isBgd, 'Giám đốc')}
             <form action={saveShifts}>
               <div className="overflow-x-auto"><table className="tbl">
-                <thead><tr><th>Ca</th><th>Giờ</th><th className="num">Nghỉ (phút)</th><th className="num">Phút chạy</th><th>Trạng thái</th></tr></thead>
+                <thead><tr><th>Ca</th><th>Giờ</th><th className="num">Nghỉ (phút)</th><th className="num">Phút chạy</th><th>Cả xưởng</th></tr></thead>
                 <tbody>{shifts.map((s) => E('shifts', isBgd) ? (
-                  <tr key={s.code}><td><b>{s.code}</b></td>
+                  <tr key={s.code}><td><b>{s.code}</b> <span className="text-[12px] text-muted">ca {s.code === 'A' ? 1 : s.code === 'B' ? 2 : 3}</span></td>
                     <td className="whitespace-nowrap"><input name={`start_${s.code}`} defaultValue={s.start_time} className="inp mono inline-block w-[76px] py-1" aria-label={`Ca ${s.code} bắt đầu`} /> – <input name={`end_${s.code}`} defaultValue={s.end_time} className="inp mono inline-block w-[76px] py-1" aria-label={`Ca ${s.code} kết thúc`} /></td>
                     <td className="num"><input name={`break_${s.code}`} defaultValue={String(s.break_min)} className="inp w-[70px] py-1 text-right" aria-label={`Ca ${s.code} phút nghỉ`} /></td>
                     <td className="num text-muted">{shiftRun(s)}</td>
                     <td>{s.code === 'A' ? <Pill tone="ok">Luôn dùng</Pill> : <label className="flex items-center gap-1.5 text-[13.5px]"><input type="checkbox" name={`active_${s.code}`} value="1" defaultChecked={s.active} />Dùng</label>}</td></tr>
                 ) : (
-                  <tr key={s.code}><td><b>{s.code}</b></td><td className="mono">{s.start_time} – {s.end_time}</td><td className="num">{s.break_min}′</td><td className="num">{shiftRun(s)}</td>
-                    <td>{s.active ? <Pill tone="ok">Dùng</Pill> : <Pill>Tắt{s.code === 'B' ? ' · bật khi tuyển ca 2' : ''}</Pill>}</td></tr>
+                  <tr key={s.code}><td><b>{s.code}</b> <span className="text-[12px] text-muted">ca {s.code === 'A' ? 1 : s.code === 'B' ? 2 : 3}</span></td><td className="mono">{s.start_time} – {s.end_time}</td><td className="num">{s.break_min}′</td><td className="num">{shiftRun(s)}</td>
+                    <td>{s.code === 'A' || s.active ? <Pill tone="ok">Mọi máy</Pill> : <Pill>Chỉ máy được duyệt thêm ca</Pill>}</td></tr>
                 ))}</tbody>
               </table></div>
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3 text-[13.5px]">
@@ -130,7 +132,8 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
                   {DOW.map(([d, t]) => <label key={d} className="inline-flex items-center gap-1.5"><input type="checkbox" name="workday" value={d} defaultChecked={wd.includes(d)} />{t}</label>)}
                 </> : <b>{DOW.filter(([d]) => wd.includes(d)).map(([, t]) => t).join(', ')}</b>}
               </div>
-              {E('shifts', isBgd) ? foot('shifts', 'Ví dụ: Đã tuyển đủ người ca 2 từ 09/11.') : <p className="px-4 py-3 text-[12.5px] text-muted">Giai đoạn chạy thử 1 ca. Bật ca B khi đã có tổ trưởng và 4–5 công nhân ca 2.</p>}
+              {overlapB && <p className="border-t border-line px-4 py-3 text-[12.5px] text-warn">Ca B bắt đầu {shB!.start_time} trước khi ca A kết thúc {shA!.end_time}: phần trùng không tính thêm giờ máy. Máy chạy 2 ca nên đặt ca B nối tiếp ca A (ví dụ {shA!.end_time}–01:00), ca C nối tiếp ca B.</p>}
+              {E('shifts', isBgd) ? foot('shifts', 'Ví dụ: Máy trộn và line silicone chạy 2 ca từ 03/11, đặt ca 2 17:00–01:00.') : <p className="px-4 py-3 text-[12.5px] text-muted">Máy chậm thì chạy 2 ca, 3 ca theo giờ ca B (ca 2), ca C (ca 3): TP SX đề xuất ở <Link className="link" href="/lich-may?tab=toiuu">Lịch máy → Tối ưu &amp; thêm ca</Link>, Giám đốc duyệt; người làm ca 2, ca 3 đặt ở <Link className="link" href="/nhan-su-xuong">Nhân sự xưởng</Link>. Tích &quot;Cả xưởng&quot; chỉ khi mọi máy cùng chạy ca đó.</p>}
             </form>
           </section>
 
@@ -186,7 +189,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
 
 
         <section className="card">
-          {head('flow', 'Dòng chảy, máy trộn, tăng ca', isBgd || isKt, 'Giám đốc, TP Kỹ thuật/QA')}
+          {head('flow', 'Dòng chảy, máy trộn, giờ làm', isBgd || isKt, 'Giám đốc, TP Kỹ thuật/QA')}
           <form action={saveFlow}>
             <input type="hidden" name="bgd" value={isBgd ? '1' : '0'} />
             <div className="grid gap-4 p-4 lg:grid-cols-3 [&>*]:min-w-0">
@@ -216,19 +219,21 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
                 </tbody></table>
               </div>
               <div>
-                <h3 className="mb-2 text-[13.5px] font-semibold">Giới hạn tăng ca, gom lô <span className="font-normal text-muted">(Giám đốc)</span></h3>
+                <h3 className="mb-2 text-[13.5px] font-semibold">Giờ làm, làm thêm, gom lô <span className="font-normal text-muted">(Giám đốc)</span></h3>
+                <input type="hidden" name="day_max_old" value={String(flowMeta.levers.day_max_h)} />
                 <table className="tbl"><tbody>
-                  {([['mix_early_max_h', 'Trộn sớm trước ca tối đa', flowMeta.levers.early_max_h, 'giờ'], ['ot_max_min', 'Tăng ca tối đa mỗi ngày', flowMeta.levers.ot_max_min, 'phút/người'],
-                    ['ot_month_h', 'Tăng ca tối đa mỗi tháng', flowMeta.levers.ot_month_h, 'giờ/người']] as [string, string, number, string][]).map(([k, l, v, u]) => (
+                  {([['day_max_h', 'Giờ làm tối đa mỗi người mỗi ngày (cả làm thêm)', flowMeta.levers.day_max_h, 'giờ'],
+                    ['ot_max_min', 'Làm thêm tối đa mỗi ngày (ca dài khi thiếu người)', flowMeta.levers.ot_max_min, 'phút/người'],
+                    ['ot_month_h', 'Làm thêm tối đa mỗi tháng', flowMeta.levers.ot_month_h, 'giờ/người'], ['mix_early_max_h', 'Trộn sớm trước ca tối đa (cách cũ)', flowMeta.levers.early_max_h, 'giờ']] as [string, string, number, string][]).map(([k, l, v, u]) => (
                     <tr key={k}><td>{l}</td><td className="num whitespace-nowrap">{E('flow', isBgd) ? <input name={k} defaultValue={numIn(v)} className="inp inline-block w-[80px] py-1 text-right" aria-label={l} /> : <b>{nf(v, Number.isInteger(v) ? 0 : 1)}</b>} {u}</td></tr>
                   ))}
                   <tr><td>Khung coi như bắt đầu cùng lúc (gom lô)</td><td className="num whitespace-nowrap">{E('flow', isBgd) ? <input name="pick_window_min" defaultValue={F.pick_window_min == null ? '' : numIn(F.pick_window_min)} placeholder="nửa ca" className="inp inline-block w-[80px] py-1 text-right" aria-label="Khung coi như cùng lúc" /> : <b>{F.pick_window_min == null ? 'nửa ca' : nf(F.pick_window_min)}</b>} phút</td></tr>
-                  <tr><td colSpan={2} className="text-[12.5px] text-muted">Luật Lao động 2019: làm thêm ≤ 50 % giờ làm bình thường trong ngày, ≤ 40 giờ/tháng, người lao động đồng ý. Tăng ca, trộn sớm cụ thể: TP SX đề xuất ở Lịch máy → Tối ưu &amp; tăng ca, Giám đốc duyệt.</td></tr>
+                  <tr><td colSpan={2} className="text-[12.5px] text-muted">Luật Lao động 2019 (NĐ 145/2020): giờ làm bình thường + làm thêm ≤ 12 giờ/ngày, làm thêm ≤ 40 giờ/tháng, người lao động đồng ý; đổi ca nghỉ ít nhất 12 giờ. Máy chậm thì chạy thêm ca: TP SX đề xuất ở Lịch máy → Tối ưu &amp; thêm ca, Giám đốc duyệt; ca dài (người ca trước làm thêm) MES chỉ dùng khi thiếu người.</td></tr>
                 </tbody></table>
               </div>
             </div>
             {E('flow', isBgd || isKt) ? foot('flow', 'Ví dụ: Đo thực tế tuần 44: QC trả kết quả trung bình 90 phút, silicone pha dùng tối đa 8 giờ.')
-              : <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Thuật toán xếp lịch không dùng số cố định: đổi các thông số này (hoặc tốc độ máy) rồi bấm Xếp lại lịch, MES tự tính lại gối đầu, máy cổ chai, thứ tự lô và đề xuất tăng ca.</p>}
+              : <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Thuật toán xếp lịch không dùng số cố định: đổi các thông số này (hoặc tốc độ máy) rồi bấm Xếp lại lịch, MES tự tính lại gối đầu, máy cổ chai, thứ tự lô và đề xuất thêm ca.</p>}
           </form>
         </section>
         <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">

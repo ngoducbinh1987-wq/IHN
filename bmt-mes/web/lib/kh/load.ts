@@ -1,7 +1,7 @@
 // Đọc dữ liệu module Kế hoạch sản xuất từ database và dựng lịch máy để hiển thị / xếp lại.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  type Absence, type Attend, type Calendar, type Config, type Cover, type CrewDay, type FlowCfg, type MachineInfo, type Op, type OperatorInfo, type Order,
+  type Absence, type Attend, type Calendar, type Config, type Cover, type CrewDay, type FlowCfg, type MachineInfo, type MachineShift, type Op, type OperatorInfo, type OpShift, type Order,
   type PrevSchedule, type Schedule, type Slot, type Window,
   OPS, dayIndex, finishInfo, flowOf, isWorkday, makeCalendar, nextWorkday, peopleOf, schedule, shiftPlan, toMin,
 } from './scheduler';
@@ -33,6 +33,15 @@ export function vnNow(at: Date = new Date()) {
 // Một thời điểm (ngày + phút trong ngày, giờ VN) đổi ra phút xếp lịch; ngày nghỉ → đầu ngày làm việc kế tiếp
 export function timeT(cal: Calendar, t: { date: string; min: number }): number {
   const di = dayIndex(cal, t.date);
+  if (cal.SPD > 1 && isWorkday(t.date, cal.wd)) {
+    // nhiều ca: giờ nằm trong ca nào thì tính theo giờ ca đó; giữa hai ca → đầu ca sau; sau ca cuối → hết ngày
+    for (let j = 0; j < cal.SPD; j++) {
+      const a = toMin(cal.shifts[j].start_time); let b = toMin(cal.shifts[j].end_time); if (b <= a) b += 1440;
+      if (t.min < a) return (di * cal.SPD + j) * cal.S;
+      if (t.min < b) return (di * cal.SPD + j + (t.min - a) / (b - a)) * cal.S;
+    }
+    return (di + 1) * cal.SPD * cal.S;
+  }
   const first = cal.shifts[0] ? toMin(cal.shifts[0].start_time) : 360;
   const shiftLen = cal.shifts[0] ? cal.RUN + Number(cal.shifts[0].break_min) : 480;
   const sIn = isWorkday(t.date, cal.wd) ? Math.max(0, Math.min(cal.SPD, (t.min - first) / shiftLen)) : 0;
@@ -174,7 +183,7 @@ export async function loadConfig(db: Db) {
   };
   const flowMeta = {
     qc_set: qcSet ?? 120, qc_learn: c.qc_learn !== false, qc_learned: { median: learned.median_min == null ? null : Number(learned.median_min), n: Number(learned.n ?? 0) }, qc_used: flowOf(cfg).qc_min,
-    levers: { ot_max_min: num(c.ot_max_min) ?? 240, ot_month_h: num(c.ot_month_h) ?? 40, early_max_h: num(c.mix_early_max_h) ?? 0 } as Required<Pick<Levers, 'ot_max_min' | 'ot_month_h' | 'early_max_h'>>,
+    levers: { ot_max_min: num(c.ot_max_min) ?? 240, ot_month_h: num(c.ot_month_h) ?? 40, early_max_h: num(c.mix_early_max_h) ?? 0, day_max_h: num(c.day_max_h) ?? 12 },
     ot: { extra_min: (c.extra_min ?? {}) as Record<string, number>, mix_early_h: Number(c.mix_early_h ?? 0), from: (c.ot_from as string | null) ?? null, until: (c.ot_until as string | null) ?? null,
       request_id: (c.ot_request_id as string | null) ?? null,
       // đang có hiệu lực hôm nay (view tính theo giờ VN)
@@ -185,7 +194,11 @@ export async function loadConfig(db: Db) {
   cfg.people = {
     start_min: num(c.start_min), bobbin_min: num(c.bobbin_min), watch_max: num(c.watch_max), pack_crew: num(c.pack_crew), pack_one_pct: num(c.pack_one_pct),
     absences: ((c.absences ?? []) as Absence[]), covers: ((c.covers ?? []) as Cover[]), crews: ((c.crews ?? []) as CrewDay[]),
+    // Máy chạy 2–3 ca (migration 5300): ca của người, giờ làm tối đa/ngày, làm thêm tối đa ngày / tháng (ca dài khi thiếu người)
+    op_shifts: ((c.op_shifts ?? []) as OpShift[]).map((x) => ({ ...x, shift: Number(x.shift) })),
+    day_max_h: num(c.day_max_h), ot_day_min: num(c.ot_max_min), ot_month_h: num(c.ot_month_h),
   };
+  cfg.machine_shifts = ((c.machine_shifts ?? []) as MachineShift[]).map((x) => ({ ...x, shifts: Number(x.shifts) }));
   cfg.avail = Object.fromEntries(Object.entries((c.avail ?? {}) as Record<string, { fill: number; down_pct?: number; days?: number }>)
     .map(([k, v]) => [k, { fill: Number(v.fill), down_pct: Number(v.down_pct ?? 0), days: Number(v.days ?? 0) }]));
   const maintPlans = ((c.maint_plans ?? []) as MaintPlanRow[]).map((p) => ({ ...p, stop_minutes: Number(p.stop_minutes) }));
@@ -358,7 +371,8 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
   const shiftLen = cal.shifts[0] ? cal.RUN + Number(cal.shifts[0].break_min) : 480;
   const el = now.min - first;
   const sIn = el <= 0 ? 0 : Math.min(SPD, el / shiftLen);
-  const nowT = Math.max(0, (todayIdx * SPD + (todayIdx >= 0 && cal.days.includes(now.date) ? sIn : 0)) * S);
+  const nowT = SPD > 1 && todayIdx >= 0 && cal.days.includes(now.date) ? Math.max(0, timeT(cal, now))
+    : Math.max(0, (todayIdx * SPD + (todayIdx >= 0 && cal.days.includes(now.date) ? sIn : 0)) * S);
   const frozenFrom = Math.max(0, todayIdx), frozenTo = Math.max(0, todayIdx + base.cfg.frozen_days);
 
   // Lịch cần xếp lại khi tham số đổi sau lần xếp gần nhất
@@ -413,7 +427,12 @@ export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?
   // Lô TP SX đã duyệt lịch: giữ chỗ trên lịch máy khi xếp lại
   const keep = new Set(kh.lines.filter((l) => l.lot_approved_at).map((l) => l.id));
   const sopt = { from: prev, boundary: prev ? boundaryDay * cal.SPD * cal.S : 0, split: opt.split, credit: opt.credit, keep, windows };
-  const ctx = { cfg: kh.cfg, cal, machines: kh.machines, operators: kh.operators };
+  // Bộ tối ưu thử thêm ca 2 / ca 3: số ca mỗi ngày đổi thì dựng lại lịch ca, mốc xếp lại, khoảng máy dừng theo lịch mới
+  const remake = (cfg2: Config) => {
+    const cal2 = makeCalendar(cfg2, base);
+    return { cal: cal2, opt: { ...sopt, boundary: prev ? boundaryDay * cal2.SPD * cal2.S : 0, windows: machineWindows(kh.machines, kh.maint, cal2, kh.now, kh.maintPlans, kh.sch) } };
+  };
+  const ctx = { cfg: kh.cfg, cal, machines: kh.machines, operators: kh.operators, remake };
   let ords = orders, best: OptResult | null = null;
   let sch: Schedule;
   if (opt.optimize) {
@@ -423,9 +442,9 @@ export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?
   return { cal, sch, orders: ords, fin: finishInfo(sch, cal, ords), boundaryDay, windows, early: early && !opt.split, best };
 }
 
-// Phân tích tối ưu cho thẻ "Tối ưu & tăng ca": máy cổ chai, nếu thêm giờ thì sao, đề xuất tăng ca / trộn sớm để kịp ngày chốt
+// Phân tích tối ưu cho thẻ "Tối ưu & thêm ca": máy cổ chai, nếu thêm ca / thêm người thì sao, đề xuất máy chạy 2–3 ca để kịp ngày chốt
 export function analyze(kh: Kh, mode: 'due' | 'fastest' = 'due') {
-  const lv: Levers = { ...kh.flowMeta.levers, mode, time_ms: 4000, levers: true };
+  const lv: Levers = { mode, time_ms: 6000, levers: true };
   return rebuild(kh, kh.orders, { optimize: true, levers: lv });
 }
 
@@ -453,20 +472,21 @@ export async function carryOver(db: Db, kh: Kh) {
   const { data } = await app(db).from('v_kh_reports').select('work_date, shift_code, machine_code, status, lines').gte('work_date', from).lte('work_date', to);
   const reps = (data ?? []) as { work_date: string; shift_code: string; machine_code: string; status: string; lines: { key?: string; declared_m?: number; plc_m?: number }[] }[];
   let checked = 0, missingReports = 0;
+  // Theo máy × ngày: cộng mét kế hoạch mọi ca của ngày, so với mét khai báo trên mọi báo cáo ca đã xác nhận của máy ngày đó
+  // (máy chạy 2–3 ca có thể báo cáo theo từng ca hoặc gộp)
   for (let di = 0; di < kh.todayIdx && di < kh.cal.days.length; di++) {
     const date = kh.cal.days[di];
-    for (let j = 0; j < kh.cal.SPD; j++) {
-      const s = di * kh.cal.SPD + j, code = kh.cal.shifts[j].code;
-      for (const m of kh.machines) {
-        const plan = shiftPlan(kh.sch.byMachine.get(m.code) ?? [], s, kh.cal.S);
-        if (!plan.length) continue;
-        const rep = reps.find((r) => r.work_date === date && r.shift_code === code && r.machine_code === m.code && r.status === 'CONFIRMED');
-        if (!rep) { missingReports++; continue; }
-        checked++;
-        for (const p of plan) {
-          const act = rep.lines.filter((l) => l.key === p.sl.key).reduce((a, l) => a + Number(l.declared_m ?? l.plc_m ?? 0), 0);
-          credit.set(p.sl.key, (credit.get(p.sl.key) ?? 0) + (p.m - act));
-        }
+    for (const m of kh.machines) {
+      const plan = Array.from({ length: kh.cal.SPD }, (_, j) => shiftPlan(kh.sch!.byMachine.get(m.code) ?? [], di * kh.cal.SPD + j, kh.cal.S)).flat();
+      if (!plan.length) continue;
+      const reps2 = reps.filter((r) => r.work_date === date && r.machine_code === m.code && r.status === 'CONFIRMED');
+      if (!reps2.length) { missingReports++; continue; }
+      checked++;
+      const planned = new Map<string, number>();
+      for (const p of plan) planned.set(p.sl.key, (planned.get(p.sl.key) ?? 0) + p.m);
+      for (const [k, pm] of planned) {
+        const act = reps2.flatMap((r) => r.lines).filter((l) => l.key === k).reduce((a, l) => a + Number(l.declared_m ?? l.plc_m ?? 0), 0);
+        credit.set(k, (credit.get(k) ?? 0) + (pm - act));
       }
     }
   }

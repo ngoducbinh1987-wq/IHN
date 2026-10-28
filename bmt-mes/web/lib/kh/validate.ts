@@ -27,8 +27,25 @@ export function validateSchedule(
       if (list[i].f < last.t - eps && list[i].f >= from - eps) bad.push(`người ${p} có mặt cùng lúc ở ${last.m} và ${list[i].m} (${list[i].f.toFixed(0)})`);
       if (list[i].t > last.t) last = list[i];
     }
+    const R = sch.roster;
+    const hitIv = (iv: [number, number][] | undefined, f: number, t: number) => (iv ?? []).some(([x, y]) => f < y - eps && t > x + eps);
     for (const a of list) {
       if (a.t < from + eps) continue;
+      if (R?.multi) {
+        // máy chạy nhiều ca: người chỉ có mặt trong ca của mình (hoặc giờ làm ca dài), không có mặt lúc vắng
+        if (hitIv(R.off[p], Math.max(a.f, from), a.t)) bad.push(`người ${p} có mặt ở ${a.m} ngoài ca của mình (${a.f.toFixed(0)})`);
+        if (hitIv(R.absent[p], Math.max(a.f, from), a.t)) bad.push(`người ${p} vắng nhưng có mặt ở ${a.m} (${a.f.toFixed(0)})`);
+        if (ctx.operators && !R.virtual.includes(p)) {
+          const w = ctx.operators.find((x) => x.code === p);
+          for (let di = Math.floor(Math.max(a.f, from) / DAY + 1e-9); di * DAY < a.t - eps; di++) {
+            const d = cal.days[di]; if (!d) continue;
+            const crew = P.crews.find((c) => c.machine === a.m && c.date === d);
+            const ok = Boolean(crew?.members?.includes(p) || w?.skills.includes(a.m) || P.covers.some((c) => c.code === p && c.machine === a.m && c.from <= d && d <= c.to));
+            if (!ok) bad.push(`người ${p} không được đứng ${a.m} ngày ${d}`);
+          }
+        }
+        continue;
+      }
       // mọi nửa ngày mà đoạn có mặt đi qua (đoạn đóng gói có thể từ sáng sang chiều)
       const f0 = Math.max(a.f, from);
       for (let di = Math.floor(f0 / DAY + 1e-9); di * DAY < a.t - eps; di++) {
@@ -53,6 +70,9 @@ export function validateSchedule(
     const run = (s.attend ?? []).filter((a) => a.k === 'RUN' && a.f <= s.start + eps && a.t >= s.end - eps);
     if (!run.length || run.length !== (s.crew ?? run.length)) bad.push(`đóng gói ${s.key} thiếu người đứng suốt khối`);
   }
+  // 2b. Máy chạy ít ca hơn lịch / ca thêm thiếu người: không có việc trong giờ máy không chạy
+  for (const s of sch.slots) if (s.start >= from - eps && s.end > s.start + eps)
+    for (const [x, y] of sch.roster?.closed[s.machine] ?? []) if (s.start < y - eps && s.end > x + eps) { bad.push(`${s.key} trên ${s.machine} chạy vào giờ máy không chạy (${x.toFixed(0)}–${y.toFixed(0)})`); break; }
   // 3. Đủ mét từng việc
   const tasks = buildTasks(orders, cfg);
   for (const t of tasks) {

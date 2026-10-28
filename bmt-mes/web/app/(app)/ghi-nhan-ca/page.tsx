@@ -4,7 +4,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
 import { ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import { DT_REASONS, SCRAP_REASONS, type Sample, sampleTemplate, shiftLines } from '@/lib/kh/shift';
-import { OP_NAME, UNIT, type Op, isWorkday } from '@/lib/kh/scheduler';
+import { OP_NAME, UNIT, type Op, isWorkday, shiftNoOf } from '@/lib/kh/scheduler';
 import { df, nf, numIn } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -31,7 +31,9 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
   const db = await createClient();
   const kh = await loadKh(db, { roles: me.roles });
   const date = sp.d && /^\d{4}-\d{2}-\d{2}$/.test(sp.d) ? sp.d : kh.now.date;
-  const shifts = kh.cal.shifts;
+  // Ca 2, ca 3 chỉ hiện khi cả xưởng chạy ca đó hoặc có máy được duyệt chạy thêm ca ngày này
+  const shifts = kh.cal.shifts.filter((s, j) => j === 0 || kh.cfg.shifts.find((x) => x.code === s.code)?.active
+    || (kh.cfg.machine_shifts ?? []).some((x) => x.from <= date && date <= x.to && x.shifts >= shiftNoOf(s.code)));
   const shift = shifts.find((s) => s.code === sp.s)?.code ?? shifts[0]?.code ?? 'A';
   const { data: repRows } = await db.schema('app').from('v_kh_reports').select('*').eq('work_date', date).eq('shift_code', shift);
   const reports = (repRows ?? []) as Report[];

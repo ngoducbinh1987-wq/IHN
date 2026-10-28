@@ -12,6 +12,11 @@
 // hai đoạn có mặt cùng lúc; người vắng không xếp; kiêm nhiệm tạm (QLSX phân công) được đứng máy chưa có tay nghề.
 // Máy không chạy được (dừng, hỏng, bảo dưỡng, ngừng dùng, bảo dưỡng giữ chỗ) là khối trên máy; tỷ lệ xếp lịch riêng từng máy
 // (trừ tỷ lệ hỏng 90 ngày) làm máy đó chạy ít mét hơn trong mỗi phút xếp lịch.
+// Máy chạy 2–3 ca (anh Bình duyệt 28/10/2026): Giám đốc duyệt máy nào chạy thêm ca 2 (giờ ca B), ca 3 (giờ ca C) từ ngày … đến ngày …;
+// lịch thêm các ca này vào ngày, máy không chạy ca đó thì đóng giờ đó (khối việc dừng, ca sau chạy tiếp). Người làm theo ca của mình
+// (mặc định ca 1; TP SX đặt ca 2 / ca 3 ở Nhân sự xưởng). Ca thêm không có người đứng được máy thì máy không chạy ca đó; người ca trước
+// làm ca dài (tối đa day_max_h giờ/ngày, làm thêm ≤ ot_day_min phút/ngày, ≤ ot_month_h giờ/tháng) chỉ khi thiếu người, hết giờ làm thêm
+// tháng thì thôi. Máy trộn luôn cần 1 người đứng riêng suốt giờ trộn.
 
 export type Op = 'CD0' | 'CD1' | 'CD2' | 'CD3' | 'CD5' | 'CD6';
 export const OPS: Op[] = ['CD0', 'CD1', 'CD2', 'CD3', 'CD5', 'CD6'];
@@ -37,7 +42,18 @@ export type Config = {
   flow?: FlowCfg;        // thông số dòng chảy (gối đầu theo bobin, máy trộn, hạn dùng silicone, tăng ca)
   people?: PeopleCfg;    // người đứng máy: phút có mặt, tổ đóng gói, lịch vắng, kiêm nhiệm tạm
   avail?: Record<string, { fill: number; down_pct?: number; days?: number }>; // tỷ lệ xếp lịch riêng từng máy (đủ dữ liệu)
+  machine_shifts?: MachineShift[]; // máy chạy 2 / 3 ca theo khoảng ngày (Giám đốc duyệt)
 };
+// Máy chạy nhiều ca: máy, từ ngày, đến ngày, số ca (2 hoặc 3); ngày không có dòng nào: 1 ca
+export type MachineShift = { machine: string; from: string; to: string; shifts: number };
+// Ca làm việc của người theo khoảng ngày (ngoài khoảng: ca 1)
+export type OpShift = { code: string; from: string; to: string; shift: number };
+// Ca số ↔ mã ca: ca 1 = A, ca 2 = B, ca 3 = C (giờ ca ở Tham số xếp lịch)
+export const shiftNoOf = (code: string) => (code === 'B' ? 2 : code === 'C' ? 3 : 1);
+export const shiftsOn = (list: MachineShift[] | undefined, machine: string, date: string | null) =>
+  !date ? 1 : (list ?? []).reduce((a, x) => (x.machine === machine && x.from <= date && date <= x.to ? Math.max(a, Number(x.shifts)) : a), 1);
+export const opShiftOn = (list: OpShift[] | undefined, code: string, date: string | null) =>
+  (!date ? undefined : (list ?? []).find((x) => x.code === code && x.from <= date && date <= x.to)?.shift) ?? 1;
 // Người đứng máy
 export type Absence = { code: string; from: string; to: string; part: 'FULL' | 'AM' | 'PM' };
 export type Cover = { code: string; machine: string; from: string; to: string };
@@ -49,8 +65,12 @@ export type PeopleCfg = {
   pack_crew?: number;      // máy đóng gói: số người mặc định
   pack_one_pct?: number;   // đóng gói 1 người: % tốc độ
   absences?: Absence[]; covers?: Cover[]; crews?: CrewDay[];
+  op_shifts?: OpShift[];   // người làm ca 2 / ca 3 theo khoảng ngày
+  day_max_h?: number;      // giờ làm tối đa mỗi người mỗi ngày (cả làm thêm), luật ≤ 12
+  ot_day_min?: number;     // làm thêm tối đa mỗi ngày (phút)
+  ot_month_h?: number;     // làm thêm tối đa mỗi tháng (giờ/người)
 };
-export const PEOPLE_DEFAULT = { start_min: 20, bobbin_min: 5, watch_max: 6, pack_crew: 2, pack_one_pct: 50 };
+export const PEOPLE_DEFAULT = { start_min: 20, bobbin_min: 5, watch_max: 6, pack_crew: 2, pack_one_pct: 50, day_max_h: 12, ot_day_min: 240, ot_month_h: 40 };
 export function peopleOf(cfg: Pick<Config, 'people'>) {
   const p = cfg.people ?? {};
   const n = (v: unknown, d: number, lo: number, hi: number) => (v == null || Number.isNaN(Number(v)) ? d : Math.min(hi, Math.max(lo, Number(v))));
@@ -58,7 +78,9 @@ export function peopleOf(cfg: Pick<Config, 'people'>) {
     start_min: n(p.start_min, PEOPLE_DEFAULT.start_min, 0, 240), bobbin_min: n(p.bobbin_min, PEOPLE_DEFAULT.bobbin_min, 0, 60),
     watch_max: n(p.watch_max, PEOPLE_DEFAULT.watch_max, 1, 30), pack_crew: Math.round(n(p.pack_crew, PEOPLE_DEFAULT.pack_crew, 1, 2)),
     pack_one_pct: n(p.pack_one_pct, PEOPLE_DEFAULT.pack_one_pct, 10, 100),
-    absences: p.absences ?? [], covers: p.covers ?? [], crews: p.crews ?? [],
+    absences: p.absences ?? [], covers: p.covers ?? [], crews: p.crews ?? [], op_shifts: p.op_shifts ?? [],
+    day_max_h: n(p.day_max_h, PEOPLE_DEFAULT.day_max_h, 8, 12), ot_day_min: n(p.ot_day_min, PEOPLE_DEFAULT.ot_day_min, 0, 240),
+    ot_month_h: n(p.ot_month_h, PEOPLE_DEFAULT.ot_month_h, 0, 300),
   };
 }
 // Máy cần người đứng liên tục (máy trộn, máy đóng gói); máy khác tự chạy
@@ -191,8 +213,21 @@ export type OpSpan = { start: number; end: number; left: number };
 export type Schedule = {
   slots: Slot[]; byMachine: Map<string, Slot[]>; opDone: Map<string, OpSpan>; unplaced: Task[];
   S: number; SPD: number; RUN: number;
+  roster?: Roster;  // máy chạy nhiều ca: giờ máy không chạy, người ngoài ca, thiếu người, ca dài
   mix?: MixLog;   // máy trộn làm nguồn cấp: năng lực, phần đã dùng, từng lần cấp (để kiểm hạn dùng)
   warnings?: string[]; // thiếu thông số (tốc độ, phút đổi máy, máy trộn…) cần khai báo
+};
+// Phân ca: máy chạy ca nào, người nào làm ca nào, thiếu người, người làm ca dài (làm thêm)
+export type Roster = {
+  multi: boolean;                                   // lịch có ca thêm hoặc người làm ca 2 / ca 3
+  closed: Record<string, [number, number][]>;       // máy: khoảng không chạy (máy không chạy ca này / ca này không có người)
+  off: Record<string, [number, number][]>;          // người: khoảng ngoài ca của mình
+  absent: Record<string, [number, number][]>;       // người: khoảng vắng (theo ca của người đó)
+  shortages: { date: string; shift: string; machine: string; why: string }[];
+  ext: { code: string; date: string; shift: string; hours: number; machines: string[] }[]; // ca dài: người ca trước làm thêm
+  ot: Record<string, Record<string, number>>;       // giờ làm thêm (ca dài) theo người, tháng yyyy-mm
+  posts: { date: string; shift: string; machine: string; people: string[]; ext: boolean }[]; // ca thêm: máy – người đứng được
+  virtual: string[];                                // người giả định (bộ tối ưu tính "nếu đủ người")
 };
 // Nhật ký máy trộn (giờ thật tính từ 01/01/1970, theo giờ trên lịch): mỗi khoảng trộn và từng lần cấp cho line
 export type MixLog = {
@@ -207,7 +242,8 @@ export const toMin = (h: string) => { const [a, b] = h.slice(0, 5).split(':').ma
 export const shiftRun = (s: Pick<ShiftCfg, 'start_time' | 'end_time' | 'break_min'>) =>
   (((toMin(s.end_time) - toMin(s.start_time)) + 1440) % 1440 || 1440) - Number(s.break_min);
 
-export type Calendar = { S: number; SPD: number; RUN: number; shifts: ShiftCfg[]; base: string; days: string[]; wd: number[] };
+export type Calendar = { S: number; SPD: number; RUN: number; shifts: ShiftCfg[]; base: string; days: string[]; wd: number[];
+  extra?: boolean[] }; // extra[j]: ca j chỉ có vì máy chạy thêm ca (không phải ca cả xưởng)
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const parse = (s: string) => new Date(s + 'T00:00:00Z');
@@ -226,16 +262,23 @@ export function workdaysBetween(a: string, b: string, wd: number[] = DEFAULT_WD)
   return n;
 }
 
-export function makeCalendar(cfg: Pick<Config, 'fill_pct' | 'shifts'> & { workdays?: number[] | null }, base: string, horizon = 260): Calendar {
+// Ca của lịch: các ca cả xưởng chạy (Tham số xếp lịch) + ca 2 / ca 3 khi có máy được duyệt chạy thêm ca trong tầm lịch.
+// Số phút xếp lịch mỗi ca (S) tính theo ca cả xưởng: ca thêm ngắn hơn hoặc trùng giờ ca 1 thì phần thừa đóng lại trong bộ xếp lịch.
+// Có máy chạy thêm ca thì lịch luôn có ca 2 và ca 3 (dù chỉ có máy chạy 2 ca) để lịch 2 ca và 3 ca so sánh được với nhau.
+export function makeCalendar(cfg: Pick<Config, 'fill_pct' | 'shifts'> & { workdays?: number[] | null; machine_shifts?: MachineShift[] | null }, base: string, horizon = 260): Calendar {
   const shifts = cfg.shifts.filter((s) => s.active).sort((a, b) => a.code.localeCompare(b.code));
-  const used = shifts.length ? shifts : cfg.shifts.filter((s) => s.code === 'A');
-  const SPD = used.length;
-  const RUN = Math.round(used.reduce((a, s) => a + shiftRun(s), 0) / SPD);
-  const S = Math.round(RUN * Number(cfg.fill_pct) / 100);
+  const own = shifts.length ? shifts : cfg.shifts.filter((s) => s.code === 'A');
   const wd = cfg.workdays?.length ? cfg.workdays.map(Number) : DEFAULT_WD;
   const days: string[] = [];
   for (let d = nextWorkday(base, wd); days.length < horizon; d = addDays(d, 1)) if (isWorkday(d, wd)) days.push(d);
-  return { S, SPD, RUN, shifts: used, base: days[0], days, wd };
+  const need = Math.max(1, ...(cfg.machine_shifts ?? []).filter((x) => x.to >= days[0] && x.from <= days[days.length - 1]).map((x) => Number(x.shifts) || 1));
+  // có máy chạy thêm ca: lịch có đủ ca 2 và ca 3 (ca không máy nào chạy thì trống) – lịch dựng giống nhau dù máy chạy 2 hay 3 ca
+  const add = need >= 2 ? cfg.shifts.filter((s) => !own.includes(s) && (s.code === 'B' || s.code === 'C')) : [];
+  const used = [...own, ...add].sort((a, b) => a.code.localeCompare(b.code));
+  const SPD = used.length;
+  const RUN = Math.round(own.reduce((a, s) => a + shiftRun(s), 0) / own.length);
+  const S = Math.round(RUN * Number(cfg.fill_pct) / 100);
+  return { S, SPD, RUN, shifts: used, base: days[0], days, wd, ...(add.length ? { extra: used.map((s) => add.includes(s)) } : {}) };
 }
 // Chỉ số ngày làm việc của một ngày (ngày nghỉ → ngày làm việc kế tiếp); trước ngày gốc → số âm
 export function dayIndex(cal: Calendar, date: string): number {
@@ -417,6 +460,7 @@ export type ScheduleOpts = {
   credit?: Map<string, number>;      // mét chưa làm được ở ca đã qua (theo báo cáo ca) cộng lại vào việc
   keep?: Set<string>;                // lô TP SX đã duyệt lịch: giữ nguyên chỗ trên lịch máy (cả sau mốc)
   windows?: Window[];                // máy không chạy được: việc chưa chạy trong khoảng này xếp lại, việc mới tránh khoảng này
+  assumeStaff?: boolean;             // ca thêm coi như đủ người (bộ tối ưu tính "nếu đủ người" trước khi TP SX phân người)
 };
 type Block = [number, number, string];
 // Dời điểm bắt đầu qua các khối chồng lên [st, st + len); không còn chỗ (khối vô hạn) → Infinity
@@ -495,17 +539,43 @@ export function schedule(
   const ND = cal.days.length;
   const dateAt = (di: number) => (di >= 0 && di < ND ? cal.days[di] : null);
   const dayOf = (t: number) => Math.floor(t / DAY + 1e-9);
+  // Ca của lịch: ca cả xưởng (mọi máy, mọi người ca 1) và ca thêm (chỉ máy được duyệt chạy thêm ca, người làm ca đó)
+  const EXTRA = cal.extra ?? cal.shifts.map(() => false);
+  const segNo: number[] = cal.shifts.map((x) => shiftNoOf(x.code));
+  const MS = cfg.machine_shifts ?? [];
+  // Chế độ "đủ người" (bộ tối ưu): mỗi máy chạy thêm ca có người giả định đứng máy ca đó (máy đóng gói: đủ tổ)
+  const virt: OperatorInfo[] = [], vShifts: OpShift[] = [];
+  if (opt.assumeStaff) for (const m of ctx.machines) {
+    const top = Math.max(1, ...MS.filter((x) => x.machine === m.code).map((x) => Number(x.shifts)));
+    for (let no = 2; no <= top; no++) for (let i = 0; i < (m.machine_type === 'PACKER' ? P.pack_crew : 1); i++) {
+      const code = `${m.code}·ca${no}${m.machine_type === 'PACKER' && P.pack_crew > 1 ? '·' + (i + 1) : ''}`;
+      virt.push({ code, job: `Người giả định ca ${no}`, extra: null, is_deputy: false, keeps_fg: false, skills: [m.code], learning: [], full_name: null });
+      vShifts.push({ code, from: '0000-01-01', to: '9999-12-31', shift: no });
+    }
+  }
+  const OPSH = [...P.op_shifts, ...vShifts];
+  const multi = EXTRA.some(Boolean) || OPSH.length > 0;
   type Wk = OperatorInfo & { busy: Busy; mins: number; cont: boolean; off: Set<string> };
-  const workers: Wk[] = ctx.operators.map((w) => ({ ...w, busy: new Busy(), mins: 0, cont: w.skills.some(isCont), off: new Set<string>() }));
+  const workers: Wk[] = [...ctx.operators, ...virt].map((w) => ({ ...w, busy: new Busy(), mins: 0, cont: w.skills.some(isCont), off: new Set<string>() }));
   const wByCode = new Map(workers.map((w) => [w.code, w]));
-  // Lịch vắng → đoạn bận: cả ngày, nửa đầu hoặc nửa sau ngày làm việc
+  // Ca của người ngày di (1, 2, 3) và các ca của lịch người đó làm: ca 1 = mọi ca cả xưởng; ca 2 / 3 = ca B / C
+  const wShift = (code: string, di: number) => opShiftOn(OPSH, code, dateAt(di));
+  const ownSegs = (code: string, di: number) => {
+    const no = wShift(code, di);
+    return cal.shifts.map((_, j) => j).filter((j) => (no === 1 ? !EXTRA[j] : segNo[j] === no));
+  };
+  const absentIv: Record<string, [number, number][]> = {};
+  // Lịch vắng → đoạn bận: cả ngày, nửa đầu hoặc nửa sau ca của người đó
   for (const a of P.absences) {
     const w = wByCode.get(a.code); if (!w) continue;
     for (let di = 0; di < ND; di++) {
       const d = cal.days[di];
       if (d < a.from || d > a.to) continue;
-      const half = DAY / 2, f = di * DAY + (a.part === 'PM' ? half : 0), t = a.part === 'AM' ? di * DAY + half : (di + 1) * DAY;
+      const own = ownSegs(a.code, di);
+      const o0 = di * DAY + (own.length ? own[0] : 0) * S, o1 = own.length ? di * DAY + (own[own.length - 1] + 1) * S : (di + 1) * DAY, half = (o0 + o1) / 2;
+      const f = a.part === 'FULL' ? di * DAY : a.part === 'PM' ? half : o0, t = a.part === 'FULL' ? (di + 1) * DAY : a.part === 'AM' ? half : o1;
       w.busy.add(f, t, 'vắng'); w.off.add(di + '|' + a.part);
+      (absentIv[a.code] ??= []).push([f, t]);
     }
   }
   const absentAt = (w: Wk, di: number, half: 'AM' | 'PM') => w.off.has(di + '|FULL') || w.off.has(di + '|' + half);
@@ -518,6 +588,134 @@ export function schedule(
   const mayStand = (w: Wk, m: string) => w.skills.includes(m) || P.covers.some((c) => c.code === w.code && c.machine === m)
     || P.crews.some((c) => c.machine === m && (c.members ?? []).includes(w.code));
   const staffOf = new Map(ctx.machines.map((m) => [m.code, workers.filter((w) => mayStand(w, m.code))]));
+
+  // ---------- Phân ca: máy chạy ca thêm khi có người làm ca đó đứng được máy; thiếu người thì người ca trước làm ca dài ----------
+  // (chỉ khi thiếu người, trong giới hạn giờ làm/ngày và giờ làm thêm/tháng); không ai thì máy không chạy ca đó.
+  const fillP = Number(cfg.fill_pct) / 100;
+  const segReal = cal.shifts.map((x) => { const a = toMin(x.start_time); let b = toMin(x.end_time); if (b <= a) b += 1440; return { a, b, len: b - a, run: shiftRun(x) }; });
+  // phần đầu ca thêm trùng giờ ca trước (vd. ca B 14–22 với ca A 08–17): không tính thêm
+  const ovl = segReal.map((x, j) => {
+    if (!EXTRA[j]) return 0;
+    let e = -Infinity;
+    for (let k = 0; k < j; k++) e = Math.max(e, segReal[k].b);
+    return Math.min(1, Math.max(0, (e - x.a) / x.len));
+  });
+  // Khoảng chạy được trong ca thêm j (phút xếp lịch tính từ đầu ca): từ phần fa đến fb của giờ ca; phút xếp lịch = phút chạy thật × tỷ lệ xếp lịch
+  const winOf = (j: number, fa: number, fb: number): [number, number] => {
+    const f = Math.min(1, Math.max(fa, ovl[j]));
+    return [f * S, f * S + Math.min((1 - f) * S, Math.max(0, Math.min(1, fb) - f) * segReal[j].run * fillP)];
+  };
+  const closedIv = new Map<string, [number, number][]>();
+  const offIv = new Map<string, [number, number][]>();
+  const addIv = (mp: Map<string, [number, number][]>, k: string, f: number, t: number) => { if (t > f + 1e-9) { const l = mp.get(k); if (l) l.push([f, t]); else mp.set(k, [[f, t]]); } };
+  const shortages: Roster['shortages'] = [], extList: Roster['ext'] = [], posts: Roster['posts'] = [];
+  const otUsed: Record<string, Record<string, number>> = {};
+  if (multi) {
+    const extOf = new Map<string, { win: [number, number]; machines: string[]; hours: number }>(); // người|ngày|ca → ca dài đã cho
+    for (let di = 0; di < ND; di++) {
+      const d = cal.days[di], d0 = di * DAY, mon = d.slice(0, 7);
+      for (let j = 0; j < SPD; j++) {
+        if (!EXTRA[j]) continue;
+        const no = segNo[j], s0 = d0 + j * S;
+        for (const m of ctx.machines) {
+          if (shiftsOn(MS, m.code, d) < no) { addIv(closedIv, m.code, s0, s0 + S); continue; }
+          const ppl = workers.filter((w) => wShift(w.code, di) === no && !w.off.has(di + '|FULL') && eligible(w, m.code, di));
+          let win: [number, number] | null = null;
+          if (ppl.length) {
+            win = winOf(j, 0, 1);
+            posts.push({ date: d, shift: cal.shifts[j].code, machine: m.code, people: ppl.map((w) => w.code), ext: false });
+          } else {
+            // Ca dài: người ca trước (đứng được máy này, không vắng nửa sau ca) làm thêm sau giờ ca của mình
+            const pj = j - 1;
+            const prevNo = pj >= 0 ? (EXTRA[pj] ? segNo[pj] : 1) : 0;
+            const E = pj >= 0 ? Math.min(P.day_max_h * 60 - segReal[pj].run, P.ot_day_min) / 60 : 0;
+            const cands = pj < 0 || E <= 1e-9 ? [] : workers.filter((w) => !virt.includes(w) && wShift(w.code, di) === prevNo && !w.off.has(di + '|FULL') && !w.off.has(di + '|PM') && eligible(w, m.code, di));
+            const left = (w: Wk) => P.ot_month_h - (otUsed[w.code]?.[mon] ?? 0);
+            const again = cands.find((w) => extOf.has(w.code + '|' + di + '|' + j));
+            const pick = again ?? cands.filter((w) => left(w) >= Math.min(E, 1) - 1e-9).sort((a, b) => left(b) - left(a) || a.mins - b.mins || a.code.localeCompare(b.code))[0];
+            if (pick) {
+              const k = pick.code + '|' + di + '|' + j;
+              let g = extOf.get(k);
+              if (!g) {
+                const hours = Math.min(E, left(pick));
+                const fa = (segReal[pj].b - segReal[j].a) / segReal[j].len, fb = (segReal[pj].b + hours * 60 - segReal[j].a) / segReal[j].len;
+                g = { win: winOf(j, fa, fb), machines: [], hours };
+                extOf.set(k, g);
+                (otUsed[pick.code] ??= {})[mon] = (otUsed[pick.code]?.[mon] ?? 0) + hours;
+                extList.push({ code: pick.code, date: d, shift: cal.shifts[j].code, hours, machines: g.machines });
+              }
+              g.machines.push(m.code);
+              win = g.win;
+              posts.push({ date: d, shift: cal.shifts[j].code, machine: m.code, people: [pick.code], ext: true });
+            } else shortages.push({ date: d, shift: cal.shifts[j].code, machine: m.code,
+              why: cands.length ? `người ca trước hết giờ làm thêm tháng (${P.ot_month_h} giờ)` : `chưa có người ca ${no} đứng được máy` });
+          }
+          if (!win || win[1] <= win[0] + 1e-9) { addIv(closedIv, m.code, s0, s0 + S); continue; }
+          addIv(closedIv, m.code, s0, s0 + win[0]); addIv(closedIv, m.code, s0 + win[1], s0 + S);
+        }
+      }
+    }
+    // Người ngoài ca của mình (trừ khoảng làm ca dài) → đoạn bận "ngoài ca"
+    for (const w of workers) for (let di = 0; di < ND; di++) {
+      const own = new Set(ownSegs(w.code, di)), d0 = di * DAY;
+      for (let j = 0; j < SPD; j++) {
+        if (own.has(j)) continue;
+        const g = extOf.get(w.code + '|' + di + '|' + j);
+        if (g) { addIv(offIv, w.code, d0 + j * S, d0 + j * S + g.win[0]); addIv(offIv, w.code, d0 + j * S + g.win[1], d0 + (j + 1) * S); }
+        else addIv(offIv, w.code, d0 + j * S, d0 + (j + 1) * S);
+      }
+    }
+    // gộp các khoảng liền nhau
+    for (const mp of [closedIv, offIv]) for (const [k, l] of mp) {
+      l.sort((a, b) => a[0] - b[0]);
+      const out: [number, number][] = [];
+      for (const x of l) { const last = out[out.length - 1]; if (last && x[0] <= last[1] + 1e-9) last[1] = Math.max(last[1], x[1]); else out.push([x[0], x[1]]); }
+      mp.set(k, out);
+    }
+    for (const [code, l] of offIv) { const w = wByCode.get(code)!; for (const [f, t] of l) w.busy.add(f, t, 'ngoài ca'); }
+    for (const x of P.op_shifts) if (x.to >= cal.days[0] && x.from <= cal.days[ND - 1] && !segNo.includes(Number(x.shift)))
+      warnings.add(`${x.code} làm ca ${x.shift} (${dmy(x.from)}–${dmy(x.to)}) nhưng không máy nào được duyệt chạy ca ${x.shift}: người này không đứng máy những ngày đó`);
+  }
+  const NOCL: [number, number][] = [];
+  const clOf = (code: string) => closedIv.get(code) ?? NOCL;
+  const firstEnd = (L: [number, number][], t: number) => { let a = 0, b = L.length; while (a < b) { const mid = (a + b) >> 1; if (L[mid][1] <= t + 1e-9) a = mid + 1; else b = mid; } return a; };
+  // Giờ máy không chạy (ca máy không chạy / không có người) kế tiếp từ t: đầu khoảng đó (đang trong khoảng → t); không có → Infinity
+  const closedNext = (code: string, t: number) => { const L = clOf(code); const i = firstEnd(L, t); return i < L.length ? Math.max(t, L[i][0]) : Infinity; };
+  // Giờ sớm nhất ≥ t máy chạy được (bỏ qua giờ máy không chạy)
+  const openFrom = (code: string, t: number) => {
+    const L = clOf(code);
+    let s = t;
+    for (let i = firstEnd(L, s); i < L.length && L[i][0] <= s + 1e-9; i++) s = Math.max(s, L[i][1]);
+    return s;
+  };
+  const closedAt = (code: string, t: number) => closedNext(code, t) <= t + 1e-9;
+  // Chạy len phút trên máy từ t (bỏ qua giờ máy không chạy): giờ xong
+  const fwdOpen = (code: string, t: number, len: number) => {
+    const L = clOf(code);
+    if (!L.length) return t + len;
+    let s = openFrom(code, t), left = len;
+    for (let g = 0; g < 100000; g++) {
+      const ce = closedNext(code, s);
+      if (s + left <= ce + 1e-9) return s + left;
+      left -= ce - s; s = openFrom(code, ce);
+    }
+    return s + left;
+  };
+  // Giờ bắt đầu muộn nhất để chạy len phút trên máy xong đúng lúc e (bỏ qua giờ máy không chạy)
+  const backOpen = (code: string, e: number, len: number) => {
+    const L = clOf(code);
+    if (!L.length) return e - len;
+    let t = e, left = len;
+    let i = firstEnd(L, t - 1e-9);   // khoảng đầu tiên kết thúc sau t: các khoảng trước nó nằm trước t
+    for (let g = 0; g < 100000 && left > 1e-9; g++) {
+      if (i < L.length && L[i][0] < t - 1e-9) t = L[i][0];       // t nằm trong khoảng không chạy: lùi về đầu khoảng
+      const prevEnd = i > 0 ? L[i - 1][1] : -Infinity;
+      if (t - left >= prevEnd - 1e-9) return t - left;
+      left -= t - prevEnd; t = prevEnd; i--;
+    }
+    return t - left;
+  };
+  const shiftsTxt = (code: string, t: number) => { const n = shiftsOn(MS, code, dateAt(dayOf(t))); return n > 1 ? `máy chạy ${n} ca` : 'máy chạy 1 ca'; };
   // Giờ sớm nhất ≥ t người w rảnh [s, s + len) và được đứng máy m ngày đó
   const earliestFor = (w: Wk, m: string, t: number, len: number): number => {
     let s = t;
@@ -627,9 +825,23 @@ export function schedule(
         if (usesMix(t) && ns.end > B) preUse.push({ t, from: Math.max(B, rs), to: ns.end, rate, sl: ns });
         continue;
       }
+      // Giờ máy không chạy (đổi số ca, ca thêm thiếu người) sau mốc: việc đang chạy qua mốc dừng lúc đó, phần còn lại xếp lại
+      const cs = closedNext(sl.machine, Math.max(B, start));
+      if (start < B && end > B && cs < end - 1e-9) {
+        if (rs >= cs) continue;
+        const mm = (cs - rs) * rate;
+        const ns = { ...sl, start, runStart: rs, end: cs, rate, meters: mm, part: true, reason: `Phần chạy trước giờ máy không chạy (${shiftsTxt(sl.machine, cs)}), phần còn lại xếp lại` };
+        t.m -= mm;
+        m.slots.push(ns);
+        keepAttend(ns, sl, k);
+        consBefore(t, rs, ns.end, mm);
+        if (usesMix(t) && ns.end > B) preUse.push({ t, from: Math.max(B, rs), to: ns.end, rate, sl: ns });
+        continue;
+      }
       if (start >= B) {
         // Lô đã duyệt lịch: giữ chỗ (khối cố định trên máy và người), việc khác xếp vào khoảng trống trước/sau khối
         if (!keep.has(sl.lineId)) continue;
+        if (cs < end - 1e-9) { warnings.add(`Lô ${t.order.label} đã duyệt lịch nhưng khối trên ${sl.machine} rơi vào giờ máy không chạy (đổi số ca): MES xếp lại khối này`); continue; }
         const ns = { ...sl, start, runStart: rs, end, rate, reason: sl.reason.startsWith('Giữ chỗ') ? sl.reason : `Giữ chỗ (TP SX đã duyệt lịch lô) · ${sl.reason}` };
         t.m -= sl.meters;
         m.slots.push(ns); m.blocks.push([start, end, KEEP_LABEL]);
@@ -689,16 +901,16 @@ export function schedule(
   const key = (lineId: string, op: Op) => lineId + '|' + op;
   orders.forEach((o) => o.route.forEach((op) => opDone.set(key(o.id, op), { start: Infinity, end: 0, left: 0 })));
   // Theo từng việc (từng màu lõi): giờ bắt đầu, xong, tốc độ lượt chạy đầu (để tính gối đầu theo bobin đầu tiên)
-  const tspan = new Map<number, { start: number; end: number; rate: number }>();
-  const markSpan = (t: Task, rs: number, end: number, rate: number) => {
+  const tspan = new Map<number, { start: number; end: number; rate: number; m: string }>();
+  const markSpan = (t: Task, rs: number, end: number, rate: number, m: string) => {
     const s = tspan.get(t.id);
-    if (!s) tspan.set(t.id, { start: rs, end, rate });
-    else { if (rs < s.start) { s.start = rs; s.rate = rate; } s.end = Math.max(s.end, end); }
+    if (!s) tspan.set(t.id, { start: rs, end, rate, m });
+    else { if (rs < s.start) { s.start = rs; s.rate = rate; s.m = m; } s.end = Math.max(s.end, end); }
   };
   for (const m of machines) for (const sl of m.slots) {
     const d = opDone.get(key(sl.lineId, sl.op)); if (!d) continue;
     d.start = Math.min(d.start, sl.runStart); d.end = Math.max(d.end, sl.end);
-    const t = byKey.get(sl.key); if (t && !isSup(t)) markSpan(t, sl.runStart, sl.end, sl.rate);
+    const t = byKey.get(sl.key); if (t && !isSup(t)) markSpan(t, sl.runStart, sl.end, sl.rate, sl.machine);
   }
   for (const id of pending) opDone.get(key(tasks[id].order.id, tasks[id].op))!.left++;
   const predOf = new Map(tasks.map((t) => {
@@ -709,15 +921,17 @@ export function schedule(
   // Gối đầu theo bobin: công đoạn sau bắt đầu khi bobin đầu tiên của từng việc trước xong + QC (+ đệm an toàn),
   // và xong sau việc trước ít nhất thời gian QC bobin cuối + chạy bobin cuối trên máy sau (run, v: trên máy đang xét)
   const notBefore = new Map<number, number>(); // thử lại từ lúc này (line silicone chưa có silicone, người khởi động bận)
-  const ready = (t: Task, run: number, v: number): number | null => {
+  // Máy chạy ít ca hơn lịch: bobin đầu tính theo giờ máy trước chạy được, "xong sau việc trước" tính theo giờ máy này chạy được
+  const ready = (t: Task, run: number, v: number, mcode: string): number | null => {
     let r = notBefore.get(t.id) ?? 0;
     for (const p of predOf.get(t.id)!) {
       if (pending.has(p.id) || dead.has(p.id)) return null;
       const sp = tspan.get(p.id); if (!sp || sp.end <= 0) continue;
       const g = QC + SAFE(p.op);
-      const lead = Math.min(F.unit_m[p.op] / Math.max(1e-6, sp.rate), Math.max(0, sp.end - sp.start)) + g;
-      const tail = g + Math.min(run, F.unit_m[t.op] / Math.max(1e-6, v));
-      r = Math.max(r, sp.start + lead, sp.end + tail - run);
+      const first = Math.min(fwdOpen(sp.m, sp.start, F.unit_m[p.op] / Math.max(1e-6, sp.rate)), Math.max(sp.start, sp.end));
+      // xong không sớm hơn: việc trước xong + QC, rồi chạy bobin cuối trên máy này (QC xong lúc máy nghỉ thì bobin cuối chạy ca sau)
+      const e0 = fwdOpen(mcode, sp.end + g, Math.min(run, F.unit_m[t.op] / Math.max(1e-6, v)));
+      r = Math.max(r, first + g, backOpen(mcode, e0, run));
     }
     return r;
   };
@@ -809,9 +1023,17 @@ export function schedule(
     for (let j = 0; j < SPD; j++) {
       const n = Math.max(1, Math.round(shLenH[j]));
       for (let q = 0; q < n; q++) {
-        const t0 = d0 + j * S + (q * S) / n, t1 = d0 + j * S + ((q + 1) * S) / n;
-        const ms = mixers.filter((m) => !mixDown(m.code, t0, t1)).map((m) => ({ code: m.code, kgh: kghOf.get(m.code)! }));
-        b.push(mkBk(t0, t1, realAt(t0), realAt(t1, true), false, false, ms, (ms.reduce((a, x) => a + x.kgh, 0) * (t1 - t0)) / 60));
+        const u0 = d0 + j * S + (q * S) / n, u1 = d0 + j * S + ((q + 1) * S) / n;
+        // máy trộn chạy ít ca hơn lịch / ca thêm thiếu người: không trộn giờ đó (tách khoảng tại giờ máy trộn bắt đầu / thôi chạy)
+        const pts = [u0, u1];
+        for (const mx of mixers) { const L = clOf(mx.code); for (let i = firstEnd(L, u0); i < L.length && L[i][0] < u1; i++) pts.push(L[i][0], L[i][1]); }
+        const ps = [...new Set(pts.filter((x) => x >= u0 && x <= u1))].sort((x, y) => x - y);
+        for (let i = 0; i + 1 < ps.length; i++) {
+          const t0 = ps[i], t1 = ps[i + 1];
+          if (t1 - t0 < 1e-6) continue;
+          const ms = mixers.filter((m) => !mixDown(m.code, t0, t1) && !closedAt(m.code, (t0 + t1) / 2)).map((m) => ({ code: m.code, kgh: kghOf.get(m.code)! }));
+          b.push(mkBk(t0, t1, realAt(t0), realAt(t1, true), false, false, ms, (ms.reduce((a, x) => a + x.kgh, 0) * (t1 - t0)) / 60));
+        }
       }
     }
     // Tăng ca máy trộn: trộn sau giờ tan ca (giờ thật), chỉ dùng được cho line chạy tăng ca trong hạn dùng (hoặc sáng hôm sau nếu hạn dùng đủ dài)
@@ -871,6 +1093,8 @@ export function schedule(
       // mẻ đầu của khoảng phải xong trước lúc dùng; lượng dùng được = phần đã trộn tới lúc dùng; chưa quá hạn dùng
       if (bk.r0 + Math.min(batchH, bk.r1 - bk.r0) > useR + 1e-9 || bk.r0 < useR - F.pot_life_h - 1e-9) continue;
       if (bk.noStaff || bk.capFull <= 1e-9) continue;
+      // trộn trước mốc xếp lại là việc đã làm (khối trộn giữ lại): không lấy thêm (ca 3 đêm trước còn trong hạn dùng sáng hôm sau)
+      if (bk.t0 < B - 1e-9) continue;
       const frac = bk.r1 > bk.r0 ? Math.min(1, (useR - bk.r0) / (bk.r1 - bk.r0)) : 1;
       if (bk.capFull * frac - bk.used <= 1e-9) continue;
       let claimed = false;
@@ -955,18 +1179,39 @@ export function schedule(
 
   // ---------- Đặt một việc lên máy ----------
   // Máy tự chạy: người có mặt lúc đổi máy + khởi động (liền khối trước, không đổi máy thì không cần); máy chờ người nếu chưa ai rảnh
-  const startLen = (m: M, s: number, su: number) => (m.lastEnd !== null && Math.abs(s - m.lastEnd) < 1e-6 && su <= 1e-9 ? 0 : su + START);
+  // Khối trước dừng vì hết giờ máy chạy (máy chạy ít ca hơn lịch) và ca sau chạy tiếp ngay đầu giờ, không đổi máy: không tính khởi động lại
+  // (như lịch 1 ca: máy nghỉ đêm rồi chạy tiếp)
+  const startLen = (m: M, s: number, su: number) => (m.lastEnd !== null && su <= 1e-9
+    && (Math.abs(s - m.lastEnd) < 1e-6 || (closedAt(m.code, m.lastEnd) && Math.abs(openFrom(m.code, m.lastEnd) - s) < 1e-6)) ? 0 : su + START);
   type Pl = { st: number; su: number; why: string; hit: string | null; staff: Staff | null; L: number; wait: number;
     crew?: Wk[]; factor?: number; need?: number; short?: boolean; target?: number };
+  // Chỗ chạy được từ t0: tránh khối máy dừng / giữ chỗ (khối phải vừa); giờ máy không chạy (máy chạy ít ca hơn, ca thêm thiếu người)
+  // thì khối dừng ở đó, phần còn lại chạy ca sau – chỉ bắt đầu khi còn đủ giờ cho đổi máy + một đoạn chạy
+  const spot = (m: M, t0: number, want: number, minLen: number): { s: number; hit: string | null } | null => {
+    let s = t0, hit: string | null = null;
+    for (let g = 0; g < 2000; g++) {
+      const o = openFrom(m.code, s);
+      if (o > s + 1e-9) { if (!hit) hit = `giờ máy không chạy (${shiftsTxt(m.code, s)})`; s = o; }
+      const room = closedNext(m.code, s) - s;
+      if (room < minLen - 1e-9) { s = closedNext(m.code, s) + 1e-9; continue; }
+      const f = fit(s, Math.min(want, room), m.blocks);
+      if (!Number.isFinite(f.s)) return null;
+      if (f.s > s + 1e-9) { hit = f.hit; s = f.s; continue; }
+      return { s, hit };
+    }
+    return null;
+  };
   const placeAuto = (m: M, c: Cand): Pl | null => {
     const [su, why] = changeover(cfg, m.last, c.t);
     const raw = Math.max(m.free, c.r);
-    const f0 = fit(raw, su + c.run, m.blocks);
-    if (!Number.isFinite(f0.s)) return null;
+    // máy chạy ít ca hơn lịch: như lịch 1 ca, việc được bắt đầu sát giờ máy nghỉ và chạy tiếp ca sau (chỉ cần đủ giờ đổi máy)
+    const want = su + c.run, minLen = su + Math.min(c.run, 1);
+    const f0 = spot(m, raw, want, minLen);
+    if (!f0) return null;
     let s = f0.s;
     for (let g = 0; g < 60; g++) {
-      const f1 = fit(s, su + c.run, m.blocks);
-      if (!Number.isFinite(f1.s)) return null;
+      const f1 = spot(m, s, want, minLen);
+      if (!f1) return null;
       const L = startLen(m, f1.s, su);
       if (L <= 0) return { st: f1.s, su, why, hit: f1.s > raw + 1e-9 ? (f1.hit ?? f0.hit) : null, staff: null, L: 0, wait: f1.s - f0.s };
       const st = findStaff(m.code, f1.s, L, m.owner);
@@ -987,8 +1232,9 @@ export function schedule(
     let s = raw, hit: string | null = null;
     for (let g = 0; g < 4000; g++) {
       const di = dayOf(s); if (di >= ND) return null;
-      const dayEnd = (di + 1) * DAY;
-      if (dayEnd - s < minLen - 1e-9) { s = dayEnd; continue; }
+      const o = openFrom(m.code, s); if (o > s + 1e-9) { if (!hit) hit = `giờ máy không chạy (${shiftsTxt(m.code, s)})`; s = o; continue; }
+      const dayEnd = Math.min((di + 1) * DAY, closedNext(m.code, s));
+      if (dayEnd - s < minLen - 1e-9) { s = dayEnd + 1e-9; continue; }
       const f1 = fit(s, minLen, m.blocks);
       if (!Number.isFinite(f1.s)) return null;
       if (f1.s > s + 1e-9) { hit = f1.hit; s = f1.s; continue; }
@@ -1022,25 +1268,35 @@ export function schedule(
     if (tasks.some((t) => canRun(m.machine_type, t) && t.m > 1)) warnings.add(`Máy ${m.code} chưa có người đứng (Hồ sơ máy → Người đứng máy, hoặc Nhân sự xưởng → kiêm nhiệm tạm): không xếp việc lên máy`);
   }
 
+  const contOn = new Map<number, string>(); // việc dừng vì hết giờ máy chạy → máy chạy tiếp
   let guard = 0;
   while (pending.size && guard++ < 50000) {
     type Opt = { m: M; t: Task; r: number; sp: Speed; run: number; lead: Task; pl: Pl };
     const opts: Opt[] = [];
+    const per: { m: M; cands: (Cand & { pl: Pl })[] }[] = [];
     for (const m of machines) {
       if (!(staffOf.get(m.code) ?? []).length) continue;
       const cands: (Cand & { pl: Pl })[] = [];
+      per.push({ m, cands });
       for (const id of pending) {
         const t = tasks[id];
         if (!canRun(m.machine_type, t)) continue;
         const sp = spOf(m.code, t);
         if (!(sp.v > 0)) { warnings.add(`Chưa có tốc độ ${OP_NAME[t.op].toLowerCase()} cho máy ${m.code} (Hồ sơ máy → Tốc độ hoặc Tham số xếp lịch): không xếp việc này lên máy`); continue; }
         const run = t.m / sp.v;
-        const r = ready(t, run, sp.v);
+        const r = ready(t, run, sp.v, m.code);
         if (r === null || !Number.isFinite(r)) continue;
         const c = { t, r, sp, run };
         const pl = m.machine_type === 'PACKER' ? placePack(m, c) : placeAuto(m, c);
         if (pl) cands.push({ ...c, pl });
       }
+    }
+    // Việc dừng vì hết giờ máy chạy: ca sau chạy tiếp trên đúng máy đó (không chia sang máy khác chạy song song)
+    for (const { m, cands } of per) for (let i = cands.length - 1; i >= 0; i--) {
+      const cm = contOn.get(cands[i].t.id);
+      if (cm && cm !== m.code && per.some((x) => x.m.code === cm && x.cands.some((c) => c.t === cands[i].t))) cands.splice(i, 1);
+    }
+    for (const { m, cands } of per) {
       if (!cands.length) continue;
       // Bắt đầu sớm nhất trên máy này (đã tránh khối máy dừng / giữ chỗ và chờ người); gom lô trong các việc bắt đầu gần như cùng lúc
       const minStart = Math.min(...cands.map((x) => x.pl.st));
@@ -1091,6 +1347,7 @@ export function schedule(
       reason += ` · Tổ đóng gói ${crew.length} người: ${crew.map((w) => w.code).join(', ')}${covers.length ? ` (${covers.join(', ')} kiêm nhiệm tạm)` : ''}`
         + (crew.length === 1 ? ` · 1 người: tốc độ ${Math.round(P.pack_one_pct)}%${pl.short ? ` (tổ đặt ${pl.target} người, người còn lại vắng)` : ''}` : '');
       if (part) reason += end >= (dayOf(st0) + 1) * DAY - 1e-6 ? ' · Hết ngày, phần còn lại đóng gói ngày sau'
+        : Math.abs(end - closedNext(m.code, st0)) < 1e-6 ? ` · Hết giờ máy chạy (${shiftsTxt(m.code, st0)}): phần còn lại đóng gói ca sau`
         : ' · Người trong tổ có việc khác / vắng từ giờ này (hoặc máy dừng): phần còn lại xếp tiếp với người có mặt';
       freeAt = end;
     } else {
@@ -1143,7 +1400,9 @@ export function schedule(
       if (L > 0 && !staff) { notBefore.set(t.id, Math.max(st0 + 1e-3, (notBefore.get(t.id) ?? 0) + 1e-3)); continue; }
       let startIv = staff ? staff.w.busy.add(st0, st0 + L, m.code) : null;
       const dropStart = () => { if (staff && startIv) staff.w.busy.remove(startIv); startIv = null; };
-      if (!runBlock(Infinity)) { dropStart(); continue; }
+      // máy chạy ít ca hơn lịch: khối dừng ở giờ máy không chạy, phần còn lại chạy ca sau
+      const lim0 = closedNext(m.code, st0 + 1e-9);
+      if (!runBlock(lim0)) { dropStart(); continue; }
       if (Math.abs(st0 - st00) > 1e-9) {
         dropStart();
         L = startLen(m, st0, su);
@@ -1181,7 +1440,8 @@ export function schedule(
             if (!who || who.at > tk - BOB + 1e-7) { cut = tk; break; }
             evs.push({ w: who.w, f: tk - BOB, t: tk, k: 'BOB', c: who.cover }); reg(who.w, tk - BOB, tk);
           }
-          if (cut === null && end - BOB >= startEnd - 1e-9) {
+          // dỡ bobin cuối (không tính khi khối dừng vì hết giờ máy chạy: bobin chạy tiếp ca sau)
+          if (cut === null && end - BOB >= startEnd - 1e-9 && !(Number.isFinite(lim0) && Math.abs(end - lim0) < 1e-6)) {
             const who = findStaff(m.code, end - BOB, BOB, pref);
             if (who) {
               evs.push({ w: who.w, f: who.at, t: who.at + BOB, k: 'BOB', c: who.cover }); reg(who.w, who.at, who.at + BOB);
@@ -1214,7 +1474,8 @@ export function schedule(
       if (bobs.length) reason += ` · Thay bobin ${bobs.length} lần (${[...new Set(bobs.map((a) => a.p + (a.c ? ' kiêm nhiệm tạm' : '')))].join(', ')})`;
       reason += cutNote;
       if (lateFree > end + 1e-6) reason += ` · Chờ người dỡ bobin cuối ${realMin(lateFree - end)} phút`;
-      if (part && !cutNote && usesMix(t)) reason += ' · Tạm dừng, phần còn lại xếp tiếp';
+      if (part && !cutNote && Number.isFinite(lim0) && Math.abs(end - lim0) < 1e-6) reason += ` · Hết giờ máy chạy (${shiftsTxt(m.code, st0)}): phần còn lại chạy ca sau`;
+      else if (part && !cutNote && usesMix(t)) reason += ' · Tạm dừng, phần còn lại xếp tiếp';
       freeAt = Math.max(end, lateFree);
     }
     m.slots.push({
@@ -1223,10 +1484,14 @@ export function schedule(
       ...(pack ? { crew: pl.crew!.length } : {}),
     });
     m.free = freeAt; m.lastEnd = freeAt; m.owner = owner; m.last = { order: t.order, op: t.op, color: t.color };
-    markSpan(t, st0 + su, end, rate);
+    markSpan(t, st0 + su, end, rate, m.code);
     const d = opDone.get(key(t.order.id, t.op))!;
     d.start = Math.min(d.start, st0 + su); d.end = Math.max(d.end, end);
-    if (part) { t.m -= meters; t.run = t.m / t.rate; continue; }
+    if (part) {
+      if (Math.abs(end - closedNext(m.code, st0 + 1e-9)) < 1e-6) contOn.set(t.id, m.code); else contOn.delete(t.id);
+      t.m -= meters; t.run = t.m / t.rate; continue;
+    }
+    contOn.delete(t.id);
     d.left--;
     pending.delete(t.id);
   }
@@ -1304,9 +1569,27 @@ export function schedule(
     for (const [t, d] of ev) { n += d; if (n > mx) { mx = n; at = t; } }
     if (mx > P.watch_max) warnings.add(`${w.code} phụ trách ${mx} máy chạy cùng lúc (${dmy(dateAt(dayOf(at)))}), quá ${P.watch_max} máy: TP SX xem lại phân công người`);
   }
+  // Ca thêm thiếu người / ca dài: gộp theo máy × ca (khoảng ngày) để TP SX phân người
+  if (multi) {
+    const firstUse = (code: string) => Math.min(Infinity, ...(machines.find((x) => x.code === code)?.slots ?? []).filter((x) => x.end > B).map((x) => x.start));
+    const grp = new Map<string, { m: string; sh: string; why: string; days: string[] }>();
+    for (const x of shortages) {
+      if (x.date < (dateAt(dayOf(B)) ?? '')) continue;
+      const g = grp.get(x.machine + '|' + x.shift + '|' + x.why) ?? { m: x.machine, sh: x.shift, why: x.why, days: [] };
+      g.days.push(x.date); grp.set(x.machine + '|' + x.shift + '|' + x.why, g);
+    }
+    for (const g of grp.values()) if (Number.isFinite(firstUse(g.m)) || tasks.some((t) => canRun(typeOf.get(g.m) ?? '', t)))
+      warnings.add(`Thiếu người ca ${shiftNoOf(g.sh)} máy ${g.m}: ${g.days.length} ngày (${dmy(g.days[0])}–${dmy(g.days[g.days.length - 1])}), ${g.why}: máy không chạy ca ${shiftNoOf(g.sh)} những ngày đó. TP SX đặt người làm ca ${shiftNoOf(g.sh)} ở Nhân sự xưởng`);
+    for (const [code, mo] of Object.entries(otUsed)) for (const [mon, h] of Object.entries(mo)) if (h >= P.ot_month_h - 1e-9)
+      warnings.add(`${code} làm ca dài đã dùng hết ${P.ot_month_h} giờ làm thêm tháng ${mon.slice(5, 7)}/${mon.slice(0, 4)}: những ngày sau máy thiếu người không chạy ca thêm`);
+  }
+  const roster: Roster = {
+    multi, closed: Object.fromEntries(closedIv), off: Object.fromEntries([...offIv].filter(([k]) => !virt.some((v) => v.code === k))),
+    absent: absentIv, shortages, ext: extList, ot: otUsed, posts, virtual: virt.map((v) => v.code),
+  };
   const byMachine = new Map(machines.map((m) => [m.code, m.slots.sort((a, b) => a.start - b.start)]));
   return {
-    slots: machines.flatMap((m) => m.slots), byMachine, opDone, unplaced: [...pending, ...dead].map((id) => tasks[id]), S, SPD, RUN: cal.RUN, mix: mixLog,
+    slots: machines.flatMap((m) => m.slots), byMachine, opDone, unplaced: [...pending, ...dead].map((id) => tasks[id]), S, SPD, RUN: cal.RUN, mix: mixLog, roster,
     warnings: [...warnings, ...(supply && mixers.every((m) => !(kghOf.get(m.code)! > 0)) ? ['Máy trộn chưa có năng lực (kg/giờ): line silicone không chạy được'] : []),
       ...[...dead].map((id) => `Không có silicone cho ${tasks[id].order.label} ${tasks[id].order.product_code} màu ${tasks[id].color ?? ''}: máy trộn ngừng hoặc thiếu người trộn`)],
   };

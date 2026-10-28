@@ -127,9 +127,19 @@ export async function saveFlow(form: FormData) {
     p.pick_window_min = opt('pick_window_min', 'Khung coi như cùng lúc');
   }
   const db = await createClient();
+  // Giờ làm tối đa mỗi người mỗi ngày (máy chạy 2–3 ca, ca dài khi thiếu người): Giám đốc
+  let extra = 0;
+  if (bgd) {
+    const dm = num(form, 'day_max_h', 'Giờ làm tối đa mỗi ngày', e);
+    if (Math.abs(dm - Number(form.get('day_max_old') ?? dm)) > 1e-9) {
+      const { error } = await db.schema('app').rpc('kh_save_shift_rules', { p_day_max_h: dm, p_reason: String(form.get('reason') ?? '') });
+      if (error) go('err', error.message, e);
+      extra = 1;
+    }
+  }
   const { data, error } = await db.schema('app').rpc('kh_save_flow', { p, p_reason: String(form.get('reason') ?? '') });
-  if (error) go('err', error.message, e);
-  done(Number(data));
+  if (error && !(extra && error.message.includes('Không có thay đổi'))) go('err', error.message, e);
+  done(Number(data ?? 0) + extra);
 }
 
 // Người đứng máy (Giám đốc, TP KT/QA) và tỷ lệ xếp lịch riêng từng máy (Giám đốc)

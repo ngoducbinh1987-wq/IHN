@@ -7,14 +7,14 @@ import { LEVEL, type ProductRow, type Step, readChange, simulate, stepsFor } fro
 import { type Kh, ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import {
   BOBBIN, type Finish, OP_NAME, OP_SHORT, type Op, type Schedule, type Slot, UNIT, addDays, availFactor, dayIndex, isWorkday, makeCalendar, nextWorkday, opName,
-  peopleOf, schedule, finishInfo, flowOf, shiftDate, shiftCode, workdaysBetween,
+  peopleOf, schedule, finishInfo, flowOf, shiftDate, shiftCode, shiftNoOf, shiftsOn, workdaysBetween,
 } from '@/lib/kh/scheduler';
 import { M_STATUS } from '@/lib/machine';
 import { DOC_STATUS, df, nf } from '@/lib/format';
 import { adminDeleteDoc } from '../quan-tri/doc-actions';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { type OtRow, OptimizeTab } from './optimize-tab';
+import { type OtRow, OptimizeTab, type ShiftReqRow } from './optimize-tab';
 import { applyChange, approveLot, approveLots, changeStep, commitLot, commitLots, confirmMaint, createChange, editChange, proposeMaint, rebuildSchedule, returnChange, reviewSchedule, setLine, setStart } from './actions';
 
 export const metadata = { title: 'Lịch máy' };
@@ -22,7 +22,7 @@ export const metadata = { title: 'Lịch máy' };
 type SP = Record<string, string | undefined>;
 const TABS = [
   { key: 'thang', label: 'Kế hoạch tháng & công suất' }, { key: 'lich', label: 'Lịch máy' }, { key: 'tiendo', label: 'Tiến độ từng lệnh' },
-  { key: 'toiuu', label: 'Tối ưu & tăng ca' }, { key: 'cancu', label: 'Căn cứ xếp lịch' }, { key: 'phatsinh', label: 'Đơn phát sinh & thay đổi' },
+  { key: 'toiuu', label: 'Tối ưu & thêm ca' }, { key: 'cancu', label: 'Căn cứ xếp lịch' }, { key: 'phatsinh', label: 'Đơn phát sinh & thay đổi' },
   { key: 'baoduong', label: 'Bảo dưỡng & máy hỏng' },
 ];
 
@@ -136,7 +136,8 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
           {view && tab === 'lich' && <Gantt kh={kh} view={view} sp={sp} qs={qs} canPlan={canPlan} />}
           {view && tab === 'tiendo' && <Progress kh={kh} view={view} />}
           {tab === 'toiuu' && <OptimizeTab kh={kh} sp={sp} roles={me.roles} userId={me.id}
-            ots={((await db.schema('app').from('v_kh_overtime').select('*').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as OtRow[]} />}
+            ots={((await db.schema('app').from('v_kh_overtime').select('*').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as OtRow[]}
+            reqs={((await db.schema('app').from('v_kh_shift_requests').select('*').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as ShiftReqRow[]} />}
           {tab === 'cancu' && <Basis kh={kh} view={view} />}
           {tab === 'phatsinh' && <Changes kh={kh} sp={sp} roles={me.roles} userId={me.id} />}
           {tab === 'baoduong' && <Maint kh={kh} view={view} roles={me.roles} userId={me.id} />}
@@ -228,7 +229,7 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
       </div>
       {late.length > 0 && (
         <Alert tone="bad" title={`${late.length} lệnh dự kiến trễ hạn giao`}>
-          Phương án để Giám đốc chọn: tăng ca (thẻ Tối ưu &amp; tăng ca), phân công kiêm nhiệm tạm cho vị trí tải cao ({top?.w.code ?? '—'}), mua bán thành phẩm, hoặc chốt lại ngày giao với kinh doanh.
+          Phương án để Giám đốc chọn: máy chạy thêm ca 2, ca 3 (thẻ Tối ưu &amp; thêm ca), phân công kiêm nhiệm tạm cho vị trí tải cao ({top?.w.code ?? '—'}), mua bán thành phẩm, hoặc chốt lại ngày giao với kinh doanh.
         </Alert>
       )}
       <section className="card">
@@ -345,13 +346,23 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
     const o = orderOf.get(sl.lineId); const k = o ? o.route.indexOf(sl.op) : -1;
     return k > 0 && o ? `Chờ ${OP_NAME[o.route[k - 1]].toLowerCase()}` : 'Trống';
   };
+  // Máy chạy 2–3 ca: ca 2, ca 3 máy không chạy (không được duyệt thêm ca) tô xám, không tính là trống
+  const msx = kh.cfg.machine_shifts ?? [];
+  const factory = (code: string) => Boolean(kh.cfg.shifts.find((x) => x.code === code)?.active);
+  const closedSegs = (code: string): [number, number][] => SPD > 1 ? days.flatMap((d, i) => cal.shifts.map((sh, j) => ({ sh, j }))
+    .filter(({ sh, j }) => j > 0 && !factory(sh.code) && shiftsOn(msx, code, d) < shiftNoOf(sh.code))
+    .map(({ j }) => [(startDay + i) * SPD * S + j * S, (startDay + i) * SPD * S + (j + 1) * S] as [number, number])) : [];
   const rows = kh.machines.map((m) => {
     const all = view.sch.byMachine.get(m.code) ?? [];
     const slots = all.filter((s) => s.end > W0 && s.start < W0 + W);
     let used = 0, prevEnd = W0;
     const els: React.ReactNode[] = [];
+    const cl = closedSegs(m.code);
+    const nShift = Math.max(1, ...days.map((d) => shiftsOn(msx, m.code, d)));
+    const closedIn = (a: number, b: number) => cl.reduce((acc, [x, y]) => acc + Math.max(0, Math.min(b, y) - Math.max(a, x)), 0);
+    for (const [x, y] of cl) els.push(<div key={'c' + x} className="absolute inset-y-0 bg-ink/[0.06]" style={{ left: `${X(x)}%`, width: `${X(y) - X(x)}%` }} title="Máy không chạy ca này" />);
     slots.forEach((sl) => {
-      if (sl.start - prevEnd > S / 2) {
+      if (sl.start - prevEnd - closedIn(prevEnd, sl.start) > S / 2) {
         const why = idleWhy(sl);
         els.push(<div key={'i' + sl.key + sl.start} className="absolute inset-y-1.5 flex items-center overflow-hidden rounded border border-dashed border-muted/60 px-1.5 text-[11.5px] text-muted" style={{ left: `${X(prevEnd)}%`, width: `calc(${X(sl.start) - X(prevEnd)}% - 3px)` }} title={why}>{why}</div>);
         if (sl.start > kh.frozenFrom * SPD * S && prevEnd < kh.frozenTo * SPD * S) idleNotes.push(`${m.code}: ${lc(why)} từ ${fmtT(kh, Math.max(prevEnd, kh.frozenFrom * SPD * S))}`);
@@ -384,13 +395,13 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
       els.push(<div key={'w' + win.from} className={`absolute inset-y-0.5 z-[5] flex items-center overflow-hidden rounded ${win.tentative ? 'border-2 border-dashed' : 'border-2'} px-1.5 text-[11.5px] font-medium ${bad ? 'border-bad bg-[repeating-linear-gradient(135deg,rgba(217,48,37,0.18)_0_4px,rgba(255,255,255,0.75)_4px_8px)] text-bad' : 'border-info bg-[repeating-linear-gradient(135deg,rgba(26,95,208,0.15)_0_4px,rgba(255,255,255,0.75)_4px_8px)] text-info'}`}
         style={{ left: `${X(win.from)}%`, width: `calc(${X(Math.min(win.to, W0 + W)) - X(win.from)}% - 2px)` }} title={win.label}>{win.label}</div>);
     }
-    if (prevEnd < W0 + W - S / 2) {
+    if (W0 + W - prevEnd - closedIn(prevEnd, W0 + W) > S / 2) {
       const nx = all.find((s) => s.start >= W0 + W);
       const lab = idleWhy(nx);
       els.push(<div key="tail" className="absolute inset-y-1.5 flex items-center overflow-hidden rounded border border-dashed border-muted/60 px-1.5 text-[11.5px] text-muted" style={{ left: `${X(prevEnd)}%`, width: `calc(${100 - X(prevEnd)}% - 3px)` }}>{lab}</div>);
       if (prevEnd < kh.frozenTo * SPD * S && kh.frozenTo > startDay) idleNotes.push(`${m.code}: ${lc(lab)} từ ${fmtT(kh, Math.max(prevEnd, kh.frozenFrom * SPD * S))}`);
     }
-    return { m, els, used };
+    return { m, els, used, nShift };
   });
   const seen = new Set<string>();
   const notes = idleNotes.filter((n) => { const k = n.split(':')[0]; if (seen.has(k)) return false; seen.add(k); return true; });
@@ -423,9 +434,9 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
               )}
             </div>
           </div>
-          {rows.map(({ m, els, used }) => (
+          {rows.map(({ m, els, used, nShift }) => (
             <div key={m.code} className="grid grid-cols-[180px_1fr] border-b border-line last:border-b-0">
-              <div className="px-3 py-2 text-[12.5px] leading-snug"><b className="text-[13px]">{m.code}</b><div className="truncate text-muted">{m.name}</div>
+              <div className="px-3 py-2 text-[12.5px] leading-snug"><b className="text-[13px]">{m.code}</b>{nShift > 1 && <> <Pill tone="info">{nShift} ca</Pill></>}<div className="truncate text-muted">{m.name}</div>
                 <div className="text-muted">{m.operators.join(', ') || <span className="text-bad">chưa có người</span>} · tải {pc(used / W)}</div></div>
               <div className="relative h-[64px]" style={{ backgroundImage: grid }}>
                 {pastPct > 0 && <div className="absolute inset-y-0 left-0 bg-ink/[0.05]" style={{ width: `${pastPct}%` }} />}
@@ -445,6 +456,7 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-bad" />Máy dừng, hỏng, ngừng dùng</span>
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-info" />Bảo dưỡng đã chốt</span>
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm border-2 border-dashed border-info" />Bảo dưỡng giữ chỗ tạm</span>
+          {SPD > 1 && <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-4 rounded-sm bg-ink/10" />Máy không chạy ca này</span>}
           <span className="inline-flex items-center gap-1.5"><i className="inline-block h-3 w-0.5 bg-bad" />Bây giờ</span>
           <span>Đổi máy cả tuần: {nf(setupWeek)} phút</span>
         </div>
@@ -613,7 +625,8 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
             <li>Mỗi việc vào <b>máy cùng loại xong sớm nhất</b>: máy rảnh, không trong khoảng dừng / hỏng / bảo dưỡng, và có <b>người được đứng máy</b> (đứng chính hoặc kiêm nhiệm tạm, không vắng) rảnh lúc đổi máy + khởi động; mỗi lần thay bobin cần một người rảnh, không ai rảnh thì máy dừng chờ. Một người không có mặt hai nơi cùng lúc, người đang trộn không rời máy trộn. Tốc độ: máy chế độ <b>Nhập tay</b> dùng <b>bảng tốc độ tự nhập</b> của máy theo chủng loại × cỡ ruột (Quản lý máy → Tốc độ); máy chế độ <b>Tự động</b> dùng <b>tốc độ thực tế đo từ PLC</b> 30 ngày gần nhất (cần ít nhất {nf(flowOf(c).plc_min_run)} phút chạy cùng mã / cùng cỡ, chưa đủ thì dùng bảng tự nhập); chưa khai báo thì dùng tốc độ mặc định theo công đoạn; không có tốc độ nào thì không xếp và báo thiếu thông số. Chọn máy <b>xong sớm nhất</b>.</li>
             <li><b>Gối đầu theo bobin:</b> công đoạn sau bắt đầu khi <b>bobin đầu tiên</b> của công đoạn trước xong (mét một bobin ÷ tốc độ thật) <b>và QC xong</b> ({nf(flowOf(c).qc_min)} phút{kh.flowMeta.qc_learn ? ', MES tự học từ phiếu hoàn thành' : ''}), cộng đệm an toàn nếu có; không xong trước công đoạn trước.</li>
             <li><b>Máy trộn silicone là nguồn cấp theo nhịp line:</b> line silicone chạy tới đâu lấy silicone tới đó, chỉ từ mẻ đã trộn xong và chưa quá <b>{nf(flowOf(c).pot_life_h, 1)} giờ</b>; máy trộn không kịp thì line chạy chậm (ghi phút chờ). Người trộn đứng suốt giờ trộn (không ai trộn được thì giờ đó không trộn). Bện không chờ trộn.</li>
-            <li><b>Tối ưu:</b> khi bấm Xếp lịch, MES thử nhiều thứ tự lô, giữ thứ tự ít trễ hạn nhất, xong sớm nhất, ít đổi máy nhất; tăng ca / trộn sớm chỉ dùng phần Giám đốc đã duyệt (thẻ Tối ưu &amp; tăng ca).</li>
+            <li><b>Tối ưu:</b> khi bấm Xếp lịch, MES thử nhiều thứ tự lô, giữ thứ tự ít trễ hạn nhất, xong sớm nhất, ít đổi máy nhất; ca máy chỉ dùng phần Giám đốc đã duyệt (thẻ Tối ưu &amp; thêm ca).</li>
+            <li><b>Máy chạy 2–3 ca:</b> máy được duyệt chạy thêm ca 2 (giờ ca B), ca 3 (giờ ca C) theo khoảng ngày; máy khác nghỉ giờ đó, việc dừng rồi chạy tiếp ca sau. Người làm theo ca của mình (Nhân sự xưởng); ca thêm không có người đứng được máy thì người ca trước làm ca dài (tối đa 12 giờ/ngày, làm thêm ≤ 40 giờ/tháng), hết giờ thì máy không chạy ca đó. Máy trộn luôn cần 1 người đứng riêng.</li>
             <li>Mỗi ca chỉ xếp <b>{c.fill_pct}%</b> thời gian chạy.</li>
             <li>Khi xếp lại: <b>phần đã chạy và vùng khóa {c.frozen_days} ngày giữ nguyên</b>. Chen vào vùng khóa phải qua đơn phát sinh mức C.</li>
             <li><b>Đóng gói:</b> tổ ngày đứng suốt (mặc định {peopleOf(c).pack_crew} người, TP SX đặt 1 hoặc 2 người đầu ca); 1 người thì tốc độ {peopleOf(c).pack_one_pct}%. Ngày xong lệnh = ngày máy đóng gói xong; mã chưa có công đoạn đóng gói thì công đoạn cuối xong <b>+ 1 ca kiểm tra, đóng gói</b>.</li>
