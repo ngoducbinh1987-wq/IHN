@@ -546,7 +546,8 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   const pages = ['/kho', '/kho/ton', '/kho/phieu', '/kho/quet', '/kho/cap-phat', '/kho/kiem-ke', '/kho/nhan-hang', '/kho/so-cai', '/kho/cai-dat',
     '/lich-may', '/lenh-ngay', '/ghi-nhan-ca', '/kh-thuc-te', '/tham-so', '/may', '/may/checklist', '/may/bao-duong', '/may/toc-do',
     '/may/kiem-tra', '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut', '/phieu-hoan-thanh', '/kho/qc',
-    '/phieu-xuat-nvl', '/bao-cao/ngay', '/in/phieu-xuat-nvl', '/in/bao-cao-ca', '/de-xuat/du-phong', '/de-xuat/du-phong?tab=phieu', '/ke-hoach/dieu-chinh'];
+    '/phieu-xuat-nvl', '/bao-cao/ngay', '/in/phieu-xuat-nvl', '/in/bao-cao-ca', '/de-xuat/du-phong', '/de-xuat/du-phong?tab=phieu', '/ke-hoach/dieu-chinh',
+    '/lich-may?tab=toiuu', '/lich-may?tab=toiuu&mode=fastest', '/lich-may?tab=cancu', '/tham-so?sua=flow'];
   for (const u of pages) {
     const res = await page.goto(`${BASE}${u}`);
     const body = await page.innerText('body');
@@ -675,6 +676,53 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   const adjBody = await page.innerText('main');
   if (!adjBody.includes('Lập phiếu đề xuất thay đổi kế hoạch tháng') || !/PDC-\d/.test(adjBody)) fail('Màn hình Điều chỉnh kế hoạch tháng phải có form lập phiếu và danh sách phiếu');
   ok('Màn hình riêng Điều chỉnh kế hoạch tháng: lập phiếu, danh sách phiếu (Chủ tịch HĐQT duyệt)');
+  await ctx.close();
+}
+
+
+// 12. Thuật toán xếp lịch theo thông số: thẻ Tối ưu & tăng ca, TP KT/QA sửa thông số dòng chảy, TP SX đề xuất tăng ca → Giám đốc duyệt / kết thúc
+{
+  [ctx, page] = await ctxFor();
+  await login(page, 'kt.tp@bmt.test');
+  await page.goto(`${BASE}/tham-so?sua=flow`);
+  const flowSec = page.locator('section', { hasText: 'Dòng chảy, máy trộn, tăng ca' }).first();
+  if (await flowSec.locator('input[name=ot_max_min]').count()) fail('TP KT/QA không được sửa giới hạn tăng ca');
+  await flowSec.locator('input[name=pot_life_h]').fill('6');
+  await flowSec.locator('input[name=qc_min]').fill('90');
+  await flowSec.locator('textarea[name=reason]').fill('E2E: đo thực tế hạn dùng 6 giờ, QC 90 phút');
+  await clickNav(page, 'section:has-text("Dòng chảy, máy trộn, tăng ca") button:has-text("Lưu thay đổi")');
+  await page.screenshot({ path: `${SHOTS}/21-tham-so-dong-chay.png`, fullPage: true });
+  await expectOk(page, 'TP KT/QA sửa hạn dùng silicone, thời gian QC');
+  const fb = await page.innerText('main');
+  if (!/Hạn dùng silicone đã pha lưu hóa\s*6/.test(fb)) fail('Hạn dùng silicone chưa lưu 6 giờ');
+  if (!fb.includes('Hạn dùng silicone đã pha lưu hóa (giờ)')) fail('Nhật ký tham số thiếu dòng hạn dùng silicone');
+  await ctx.close();
+  [ctx, page] = await ctxFor();
+  await login(page, 'sx.tp@bmt.test');
+  await page.goto(`${BASE}/lich-may?tab=toiuu&mode=fastest`);
+  const ob = await page.innerText('main');
+  for (const t of ['Máy cổ chai', 'Nếu thêm giờ thì sao', 'Thứ tự lô và ngày xong', 'Tăng ca / trộn sớm', 'Thông số đang dùng']) if (!ob.includes(t)) fail(`Thẻ Tối ưu & tăng ca thiếu "${t}"`);
+  if (!ob.includes('hạn dùng silicone 6 giờ') || !ob.includes('90 phút')) fail('Thẻ Tối ưu không hiện thông số mới (hạn dùng 6 giờ, QC 90 phút)');
+  await page.screenshot({ path: `${SHOTS}/20-toi-uu-tang-ca.png`, fullPage: true });
+  ok('Thẻ Tối ưu & tăng ca: máy cổ chai, nếu thêm giờ, thứ tự lô, thông số đang dùng');
+  const form = page.locator('form:has(input[name=date_from])');
+  if (await form.count()) {
+    await form.locator('input[name=reason]').fill('E2E: rút ngắn kế hoạch');
+    await Promise.all([page.waitForURL(/ok=|err=/), form.locator('button', { hasText: 'Đề xuất Giám đốc duyệt' }).click()]);
+    const msg = await flash(page);
+    if (!msg.includes('Giám đốc duyệt')) fail(`Đề xuất tăng ca: ${msg}`);
+    ok('TP SX đề xuất tăng ca theo MES, gửi Giám đốc duyệt');
+    await ctx.close();
+    [ctx, page] = await ctxFor();
+    await login(page, 'bgd@bmt.test');
+    await page.goto(`${BASE}/lich-may?tab=toiuu`);
+    await clickNav(page, 'form:has(input[name=note]) button:has-text("Duyệt")');
+    await expectOk(page, 'Giám đốc duyệt tăng ca');
+    if (!(await page.innerText('main')).includes('Đang áp dụng')) fail('Tăng ca đã duyệt phải hiện Đang áp dụng');
+    await page.locator('form:has(button:has-text("Kết thúc sớm")) input[name=note]').first().fill('E2E: đủ năng lực');
+    await clickNav(page, 'button:has-text("Kết thúc sớm")');
+    await expectOk(page, 'Giám đốc kết thúc tăng ca sớm');
+  } else ok('Không cần tăng ca với dữ liệu thử (không có đề xuất)');
   await ctx.close();
 }
 

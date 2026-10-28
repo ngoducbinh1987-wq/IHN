@@ -21,8 +21,11 @@ export type Levers = {
   groups?: string[];            // nhóm máy được phép đề xuất tăng ca (mặc định: mọi nhóm có việc)
   mode?: 'due' | 'fastest';     // due: chỉ thêm giờ đến khi kịp ngày chốt / hạn giao; fastest: thêm đến khi lợi ích < ngưỡng
   min_gain_day_per_10h?: number; // fastest: tối thiểu số ngày rút ngắn cho mỗi 10 giờ công thêm, mặc định 0,1
+  min_step_gain_day?: number;   // fastest: mỗi bước thêm giờ phải rút ngắn ít nhất số ngày này, mặc định 0,1
   max_evals?: number;           // giới hạn số lần chạy bộ xếp lịch, mặc định 600
   reorder?: boolean;            // thử đổi thứ tự lô, mặc định true
+  time_ms?: number;             // giới hạn thời gian tìm (ms), mặc định 4000 (trang web không chờ lâu)
+  levers?: boolean;             // thử thêm giờ (tăng ca / trộn sớm), mặc định true
 };
 export type Score = { unplaced: number; late: number; lateLots: number; makespan: number; setup: number; flow: number };
 export type GroupLoad = { group: string; machines: string[]; busyDays: number; util: number; waitSilicone_h: number };
@@ -86,6 +89,8 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   const mpo = Math.max(1, Number(ctx.cfg.machines_per_operator) || 1);
   const F0 = flowOf(ctx.cfg);
   let evals = 0;
+  const t0 = Date.now(), timeMs = lv.time_ms ?? 4000;
+  const over = (budget = maxEvals) => evals >= budget || Date.now() - t0 > timeMs;
   const run = (ords: Order[], flow: FlowCfg) => {
     evals++;
     const sch = schedule(ords, { ...ctx, cfg: { ...ctx.cfg, flow } }, opt);
@@ -94,9 +99,9 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   const baseFlow: FlowCfg = { ...(ctx.cfg.flow ?? {}), extra_min: { ...F0.extra_min }, mix_early_h: F0.mix_early_h };
   const base = run(orders, baseFlow);
 
-  // 1. Thứ tự lô: bắt đầu từ thứ tự gấp → hạn; dời từng lô (cùng mức gấp) sang vị trí khác nếu tốt hơn
+  // 1. Thứ tự lô: bắt đầu từ thứ tự gấp → thứ tự đã chọn lần trước → hạn; dời từng lô (cùng mức gấp) sang vị trí khác nếu tốt hơn
   const due = (o: Order) => o.commit ?? o.due ?? '9999-12-31';
-  let seqd = [...orders].sort((a, b) => a.prio - b.prio || due(a).localeCompare(due(b)) || a.label.localeCompare(b.label));
+  let seqd = [...orders].sort((a, b) => a.prio - b.prio || (a.seq ?? 1e9) - (b.seq ?? 1e9) || due(a).localeCompare(due(b)) || a.label.localeCompare(b.label));
   const withSeq = (list: Order[]) => {
     const pos = new Map(list.map((o, i) => [o.id, i]));
     return orders.map((o) => ({ ...o, seq: pos.get(o.id)! }));
@@ -108,7 +113,7 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
     for (let pass = 0, improved = true; improved && pass < 3; pass++) {
       improved = false;
       for (let i = 0; i < seqd.length; i++) for (let j = 0; j < seqd.length; j++) {
-        if (i === j || evals >= budget) continue;
+        if (i === j || over(budget)) continue;
         if (seqd[i].prio !== seqd[j].prio) continue;
         const cand = [...seqd];
         const [x] = cand.splice(i, 1); cand.splice(j, 0, x);
@@ -139,7 +144,7 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   const cost = (ls: Lever[], days: number) => ls.reduce((a, l) => a + (l.kind === 'early' ? earlyStep : (otStep / 60) * personsOf(l.group)), 0) * Math.max(1, days);
   const whatIf: WhatIf[] = [];
   for (const l of levers) {
-    const f = apply(baseFlow, [l]); if (!f || evals >= maxEvals) continue;
+    const f = apply(baseFlow, [l]); if (!f || over()) continue;
     const r = run(withSeq(seqd), f);
     whatIf.push({ label: l.kind === 'early' ? `Trộn sớm ${earlyStep} giờ trước ca` : `${groupName(l.group)} thêm ${otStep / 60} giờ/ngày`, days: r.score.makespan, gain: cur.score.makespan - r.score.makespan });
   }
@@ -154,19 +159,19 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
       for (let c = b + 1; c < levers.length; c++) combos.push([levers[a], levers[b], levers[c]]);
     }
   }
-  const need = () => mode === 'fastest' || cur.score.late > 0 || cur.score.unplaced > 0;
-  while (need() && evals < maxEvals) {
+  const need = () => lv.levers !== false && (mode === 'fastest' || cur.score.late > 0 || cur.score.unplaced > 0);
+  while (need() && !over()) {
     // chọn bước có lợi nhất trên mỗi giờ công: trước hết bớt trễ hạn, sau đó rút ngắn ngày xong
     let bestR: { r: typeof cur; f: FlowCfg; ls: Lever[]; k1: number; k2: number } | null = null;
     for (const ls of combos) {
-      if (evals >= maxEvals) break;
+      if (over()) break;
       const f = apply(flow, ls); if (!f) continue;
       const r = run(withSeq(seqd), f);
       if (cmpScore(r.score, cur.score) >= 0) continue;
       const c = Math.max(1e-9, cost(ls, r.score.makespan));
       const gainLate = cur.score.late - r.score.late + (cur.score.unplaced - r.score.unplaced) * 1000;
       const gainDays = cur.score.makespan - r.score.makespan;
-      if (mode === 'fastest' && gainLate <= 0 && (gainDays * 10) / c < minGain) continue;
+      if (mode === 'fastest' && gainLate <= 0 && ((gainDays * 10) / c < minGain || gainDays < (lv.min_step_gain_day ?? 0.1))) continue;
       if (mode === 'due' && gainLate <= 0 && gainDays <= 0.01) continue;
       const k1 = gainLate / c, k2 = gainDays / c;
       if (!bestR || k1 > bestR.k1 + 1e-12 || (Math.abs(k1 - bestR.k1) <= 1e-12 && k2 > bestR.k2)) bestR = { r, f, ls, k1, k2 };

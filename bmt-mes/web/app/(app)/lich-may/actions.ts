@@ -3,8 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { type ChangeInput, type ProductRow, readChange, simulate, stepsFor } from '@/lib/kh/change';
-import { type Kh, ROLE, carryOver, hasRole, loadKh, metaOf, rebuild, speedSig } from '@/lib/kh/load';
+import { type Kh, ROLE, carryOver, flowSig, hasRole, loadKh, metaOf, rebuild, speedSig } from '@/lib/kh/load';
+import { parseNum } from '@/lib/format';
+import { flowOf } from '@/lib/kh/scheduler';
 import type { Order } from '@/lib/kh/scheduler';
+import { groupName } from '@/lib/kh/optimize';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
@@ -18,7 +21,9 @@ function payload(kh: Kh, orders: Order[], r: ReturnType<typeof rebuild>) {
     p_params: {
       S: r.cal.S, SPD: r.cal.SPD, RUN: r.cal.RUN, fill_pct: kh.cfg.fill_pct, frozen_days: kh.cfg.frozen_days,
       machines_per_operator: kh.cfg.machines_per_operator, plan_no: kh.planNo, workdays: r.cal.wd,
-      group_days: kh.cfg.group_days ?? 0, speeds_sig: speedSig(kh.cfg),
+      group_days: kh.cfg.group_days ?? 0, speeds_sig: speedSig(kh.cfg), flow_sig: flowSig(kh.cfg), flow: flowOf(kh.cfg),
+      // thứ tự lô (bộ tối ưu chọn): xếp lại sau giữ thứ tự này, lô mới chen theo hạn giao
+      seq: Object.fromEntries(r.orders.filter((o) => o.seq != null).map((o) => [o.id, o.seq!])),
       shifts: r.cal.shifts.map((s) => ({ code: s.code, start_time: s.start_time, end_time: s.end_time, break_min: s.break_min })),
     },
     p_orders: orders.map((o) => ({
@@ -57,8 +62,17 @@ export async function rebuildSchedule(form: FormData) {
   const kh = await loadKh(db, { plan: planId, roles: me.roles });
   if (!kh.fromPlan) go(q, 'err', 'Kế hoạch chưa có dòng nào xếp được (cần mã có spec đã phát hành, có công đoạn và số mét > 0)');
   const { credit, missingReports } = await carryOver(db, kh);
-  const r = rebuild(kh, kh.orders, { credit });
-  if (!r.sch.slots.length) go(q, 'err', 'Không xếp được việc nào: kiểm tra người đứng máy và tay nghề');
+  // Xếp lịch = chạy bộ tối ưu (đổi thứ tự lô để ít trễ hạn, xong sớm, ít đổi máy; tăng ca chỉ dùng phần Giám đốc đã duyệt)
+  const r = rebuild(kh, kh.orders, { credit, optimize: true });
+  if (!r.sch.slots.length) go(q, 'err', ['Không xếp được việc nào: kiểm tra người đứng máy và tay nghề', ...(r.sch.warnings ?? [])].join(' · '));
+  const seqTxt = [...r.orders].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)).map((o) => o.label).join(' → ');
+  const before = [...kh.orders].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || (a.due ?? '').localeCompare(b.due ?? '')).map((o) => o.label).join(' → ');
+  const extra = [
+    seqTxt !== before ? `MES chọn thứ tự lô ${seqTxt}` : '',
+    r.best?.bottleneck[0] ? `máy cổ chai: ${groupName(r.best.bottleneck[0].group)} (${Math.round(r.best.bottleneck[0].util * 100)} %)` : '',
+    ...(r.sch.warnings ?? []).slice(0, 3),
+    r.sch.unplaced.length ? `${r.sch.unplaced.length} việc chưa xếp được` : '',
+  ].filter(Boolean);
   const down = r.windows.filter((w) => w.kind !== 'PM').map((w) => w.label);
   const reason = kh.version
     ? (down.length ? `Xếp lại lịch: ${down.join('; ')}` : kh.dirty ? 'Xếp lại lịch theo tham số mới' : 'Xếp lại lịch theo báo cáo ca và kế hoạch')
@@ -70,7 +84,7 @@ export async function rebuildSchedule(form: FormData) {
   revalidatePath('/lenh-ngay');
   // TP SX xếp: bản đề xuất chờ Giám đốc duyệt; Giám đốc xếp: dùng ngay
   const sent = saved?.status === 'PROPOSED' ? `Đã gửi Giám đốc duyệt lịch bản ${saved.version} (lịch đang dùng giữ nguyên đến khi duyệt)` : '';
-  if (!kh.version) go(q, 'ok', sent || `Đã xếp lịch máy từ ${kh.planNo}. Phiên bản ${saved?.version ?? 1}.`);
+  if (!kh.version) go(q, 'ok', [sent || `Đã xếp lịch máy từ ${kh.planNo}. Phiên bản ${saved?.version ?? 1}.`, ...extra].join(' · '));
   const { pushed, late } = pushedLots(kh, r);
   // Lô trễ hạn giao do xếp lại (máy hỏng, bảo dưỡng…): cảnh báo đỏ Giám đốc
   if (late.length) await db.schema('app').rpc('kh_late_alert', { p_plan: planId, p_reason: reason, p_lines: late });
@@ -81,6 +95,7 @@ export async function rebuildSchedule(form: FormData) {
     pushed.length ? `Lô bị lùi: ${pushed.join('; ')}` : '',
     late.length ? `Đã cảnh báo đỏ Giám đốc: ${late.length} lô trễ hạn giao` : '',
     missingReports ? `${missingReports} ca-máy đã qua chưa có báo cáo ca xác nhận (coi như đạt kế hoạch)` : '',
+    ...extra,
   ].filter(Boolean).join(' · '));
 }
 
@@ -316,4 +331,56 @@ export async function confirmMaint(form: FormData) {
   revalidatePath('/lich-may');
   revalidatePath('/lenh-ngay');
   go(q, 'ok', ok ? 'Đã chốt ngày bảo dưỡng. Bảo dưỡng trong ca thành khối giữ chỗ khi bấm Xếp lại lịch.' : 'Đã trả lại TP KT/QA chọn ngày khác');
+}
+
+// ---------------- Tăng ca / trộn sớm: TP SX đề xuất theo MES → Giám đốc duyệt (Giám đốc tự đề xuất thì áp ngay) ----------------
+export async function proposeOvertime(form: FormData) {
+  const planId = String(form.get('plan_id') ?? '');
+  const q = `plan=${planId}&tab=toiuu`;
+  const from = String(form.get('date_from') ?? ''), to = String(form.get('date_to') ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) go(q, 'err', 'Chọn khoảng ngày tăng ca');
+  const extra: Record<string, number> = {};
+  for (const [k, v] of form.entries()) {
+    if (!k.startsWith('ot_') || typeof v !== 'string' || v.trim() === '') continue;
+    const n = parseNum(v);
+    if (n === null || Number.isNaN(n) || n < 0) go(q, 'err', `Số phút tăng ca máy ${k.slice(3)} không hợp lệ`);
+    if (n! > 0) extra[k.slice(3)] = Math.round(n!);
+  }
+  const early = parseNum(String(form.get('mix_early_h') ?? '') || '0');
+  if (early === null || Number.isNaN(early) || early < 0) go(q, 'err', 'Số giờ trộn sớm không hợp lệ');
+  let summary: unknown = {};
+  try { summary = JSON.parse(String(form.get('summary') ?? '{}')); } catch { summary = {}; }
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('kh_ot_propose', {
+    p_plan: planId || null,
+    p: { extra_min: extra, mix_early_h: early, date_from: from, date_to: to, reason: String(form.get('reason') ?? '').trim(), summary },
+  });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  const { data: c } = await db.schema('app').from('v_kh_config').select('ot_request_id').single();
+  const { data: last } = await db.schema('app').from('v_kh_overtime').select('id, req_no, status').order('proposed_at', { ascending: false }).limit(1).single();
+  go(q, 'ok', last?.status === 'APPROVED' && c?.ot_request_id === last.id
+    ? `Đã áp dụng tăng ca ${last.req_no}. Bấm Xếp lại lịch để tính lại.`
+    : `Đã gửi Giám đốc duyệt đề xuất tăng ca ${last?.req_no ?? ''}. Cần người lao động đồng ý làm thêm giờ.`);
+}
+
+export async function reviewOvertime(form: FormData) {
+  const planId = String(form.get('plan_id') ?? '');
+  const q = `plan=${planId}&tab=toiuu`;
+  const ok = form.get('approve') === '1';
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('kh_ot_review', { p_req: String(form.get('id')), p_approve: ok, p_note: String(form.get('note') ?? '').trim() || null });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  go(q, 'ok', ok ? 'Đã duyệt tăng ca. TP SX bấm Xếp lại lịch để áp dụng (bản xếp của Giám đốc dùng ngay).' : 'Đã trả lại đề xuất tăng ca, TP SX nhận thông báo.');
+}
+
+export async function endOvertime(form: FormData) {
+  const planId = String(form.get('plan_id') ?? '');
+  const q = `plan=${planId}&tab=toiuu`;
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('kh_ot_end', { p_req: String(form.get('id')), p_note: String(form.get('note') ?? '').trim() });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  go(q, 'ok', 'Đã kết thúc tăng ca. Bấm Xếp lại lịch để tính lại.');
 }

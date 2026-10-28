@@ -135,4 +135,19 @@ run('mã không cần trộn', { orders: [...ORD, L(5, 'HFR-2C-1P5', 1.5, ['Đ�
   const r3 = optimize(c.orders.map((o) => ({ ...o, commit: null })), c, {}, { mode: 'due' });
   if (r3.proposals.length) bad('không trễ hạn thì không đề xuất tăng ca');
 }
+
+// 11. Thiếu thông số: không đoán số, báo rõ
+{
+  const c = ctxOf({ kgh: 50 });
+  const cfgNoRate = { ...c.cfg, rates: c.cfg.rates.filter((r) => r.op_code !== 'CD5'), changeovers: c.cfg.changeovers.filter((x) => x.code !== 'SH_COLOR') };
+  const s = schedule(c.orders, { ...c, cfg: cfgNoRate });
+  const w = s.warnings ?? [];
+  if (!w.some((x) => x.includes('Chưa có tốc độ bọc vỏ'))) bad('thiếu tốc độ bọc vỏ phải cảnh báo');
+  if (!w.some((x) => x.includes('SH_COLOR'))) bad('thiếu phút đổi máy SH_COLOR phải cảnh báo');
+  if (!s.unplaced.some((t) => t.op === 'CD5')) bad('thiếu tốc độ bọc vỏ: việc bọc vỏ phải báo chưa xếp');
+  console.log('thiếu thông số:', w.slice(0, 2).join(' | '));
+  // Ngưỡng cỡ lớn là thông số: hạ xuống 1,5 mm² thì mã 1,5 mm² dùng tốc độ cỡ lớn (chậm hơn) → lâu hơn
+  const a = schedule(c.orders, c), b = schedule(c.orders, { ...c, cfg: { ...c.cfg, flow: { size_large_mm2: 1.5 } } });
+  if (!(scoreOf(b, c.cal, c.orders).makespan > scoreOf(a, c.cal, c.orders).makespan)) bad('ngưỡng cỡ lớn 1,5 mm² phải làm lịch dài hơn');
+}
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

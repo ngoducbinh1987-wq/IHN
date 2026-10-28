@@ -70,7 +70,7 @@ export async function saveShifts(form: FormData) {
 export async function saveRates(form: FormData) {
   const e = 'rates';
   const rows = String(form.get('ops') ?? '').split(',').filter(Boolean).map((op) => ({
-    op_code: op, rate_small: num(form, `small_${op}`, `${op} cỡ < 2,5`, e), rate_large: num(form, `large_${op}`, `${op} cỡ ≥ 2,5`, e),
+    op_code: op, rate_small: num(form, `small_${op}`, `${op} cỡ nhỏ`, e), rate_large: num(form, `large_${op}`, `${op} cỡ lớn`, e),
   }));
   const db = await createClient();
   const { data, error } = await db.schema('app').rpc('kh_save_rates', { p: rows, p_reason: String(form.get('reason') ?? '') });
@@ -96,4 +96,39 @@ export async function setMode(form: FormData) {
   if (error) go('err', error.message);
   revalidatePath('/tham-so'); revalidatePath('/ghi-nhan-ca');
   go('ok', `Đã đổi cách nhập dữ liệu máy ${String(form.get('machine'))}`);
+}
+
+// Thông số dòng chảy (thuật toán xếp lịch theo thông số): TP KT/QA sửa thông số kỹ thuật, Giám đốc sửa tất cả
+export async function saveFlow(form: FormData) {
+  const e = 'flow';
+  const bgd = form.get('bgd') === '1';
+  const opt = (k: string, label: string) => {
+    const raw = String(form.get(k) ?? '').trim();
+    if (raw === '') return null;
+    const v = parseNum(raw);
+    if (v === null || Number.isNaN(v)) go('err', `${label}: nhập số`, e);
+    return v as number;
+  };
+  const p: Record<string, unknown> = {
+    qc_min: num(form, 'qc_min', 'Thời gian QC', e), qc_learn: form.get('qc_learn') === '1',
+    pot_life_h: num(form, 'pot_life_h', 'Hạn dùng silicone', e), mix_batch_kg: num(form, 'mix_batch_kg', 'kg một mẻ trộn', e),
+    size_large_mm2: num(form, 'size_large_mm2', 'Ngưỡng cỡ lớn', e), plc_min_run: num(form, 'plc_min_run', 'Phút chạy PLC tối thiểu', e),
+  };
+  const unit: Record<string, number> = {}, safety: Record<string, number> = {};
+  for (const op of ['CD1', 'CD2', 'CD3', 'CD5', 'CD6']) {
+    unit[op] = num(form, `unit_${op}`, `Mét một bobin ${op}`, e);
+    const sv = opt(`safety_${op}`, `Đệm an toàn ${op}`);
+    if (sv !== null && sv > 0) safety[op] = sv;
+  }
+  p.unit_m = unit; p.safety_min = safety;
+  if (bgd) {
+    p.mix_early_max_h = num(form, 'mix_early_max_h', 'Trộn sớm tối đa', e);
+    p.ot_max_min = num(form, 'ot_max_min', 'Tăng ca tối đa mỗi ngày', e);
+    p.ot_month_h = num(form, 'ot_month_h', 'Tăng ca tối đa mỗi tháng', e);
+    p.pick_window_min = opt('pick_window_min', 'Khung coi như cùng lúc');
+  }
+  const db = await createClient();
+  const { data, error } = await db.schema('app').rpc('kh_save_flow', { p, p_reason: String(form.get('reason') ?? '') });
+  if (error) go('err', error.message, e);
+  done(Number(data));
 }

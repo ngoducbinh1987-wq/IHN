@@ -1,9 +1,10 @@
 // Đọc dữ liệu module Kế hoạch sản xuất từ database và dựng lịch máy để hiển thị / xếp lại.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  type Calendar, type Config, type MachineInfo, type Op, type OperatorInfo, type Order, type PrevSchedule, type Schedule, type Slot, type Window,
-  OPS, dayIndex, finishInfo, isWorkday, makeCalendar, nextWorkday, schedule, shiftPlan, toMin,
+  type Calendar, type Config, type FlowCfg, type MachineInfo, type Op, type OperatorInfo, type Order, type PrevSchedule, type Schedule, type Slot, type Window,
+  OPS, dayIndex, finishInfo, flowOf, isWorkday, makeCalendar, nextWorkday, schedule, shiftPlan, toMin,
 } from './scheduler';
+import { type Levers, type OptResult, optimize } from './optimize';
 
 type Db = SupabaseClient;
 const app = (db: Db) => db.schema('app');
@@ -90,10 +91,47 @@ export async function loadConfig(db: Db) {
     })) as Config['speeds'],
     plc_speeds: ((c.plc_speeds ?? []) as Record<string, unknown>[]).map((x) => ({ ...x, meters: Number(x.meters), run_min: Number(x.run_min) })) as Config['plc_speeds'],
   } as Config;
+  // Thông số dòng chảy (migration 4700): QC dùng số tự học khi bật và đủ mẫu; tăng ca / trộn sớm chỉ lấy phần có hiệu lực hôm nay
+  const learned = (c.qc_learned ?? {}) as { median_min?: number | null; n?: number };
+  const qcSet = c.qc_min == null ? undefined : Number(c.qc_min);
+  const useLearned = c.qc_learn !== false && Number(learned.n ?? 0) >= QC_LEARN_MIN_SAMPLES && Number(learned.median_min) > 0;
+  const num = (v: unknown) => (v == null || v === '' ? undefined : Number(v));
+  cfg.flow = {
+    qc_min: useLearned ? Number(learned.median_min) : qcSet,
+    unit_m: (c.unit_m ?? undefined) as FlowCfg['unit_m'],
+    safety_min: (c.safety_min ?? undefined) as FlowCfg['safety_min'],
+    pot_life_h: num(c.pot_life_h), mix_batch_kg: num(c.mix_batch_kg),
+    mix_early_h: num(c.mix_early_h_now) ?? 0,
+    extra_min: Object.fromEntries(Object.entries((c.extra_min_now ?? {}) as Record<string, unknown>).map(([k, v]) => [k, Number(v)])),
+    size_large_mm2: num(c.size_large_mm2), plc_min_run: num(c.plc_min_run), pick_window_min: c.pick_window_min == null ? null : Number(c.pick_window_min),
+  };
+  const flowMeta = {
+    qc_set: qcSet ?? 120, qc_learn: c.qc_learn !== false, qc_learned: { median: learned.median_min == null ? null : Number(learned.median_min), n: Number(learned.n ?? 0) }, qc_used: flowOf(cfg).qc_min,
+    levers: { ot_max_min: num(c.ot_max_min) ?? 240, ot_month_h: num(c.ot_month_h) ?? 40, early_max_h: num(c.mix_early_max_h) ?? 0 } as Required<Pick<Levers, 'ot_max_min' | 'ot_month_h' | 'early_max_h'>>,
+    ot: { extra_min: (c.extra_min ?? {}) as Record<string, number>, mix_early_h: Number(c.mix_early_h ?? 0), from: (c.ot_from as string | null) ?? null, until: (c.ot_until as string | null) ?? null,
+      request_id: (c.ot_request_id as string | null) ?? null, active: Object.keys(cfg.flow.extra_min ?? {}).length > 0 || Number(cfg.flow.mix_early_h) > 0 },
+  };
   const ORDER = ['SIL-MIX', 'BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02', 'PACK-01'];
   const machines = ((m ?? []) as MachineInfo[]).map((x) => ({ ...x, tag_count: Number(x.tag_count) }))
     .sort((a, b) => (ORDER.indexOf(a.code) + 1 || 99) - (ORDER.indexOf(b.code) + 1 || 99) || a.code.localeCompare(b.code));
-  return { cfg, machines, operators: (o ?? []) as OperatorInfo[], updated_at: c.updated_at as string | null };
+  return { cfg, machines, operators: (o ?? []) as OperatorInfo[], updated_at: c.updated_at as string | null, flowMeta };
+}
+// Số mẫu QC tối thiểu (30 ngày) để MES dùng thời gian QC thực tế thay số TP KT/QA nhập
+export const QC_LEARN_MIN_SAMPLES = 10;
+// Dấu vân tay thông số dòng chảy: đổi (TP KT/QA sửa, tăng ca được duyệt/hết hạn, QC tự học thay đổi) thì lịch đang dùng cần xếp lại
+export const flowSig = (cfg: Pick<Config, 'flow'>) => JSON.stringify(flowOf(cfg));
+// Thứ tự lô bộ tối ưu đã chọn (lưu trong phiên bản lịch): lô mới thêm chen theo hạn giao
+export function applySeq(orders: Order[], seq?: Record<string, number> | null): Order[] {
+  if (!seq || !Object.keys(seq).length) return orders;
+  const due = (o: Order) => o.commit ?? o.due ?? '9999-12-31';
+  const known = orders.filter((o) => seq[o.id] != null).sort((a, b) => seq[a.id] - seq[b.id]);
+  const list = [...known];
+  for (const o of orders.filter((x) => seq[x.id] == null).sort((a, b) => due(a).localeCompare(due(b)))) {
+    const at = list.findIndex((x) => due(x) > due(o));
+    if (at < 0) list.push(o); else list.splice(at, 0, o);
+  }
+  const pos = new Map(list.map((o, i) => [o.id, i]));
+  return orders.map((o) => ({ ...o, seq: pos.get(o.id)! }));
 }
 
 type LineRow = {
@@ -141,7 +179,7 @@ export type VersionRow = {
   // Từ 28/10/2026: TP SX xếp → bản đề xuất (PROPOSED) chờ Giám đốc duyệt mới thành lịch đang dùng
   status?: 'PROPOSED' | 'APPROVED' | 'RETURNED' | 'SUPERSEDED'; approved_at?: string | null; approved_by_name?: string | null; review_note?: string | null; created_by?: string | null;
   params: { S: number; SPD: number; RUN: number; fill_pct: number; frozen_days: number; machines_per_operator: number; plan_no?: string; workdays?: number[];
-    group_days?: number; speeds_sig?: string; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
+    group_days?: number; speeds_sig?: string; flow_sig?: string; seq?: Record<string, number>; flow?: unknown; shifts: { code: string; start_time: string; end_time: string; break_min: number }[] };
 };
 
 export type Kh = Awaited<ReturnType<typeof loadKh>>;
@@ -194,6 +232,8 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
       } as Order;
     }).sort((a, b) => a.label.localeCompare(b.label));
   }
+  // Thứ tự lô bộ tối ưu đã chọn ở lần xếp lịch (lô mới chen theo hạn giao)
+  orders = applySeq(orders, version?.params.seq);
   const planStatus = lines[0]?.plan_status ?? plan?.status ?? null;
   const planNo = plan?.plan_no ?? version?.params.plan_no ?? lines[0]?.plan_no ?? '';
   const schedStart = lines[0]?.sched_start ?? null;
@@ -241,6 +281,7 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
     || base.cfg.machines_per_operator !== Number(version.params.machines_per_operator)
     || cfgCal.wd.join() !== cal.wd.join()
     || (version.params.speeds_sig ?? '') !== speedSig(base.cfg)
+    || (version.params.flow_sig ?? '') !== flowSig(base.cfg)
     || (lastParamAt && lastParamAt > version.created_at)));
   const missing = version ? orders.filter((o) => !sch!.slots.some((s) => s.lineId === o.id)) : [];
 
@@ -264,7 +305,8 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
 
 // Dựng lịch mới (xếp lại) từ dữ liệu hiện tại; giữ phần trước mốc.
 // Máy hỏng / ngừng dùng / bảo dưỡng đã chốt rơi vào vùng khóa: xếp lại từ ngày mai để chuyển việc sang máy cùng loại.
-export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?: Map<string, number> } = {}) {
+// optimize: chạy bộ tối ưu (đổi thứ tự lô để ít trễ hạn, xong sớm, ít đổi máy; không tự thêm giờ tăng ca) – dùng khi bấm Xếp lịch
+export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?: Map<string, number>; optimize?: boolean; levers?: Levers } = {}) {
   const base = kh.version ? kh.version.base_date : kh.cal.base;
   const cal = makeCalendar(kh.cfg, base);
   const todayIdx = dayIndex(cal, kh.now.date);
@@ -275,10 +317,21 @@ export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?
   const prev: PrevSchedule | null = kh.sch && kh.version ? { S: kh.version.params.S, SPD: kh.version.params.SPD, slots: kh.sch.slots } : null;
   // Lô TP SX đã duyệt lịch: giữ chỗ trên lịch máy khi xếp lại
   const keep = new Set(kh.lines.filter((l) => l.lot_approved_at).map((l) => l.id));
-  const sch = schedule(orders, { cfg: kh.cfg, cal, machines: kh.machines, operators: kh.operators }, {
-    from: prev, boundary: prev ? boundaryDay * cal.SPD * cal.S : 0, split: opt.split, credit: opt.credit, keep, windows,
-  });
-  return { cal, sch, fin: finishInfo(sch, cal, orders), boundaryDay, windows, early: early && !opt.split };
+  const sopt = { from: prev, boundary: prev ? boundaryDay * cal.SPD * cal.S : 0, split: opt.split, credit: opt.credit, keep, windows };
+  const ctx = { cfg: kh.cfg, cal, machines: kh.machines, operators: kh.operators };
+  let ords = orders, best: OptResult | null = null;
+  let sch: Schedule;
+  if (opt.optimize) {
+    best = optimize(orders, ctx, sopt, { levers: false, time_ms: 3000, ...opt.levers });
+    ords = best.orders; sch = best.sch;
+  } else sch = schedule(orders, ctx, sopt);
+  return { cal, sch, orders: ords, fin: finishInfo(sch, cal, ords), boundaryDay, windows, early: early && !opt.split, best };
+}
+
+// Phân tích tối ưu cho thẻ "Tối ưu & tăng ca": máy cổ chai, nếu thêm giờ thì sao, đề xuất tăng ca / trộn sớm để kịp ngày chốt
+export function analyze(kh: Kh, mode: 'due' | 'fastest' = 'due') {
+  const lv: Levers = { ...kh.flowMeta.levers, mode, time_ms: 4000, levers: true };
+  return rebuild(kh, kh.orders, { optimize: true, levers: lv });
 }
 
 // Mét kế hoạch theo máy, theo ca của một ngày

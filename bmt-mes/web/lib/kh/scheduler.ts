@@ -21,7 +21,7 @@ export type SpeedCfg = {
 };
 // Tốc độ thực tế từ PLC: tổng mét và phút chạy 30 ngày theo máy × công đoạn × mã SP/nhóm/mã lõi
 export type PlcSpeedCfg = { machine_code: string; op_code: string; product_id: string | null; group_code: string | null; core_code: string | null; meters: number; run_min: number; last_at?: string | null };
-export const PLC_MIN_RUN = 120; // phút chạy tối thiểu để tin tốc độ PLC
+export const PLC_MIN_RUN = 120; // mặc định phút chạy tối thiểu để tin tốc độ PLC (thông số flow.plc_min_run)
 export type Config = {
   fill_pct: number; frozen_days: number; cutoff_time: string; downtime_reason_min: number; plc_dev_pct: number;
   auto_shifts: number; plc_loss_min: number; machines_per_operator: number;
@@ -40,6 +40,9 @@ export type FlowCfg = {
   mix_batch_kg?: number;                        // kg một mẻ trộn
   mix_early_h?: number;                         // giờ máy trộn chạy trước giờ vào ca (trộn sẵn đệm)
   extra_min?: Record<string, number>;           // phút tăng ca mỗi ngày theo máy
+  size_large_mm2?: number;                      // tốc độ mặc định theo công đoạn: từ cỡ này trở lên dùng tốc độ "cỡ lớn"
+  plc_min_run?: number;                         // phút chạy tối thiểu để tin tốc độ đo từ PLC
+  pick_window_min?: number | null;              // việc bắt đầu cách nhau không quá số phút này coi như cùng lúc (để gom lô); trống = nửa ca
 };
 export const FLOW_DEFAULT = { qc_min: 120, safety_min: {} as Partial<Record<Op, number>>, pot_life_h: 8, mix_batch_kg: 25, mix_early_h: 0, extra_min: {} as Record<string, number> };
 export function flowOf(cfg: Pick<Config, 'flow'>) {
@@ -52,6 +55,9 @@ export function flowOf(cfg: Pick<Config, 'flow'>) {
     mix_batch_kg: Math.max(1, Number(f.mix_batch_kg ?? FLOW_DEFAULT.mix_batch_kg)),
     mix_early_h: Math.max(0, Number(f.mix_early_h ?? 0)),
     extra_min: { ...(f.extra_min ?? {}) } as Record<string, number>,
+    size_large_mm2: Math.max(0.01, Number(f.size_large_mm2 ?? 2.5)),
+    plc_min_run: Math.max(1, Number(f.plc_min_run ?? PLC_MIN_RUN)),
+    pick_window_min: f.pick_window_min == null || Number.isNaN(Number(f.pick_window_min)) ? null : Math.max(0, Number(f.pick_window_min)),
   };
 }
 export type MachineInfo = {
@@ -100,6 +106,7 @@ export type Schedule = {
   slots: Slot[]; byMachine: Map<string, Slot[]>; opDone: Map<string, OpSpan>; unplaced: Task[];
   S: number; SPD: number; RUN: number;
   mix?: MixLog;   // máy trộn làm nguồn cấp: năng lực, phần đã dùng, từng lần cấp (để kiểm hạn dùng)
+  warnings?: string[]; // thiếu thông số (tốc độ, phút đổi máy, máy trộn…) cần khai báo
 };
 // Nhật ký máy trộn (giờ thật tính từ 01/01/1970, theo giờ trên lịch): mỗi khoảng trộn và từng lần cấp cho line
 export type MixLog = {
@@ -193,12 +200,15 @@ export function canRun(machineType: string, t: Pick<Task, 'op' | 'order'>): bool
   return (MACHINE_OPS[machineType] ?? []).includes(t.op);
 }
 
-// Tốc độ mặc định theo công đoạn (Tham số xếp lịch): cỡ < 2,5 mm² và ≥ 2,5 mm²
-const defRate = (cfg: Pick<Config, 'rates'>, code: string, o: Pick<Order, 'size'>) => {
+// Tốc độ mặc định theo công đoạn (Tham số xếp lịch): cỡ nhỏ và cỡ lớn (ngưỡng flow.size_large_mm2).
+// Chưa khai báo tốc độ công đoạn → 0: không xếp, báo thiếu thông số (không đoán số)
+const defRate = (cfg: Pick<Config, 'rates' | 'flow'>, code: string, o: Pick<Order, 'size'>) => {
   const x = cfg.rates.find((y) => y.op_code === code);
-  return x ? Number(o.size >= 2.5 ? x.rate_large : x.rate_small) : 50;
+  if (!x) return 0;
+  const v = Number(o.size >= flowOf(cfg).size_large_mm2 ? x.rate_large : x.rate_small);
+  return v > 0 ? v : 0;
 };
-export function speedOf(cfg: Pick<Config, 'rates'>, op: Op, o: Pick<Order, 'size' | 'shield' | 'mix'>): number {
+export function speedOf(cfg: Pick<Config, 'rates' | 'flow'>, op: Op, o: Pick<Order, 'size' | 'shield' | 'mix'>): number {
   if (op === 'CD3' && o.shield) return Math.min(defRate(cfg, 'CD3', o), defRate(cfg, 'CD4', o));
   if (op === 'CD0') return mixMpm(defRate(cfg, 'CD0', o), o);
   return defRate(cfg, op, o);
@@ -223,7 +233,8 @@ export function machineSpeed(cfg: Pick<Config, 'speeds'>, machine: string, op: s
 }
 // Tốc độ thực tế PLC: cùng mã sản phẩm → cùng nhóm + mã lõi → cùng mã lõi (cỡ ruột); mỗi mức cần ≥ PLC_MIN_RUN phút chạy.
 // Xoắn + quấn AL/PET chạy cùng lượt nên PLC đo được tốc độ chung (lấy cả dòng ghi công đoạn CD3 và CD4).
-export function plcSpeed(cfg: Pick<Config, 'plc_speeds'>, machine: string, op: Op, o: Pick<Order, 'product_id' | 'group' | 'core'>): Speed | null {
+export function plcSpeed(cfg: Pick<Config, 'plc_speeds' | 'flow'>, machine: string, op: Op, o: Pick<Order, 'product_id' | 'group' | 'core'>): Speed | null {
+  const minRun = flowOf(cfg).plc_min_run;
   const ops = op === 'CD3' ? ['CD3', 'CD4'] : [op];
   const rows = (cfg.plc_speeds ?? []).filter((x) => x.machine_code === machine && ops.includes(x.op_code));
   const tiers: ((x: PlcSpeedCfg) => boolean)[] = [
@@ -234,13 +245,13 @@ export function plcSpeed(cfg: Pick<Config, 'plc_speeds'>, machine: string, op: O
   for (const f of tiers) {
     const sel = rows.filter(f);
     const m = sel.reduce((a, x) => a + Number(x.meters), 0), min = sel.reduce((a, x) => a + Number(x.run_min), 0);
-    if (min >= PLC_MIN_RUN && m > 0) return { v: m / min, src: 'PLC', pending: false, note: `${Math.round(min)} phút chạy` };
+    if (min >= minRun && m > 0) return { v: m / min, src: 'PLC', pending: false, note: `${Math.round(min)} phút chạy` };
   }
   return null;
 }
 // Tốc độ chạy một công đoạn trên một máy theo chế độ nhập dữ liệu của máy.
 // Bảng tự nhập: xoắn có quấn AL/PET liền dây lấy tốc độ chậm hơn của hai bước.
-export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds'>, machine: string, op: Op,
+export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds' | 'flow'>, machine: string, op: Op,
   o: Pick<Order, 'size' | 'shield' | 'product_id' | 'group' | 'core' | 'mix'>, mode = 'MANUAL'): Speed {
   if (op === 'CD0') {
     // Máy trộn: bảng tốc độ khai báo theo kg/giờ (không lấy PLC)
@@ -263,12 +274,12 @@ export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds'>, mac
 }
 
 // Năng lực một máy trộn (kg/giờ): bảng khai báo của máy (dòng chung, không riêng mã) → mặc định công đoạn CD0
-export function mixerKgh(cfg: Pick<Config, 'rates' | 'speeds'>, machine: string): number {
+export function mixerKgh(cfg: Pick<Config, 'rates' | 'speeds' | 'flow'>, machine: string): number {
   const s = machineSpeed(cfg, machine, 'CD0', { product_id: null, group: '', core: null });
   return s ? s.v : defRate(cfg, 'CD0', { size: 0 });
 }
 
-export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates'>): Task[] {
+export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates' | 'flow'>): Task[] {
   const tasks: Task[] = [];
   orders.forEach((o, oi) => {
     o.route.forEach((op, k) => {
@@ -286,7 +297,7 @@ export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates'>): Task[] 
   });
   tasks.forEach((t, i) => {
     t.id = i; t.key = `${t.order.id}|${t.op}|${t.color ?? ''}`; t.full = t.m;
-    t.rate = speedOf(cfg, t.op, t.order); t.run = t.m / t.rate;
+    t.rate = speedOf(cfg, t.op, t.order); t.run = t.rate > 0 ? t.m / t.rate : Infinity;
   });
   return tasks;
 }
@@ -294,7 +305,7 @@ export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates'>): Task[] 
 type Prev = { order: Order; op: Op; color: string | null } | null;
 function changeover(cfg: Pick<Config, 'changeovers'>, prev: Prev, t: { order: Order; op: Op; color: string | null }): [number, string] {
   if (!prev) return [0, ''];
-  const P = (code: string) => Number(cfg.changeovers.find((c) => c.code === code)?.minutes ?? 30);
+  const P = (code: string) => Number(cfg.changeovers.find((c) => c.code === code)?.minutes ?? 0); // chưa khai báo: 0 phút + cảnh báo (schedule.warnings)
   if (prev.op !== t.op) return [P('SH_CODE'), 'đổi công đoạn, thay khuôn'];
   if (t.op === 'CD2') {
     if (prev.order.size !== t.order.size || prev.order.sil !== t.order.sil) return [P('INS_SIZE'), 'đổi cỡ ruột, thay khuôn'];
@@ -351,12 +362,21 @@ export function schedule(
   const keep = opt.keep ?? new Set<string>();
   const wins = (opt.windows ?? []).filter((w) => w.to > w.from);
   const KEEP_LABEL = 'khối giữ chỗ của lô TP SX đã duyệt lịch';
+  const warnings = new Set<string>();
+  {
+    // Phút đổi máy dùng trong thuật toán: thiếu mã nào thì tính 0 phút và báo khai báo
+    const ops = new Set(orders.flatMap((o) => o.route));
+    const need: [string, Op][] = [['INS_UP', 'CD2'], ['INS_DOWN', 'CD2'], ['INS_SIZE', 'CD2'], ['SH_COLOR', 'CD5'], ['SH_CODE', 'CD5'], ['BUN_SIZE', 'CD1'], ['TWS_CODE', 'CD3'], ['MIX_CODE', 'CD0'], ['PK_CODE', 'CD6']];
+    for (const [code, op] of need) if (ops.has(op) && !cfg.changeovers.some((c) => c.code === code))
+      warnings.add(`Chưa khai báo phút đổi máy ${code} (${OP_NAME[op].toLowerCase()}): đang tính 0 phút`);
+  }
   // Giờ thật → phút xếp lịch (QC, đệm an toàn là thời gian thật; phút xếp lịch = phút máy chạy)
   const shLenMin = cal.shifts.map((s) => shiftRun(s) + Number(s.break_min));
   const real2s = S / Math.max(1, shLenMin.reduce((a, x) => a + x, 0) / Math.max(1, shLenMin.length));
   const QC = F.qc_min * real2s;
   const SAFE = (op: Op) => Number(F.safety_min[op] ?? 0) * real2s;
   const dayRun = Math.max(1, cal.RUN * SPD);
+  const PW = F.pick_window_min == null ? S / 2 : F.pick_window_min * real2s; // khung "bắt đầu gần như cùng lúc"
   const boost = (code: string) => 1 + Math.max(0, Number(F.extra_min[code] ?? 0)) / dayRun;
 
   // Máy trộn = nguồn cấp silicone theo nhịp line bọc (không xếp như một công đoạn chạy trước)
@@ -428,7 +448,7 @@ export function schedule(
   const pending = new Set<number>();
   for (const t of tasks) {
     if (isSup(t)) continue;
-    if (t.m > 1) { t.run = t.m / t.rate; pending.add(t.id); } else t.m = 0;
+    if (t.m > 1) { t.run = t.rate > 0 ? t.m / t.rate : Infinity; pending.add(t.id); } else t.m = 0;
   }
   const dead = new Set<number>(); // việc không thể chạy (vd. không có silicone): việc sau cũng không xếp
   for (const m of machines) {
@@ -665,7 +685,9 @@ export function schedule(
         if (!canRun(m.machine_type, t)) continue;
         let ln: Ln = ln0, gate: Gate = null;
         if (usesMix(t)) { if (pair === undefined) pair = pairFor(m.code); if (!pair) continue; ln = pair.ln; gate = pair.gate; }
-        const sp = spOf(m.code, t), run = t.m / sp.v;
+        const sp = spOf(m.code, t);
+        if (!(sp.v > 0)) { warnings.add(`Chưa có tốc độ ${OP_NAME[t.op].toLowerCase()} cho máy ${m.code} (Hồ sơ máy → Tốc độ hoặc Tham số xếp lịch): không xếp việc này lên máy`); continue; }
+        const run = t.m / sp.v;
         const r = ready(t, run, sp.v);
         if (r !== null) cands.push({ t, r, sp, run, ln, gate, bl: [...m.blocks, ...ln.w.blocks[ln.li]] });
       }
@@ -676,7 +698,7 @@ export function schedule(
       const ok = cands.filter((x) => Number.isFinite(startOf(x)));
       if (!ok.length) continue;
       const minStart = Math.min(...ok.map(startOf));
-      const pool = ok.filter((x) => startOf(x) <= minStart + S / 2);
+      const pool = ok.filter((x) => startOf(x) <= minStart + PW);
       const { x: xc, lead, su } = pick(pool, m.last);
       const x = xc as (typeof cands)[number];
       const f = fit(rawOf(x), su + x.run, x.bl);
@@ -686,7 +708,7 @@ export function schedule(
     if (!opts.length) break;
     // Trong nửa ca đầu: đơn gấp, thứ tự tối ưu, hạn giao sớm; rồi máy xong sớm nhất (máy nhanh hơn thắng)
     const minRs = Math.min(...opts.map((o) => o.rs));
-    const best = opts.filter((o) => o.rs <= minRs + S / 2)
+    const best = opts.filter((o) => o.rs <= minRs + PW)
       .sort((a, b) => byPrio(a.t.order, b.t.order) || (a.rs + a.run) - (b.rs + b.run) || a.rs - b.rs)[0];
     const { m, t, ln, sp, run, lead } = best;
     const [su, why] = changeover(cfg, m.last, t);
@@ -798,6 +820,8 @@ export function schedule(
   const byMachine = new Map(machines.map((m) => [m.code, m.slots.sort((a, b) => a.start - b.start)]));
   return {
     slots: machines.flatMap((m) => m.slots), byMachine, opDone, unplaced: [...pending, ...dead].map((id) => tasks[id]), S, SPD, RUN: cal.RUN, mix: mixLog,
+    warnings: [...warnings, ...(supply && mixers.every((m) => !(kghOf.get(m.code)! > 0)) ? ['Máy trộn chưa có năng lực (kg/giờ): line silicone không chạy được'] : []),
+      ...[...dead].map((id) => `Không có silicone cho ${tasks[id].order.label} ${tasks[id].order.product_code} màu ${tasks[id].color ?? ''}: máy trộn ngừng hoặc thiếu người trộn`)],
   };
 }
 
