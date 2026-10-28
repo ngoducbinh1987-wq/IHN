@@ -91,7 +91,7 @@ export async function loadConfig(db: Db) {
     })) as Config['speeds'],
     plc_speeds: ((c.plc_speeds ?? []) as Record<string, unknown>[]).map((x) => ({ ...x, meters: Number(x.meters), run_min: Number(x.run_min) })) as Config['plc_speeds'],
   } as Config;
-  // Thông số dòng chảy (migration 4700): QC dùng số tự học (làm tròn 10 phút) khi bật và đủ mẫu;
+  // Thông số dòng chảy (migration 4800): QC dùng số tự học (làm tròn 10 phút) khi bật và đủ mẫu;
   // tăng ca / trộn sớm đã duyệt chỉ tính trong khoảng ngày áp dụng (bộ xếp lịch kiểm theo từng ngày)
   const learned = (c.qc_learned ?? {}) as { median_min?: number | null; n?: number };
   const qcSet = c.qc_min == null ? undefined : Number(c.qc_min);

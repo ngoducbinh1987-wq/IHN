@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026004700_scheduler_flow: thông số dòng chảy, sửa thông số theo vai trò, đề xuất / duyệt / kết thúc tăng ca.
+-- Kiểm thử migration 20261026004800_scheduler_flow: thông số dòng chảy, sửa thông số theo vai trò, đề xuất / duyệt / kết thúc tăng ca.
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 set client_min_messages = warning;
 begin;
