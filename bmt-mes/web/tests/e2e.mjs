@@ -457,8 +457,8 @@ await ctx.close();
 [ctx, page] = await ctxFor();
 await login(page, 'vh@bmt.test');
 const nav = await page.textContent('nav');
-if (['Người dùng', 'Kế hoạch & MRP', 'Vật tư', 'Báo cáo hao hụt', 'Tồn kho', 'Phiếu kho', 'Phân quyền', 'Nhận NVL tại máy', 'Quét mã QR'].some((x) => nav.includes(x))) fail(`Menu của vận hành chỉ có việc tại máy và thông tin chung: ${nav}`);
-if (!['Ghi nhận ca', 'Lệnh SX ngày', 'Checklist đầu ca', 'Bảo dưỡng', 'Kế hoạch sản xuất chung', 'Danh sách máy', 'Lịch máy'].every((x) => nav.includes(x))) fail(`Menu của vận hành thiếu việc tại máy / thông tin chung: ${nav}`);
+if (['Người dùng', 'Kế hoạch & MRP', 'Vật tư', 'Báo cáo hao hụt', 'Tồn kho', 'Phiếu kho', 'Phân quyền', 'Nhận NVL tại máy', 'Quét mã QR', 'Checklist đầu ca', 'Kiểm tra năng lực', 'Thông báo'].some((x) => nav.includes(x))) fail(`Menu của vận hành chỉ có việc tại máy và thông tin chung: ${nav}`);
+if (!['Ghi nhận ca', 'Lệnh SX ngày', 'Bảo dưỡng', 'Kế hoạch sản xuất chung', 'Danh sách máy', 'Lịch máy'].every((x) => nav.includes(x))) fail(`Menu của vận hành thiếu việc tại máy / thông tin chung: ${nav}`);
 await page.goto(`${BASE}/quan-tri`);
 if (!(await flash(page)).includes('không thuộc bộ phận')) fail('Vận hành vào được trang Quản trị');
 ok('Vận hành không thấy menu Quản trị/Kế hoạch & MRP và bị chặn khi gõ thẳng URL');
@@ -545,6 +545,16 @@ await ctx.close();
   ok(`Menu thu gọn theo nhóm, số việc hiện ở nhóm khi đóng: ${sums.map((x) => `${x.g}${x.head ? ' ' + x.head : ''}${x.open === 'true' ? ' (mở)' : ''}`).join(', ')}`);
   await page.goto(`${BASE}/lich-may`);
   if ((await page.locator('aside nav button', { hasText: 'Sản xuất' }).getAttribute('aria-expanded')) !== 'true') fail('Mở trang Lịch máy thì nhóm Sản xuất phải tự mở');
+  // Rà soát menu 28/10: bỏ Thông báo (chuông), Kiểm tra năng lực, Checklist đầu ca; dời nhóm
+  const inGroup = async (g) => (await page.locator(`aside nav [data-group="${g}"]`).textContent()) ?? '';
+  if (/Thông báo|Kiểm tra năng lực|Checklist đầu ca|Người dùng & quyền/.test(nav)) fail(`Menu còn mục đã bỏ: ${nav}`);
+  if (!(await inGroup('Hệ thống & cài đặt')).includes('Tham số xếp lịch') || !(await inGroup('Hệ thống & cài đặt')).includes('Cài đặt máy')
+    || !(await inGroup('Kỹ thuật / QA')).includes('Tốc độ sản xuất') || !(await inGroup('Báo cáo')).includes('Lịch sử vận hành')
+    || !(await inGroup('Báo cáo')).includes('Báo cáo bảo trì') || /Tốc độ|Lịch sử|Cài đặt/.test(await inGroup('Quản lý máy'))) fail('Nhóm menu chưa đúng phương án rà soát');
+  if (!(await page.locator('header a[href="/thong-bao"]').count())) fail('Chuông thông báo trên đầu trang phải còn');
+  await page.goto(`${BASE}/may/kiem-tra`);
+  if (!/404|không tìm thấy|could not be found/i.test(await page.locator('body').innerText())) fail('Trang Kiểm tra năng lực phải bỏ');
+  ok('Rà soát menu: bỏ Thông báo, Kiểm tra năng lực, Checklist đầu ca; Tham số, Cài đặt máy ở Hệ thống & cài đặt; Tốc độ ở Kỹ thuật / QA; Lịch sử vận hành, Báo cáo bảo trì ở Báo cáo');
   await page.goto(`${BASE}/`);
   if (/Quét mã QR|Cấp NVL cho SX|Nhận NVL tại máy|Máy, người & tham số/.test(nav) || !nav.includes('Tham số xếp lịch')) fail('Menu còn mục thừa hoặc thiếu Tham số xếp lịch');
   const wd = async () => (await page.locator('section', { hasText: 'Ca làm việc' }).first().innerText()).match(/Ngày làm việc:\s*(.+)/)?.[1] ?? '';
@@ -570,7 +580,7 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   await login(page, email, pw);
   const pages = ['/kho', '/kho/ton', '/kho/phieu', '/kho/quet', '/kho/cap-phat', '/kho/kiem-ke', '/kho/nhan-hang', '/kho/so-cai', '/kho/cai-dat',
     '/lich-may', '/lenh-ngay', '/ghi-nhan-ca', '/kh-thuc-te', '/tham-so', '/may', '/may/checklist', '/may/bao-duong', '/may/toc-do',
-    '/may/kiem-tra', '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut', '/phieu-hoan-thanh', '/kho/qc',
+    '/may/lich-su', '/may/bao-cao', '/bao-cao/hao-hut', '/phieu-hoan-thanh', '/kho/qc',
     '/phieu-xuat-nvl', '/bao-cao/ngay', '/in/phieu-xuat-nvl', '/in/bao-cao-ca', '/de-xuat/du-phong', '/de-xuat/du-phong?tab=phieu', '/ke-hoach/dieu-chinh',
     '/lich-may?tab=toiuu', '/lich-may?tab=toiuu&mode=fastest', '/lich-may?tab=cancu', '/tham-so?sua=flow'];
   for (const u of pages) {

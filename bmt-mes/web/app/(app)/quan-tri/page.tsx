@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { ResetPasswordFields } from '@/components/reset-password-fields';
 import { createUser, resetPassword, updateUser } from './actions';
 
-export const metadata = { title: 'Người dùng & quyền' };
+export const metadata = { title: 'Người dùng' };
 
 type U = { id: string; full_name: string; employee_code: string | null; department: string | null; title: string | null;
   status: string; email: string | null; last_sign_in_at: string | null; roles: string[]; warehouses: string[] };
@@ -79,7 +79,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const overrides = canReset ? ((await supabase.schema('app').rpc('admin_overrides', { p_limit: 20 })).data as O[] | null) ?? [] : [];
   return (
     <>
-      <Toolbar title="Người dùng & quyền" reload="/quan-tri" add={editable ? { href: '/quan-tri?them=1', label: 'Thêm người dùng' } : undefined} />
+      <Toolbar title="Người dùng" reload="/quan-tri" add={editable ? { href: '/quan-tri?them=1', label: 'Thêm người dùng' } : undefined} />
       <div className="mt-4"><Flash ok={sp.ok} err={sp.err ?? error?.message} /></div>
       <div className={`grid gap-4 ${editing || sp.them ? 'xl:grid-cols-[1.4fr_1fr]' : ''}`}>
         <section className="card overflow-x-auto">

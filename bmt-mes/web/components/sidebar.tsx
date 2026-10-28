@@ -23,7 +23,7 @@ const ICONS = {
 // Biểu tượng của nhóm menu (hiện ở dòng nhóm khi thu gọn)
 const GROUP_ICONS: Record<string, keyof typeof ICONS> = {
   'Điều hành': 'gauge', 'Mua hàng': 'cart', 'Sản xuất': 'factory', Kho: 'warehouse', 'Báo cáo': 'report',
-  'Kỹ thuật / QA': 'checklist', 'Quản lý máy': 'machine', 'Hệ thống': 'settings',
+  'Kỹ thuật / QA': 'checklist', 'Quản lý máy': 'machine', 'Hệ thống & cài đặt': 'settings',
 };
 const OPEN_KEY = 'bmt-menu-open';
 

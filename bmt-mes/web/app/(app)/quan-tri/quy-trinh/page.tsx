@@ -26,7 +26,7 @@ function People({ users, role, selected }: { users: U[]; role: string | null; se
       <legend className="mb-1 text-[12.5px] text-muted">
         Người thực hiện {role ? <>(đang giữ vai trò <b>{ROLE_NAMES[role] ?? role}</b>)</> : null} · không chọn ai = tất cả người giữ vai trò
       </legend>
-      {list.length === 0 ? <div className="text-[13px] text-bad">Chưa có ai giữ vai trò này: gán vai trò ở Người dùng & quyền.</div> : (
+      {list.length === 0 ? <div className="text-[13px] text-bad">Chưa có ai giữ vai trò này: gán vai trò ở Hệ thống & cài đặt → Người dùng.</div> : (
         <div className="flex flex-wrap gap-x-5 gap-y-1">
           {list.map((u) => (
             <label key={u.id} className="flex items-center gap-2 text-[14px]">
@@ -155,7 +155,7 @@ export default async function FlowConfig({ searchParams }: { searchParams: Promi
           <p className="mt-2 text-[12.5px] text-muted">Bước mới thêm vào cuối quy trình. Sau khi thêm, chọn người thực hiện cụ thể ở thẻ của bước.</p>
         </form>
       )}
-      <p className="mt-4 text-[13px]"><Link className="link" href="/quan-tri">← Người dùng & quyền</Link></p>
+      <p className="mt-4 text-[13px]"><Link className="link" href="/quan-tri">← Người dùng</Link></p>
     </>
   );
 }

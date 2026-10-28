@@ -27,7 +27,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: '/', label: 'Tổng quan', icon: 'gauge', group: 'Điều hành' },
     { href: '/dieu-hanh', label: 'Trung tâm điều hành', icon: 'screen', group: 'Điều hành', static: true },
     { href: '/duyet', label: 'Quy trình duyệt', icon: 'check', group: 'Điều hành', badge: myTurn ?? 0 },
-    { href: '/thong-bao', label: 'Thông báo', icon: 'bell', group: 'Điều hành', badge: unread ?? 0 },
   ];
   const PAGES: (NavItem & { key: string })[] = [
     { key: 'de-xuat', href: '/de-xuat', label: 'Đề xuất mua hàng', icon: 'cart', group: 'Mua hàng' },
@@ -41,7 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { key: 'ghi-nhan-ca', href: '/ghi-nhan-ca', label: 'Ghi nhận ca', icon: 'shift', group: 'Sản xuất' },
     { key: 'phieu-hoan-thanh', href: '/phieu-hoan-thanh', label: 'Phiếu hoàn thành bobin', icon: 'checklist', group: 'Sản xuất' },
     { key: 'phieu-xuat-nvl', href: '/phieu-xuat-nvl', label: 'Phiếu xuất NVL, NVL thừa', icon: 'issue', group: 'Sản xuất' },
-    { key: 'tham-so', href: '/tham-so', label: 'Tham số xếp lịch', icon: 'sliders', group: 'Sản xuất' },
+    // Thông báo không có trên menu: chuông có số trên đầu trang. Checklist đầu ca (công nhân dùng giấy) mở từ Bảo dưỡng, Danh sách máy.
     // Quy trình final: xuất NVL bằng phiếu giấy, công nhân không dùng điện thoại → Quét mã QR, Cấp NVL, Nhận NVL tại máy
     // không có trên menu (trang vẫn còn, mở từ đường dẫn mã tem)
     { key: 'kho', href: '/kho', label: 'Tổng quan kho', icon: 'warehouse', group: 'Kho' },
@@ -52,22 +51,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { key: 'bc-ngay', href: '/bao-cao/ngay', label: 'Báo cáo sản xuất ngày', icon: 'report', group: 'Báo cáo' },
     { key: 'bc-hao-hut', href: '/bao-cao/hao-hut', label: 'Báo cáo hao hụt', icon: 'chart', group: 'Báo cáo' },
     { key: 'kho-so-cai', href: '/kho/so-cai', label: 'Nhập – xuất – tồn', icon: 'ledger', group: 'Báo cáo' },
+    { key: 'may-lich-su', href: '/may/lich-su', label: 'Lịch sử vận hành', icon: 'history', group: 'Báo cáo' },
+    { key: 'may-bao-cao', href: '/may/bao-cao', label: 'Báo cáo bảo trì', icon: 'report', group: 'Báo cáo' },
     { key: 'san-pham', href: '/san-pham', label: 'Sản phẩm & Spec', icon: 'spec', group: 'Kỹ thuật / QA' },
     { key: 'kho-qc', href: '/kho/qc', label: 'QC bobin, lô hàng', icon: 'checklist', group: 'Kỹ thuật / QA', badge: qcWait ?? 0 },
+    { key: 'may-toc-do', href: '/may/toc-do', label: 'Tốc độ sản xuất', icon: 'speed', group: 'Kỹ thuật / QA' },
     { key: 'may', href: '/may', label: 'Danh sách máy', icon: 'machine', group: 'Quản lý máy' },
-    { key: 'may-checklist', href: '/may/checklist', label: 'Checklist đầu ca', icon: 'checklist', group: 'Quản lý máy' },
     { key: 'may-bao-duong', href: '/may/bao-duong', label: 'Bảo dưỡng, sửa chữa', icon: 'wrench', group: 'Quản lý máy', badge: maintDue ?? 0 },
-    { key: 'may-toc-do', href: '/may/toc-do', label: 'Tốc độ sản xuất', icon: 'speed', group: 'Quản lý máy' },
-    { key: 'may-kiem-tra', href: '/may/kiem-tra', label: 'Kiểm tra năng lực', icon: 'capacity', group: 'Quản lý máy' },
-    { key: 'may-lich-su', href: '/may/lich-su', label: 'Lịch sử vận hành', icon: 'history', group: 'Quản lý máy' },
-    { key: 'may-bao-cao', href: '/may/bao-cao', label: 'Báo cáo bảo trì', icon: 'report', group: 'Quản lý máy' },
-    { key: 'may-cai-dat', href: '/may/cai-dat', label: 'Cài đặt máy', icon: 'settings', group: 'Quản lý máy' },
-    { key: 'quan-tri', href: '/quan-tri', label: 'Người dùng & quyền', icon: 'users', group: 'Hệ thống' },
-    { key: 'quan-tri-quy-trinh', href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống' },
+    { key: 'quan-tri', href: '/quan-tri', label: 'Người dùng', icon: 'users', group: 'Hệ thống & cài đặt' },
+    { key: 'quan-tri-quy-trinh', href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống & cài đặt' },
+    { key: 'tham-so', href: '/tham-so', label: 'Tham số xếp lịch', icon: 'sliders', group: 'Hệ thống & cài đặt' },
+    { key: 'may-cai-dat', href: '/may/cai-dat', label: 'Cài đặt máy', icon: 'settings', group: 'Hệ thống & cài đặt' },
   ];
   for (const { key, ...it } of PAGES) if (canPage(me, key)) items.push(it);
   // Ô tick phân quyền: chỉ Quản trị hệ thống thấy
-  if (me.is_admin) items.push({ href: '/quan-tri/phan-quyen', label: 'Phân quyền', icon: 'users', group: 'Hệ thống' });
+  if (me.is_admin) items.push({ href: '/quan-tri/phan-quyen', label: 'Phân quyền', icon: 'users', group: 'Hệ thống & cài đặt' });
   const menu = items;
 
   const initials = me.full_name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase();
