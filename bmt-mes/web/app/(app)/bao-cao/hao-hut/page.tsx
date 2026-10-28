@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { Empty, Kpi, Pill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { SCRAP_CAT } from '@/lib/kho';
-import { can, requireMe } from '@/lib/session';
+import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Báo cáo hao hụt' };
@@ -38,6 +38,7 @@ function Bar({ label, kg, max, tone, hint }: { label: string; kg: number; max: n
 
 export default async function LossReport({ searchParams }: { searchParams: Promise<{ tu?: string; den?: string; wo?: string; tab?: string }> }) {
   const sp = await searchParams;
+  await requirePage('bc-hao-hut');
   const me = await requireMe();
   if (!can(me, 'production', 'view') && !can(me, 'inventory', 'view') && !can(me, 'cost', 'view')) redirect('/?err=' + encodeURIComponent('Không có quyền xem báo cáo hao hụt'));
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });

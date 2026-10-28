@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { SpecFields } from '@/components/spec-form';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Toolbar } from '@/components/ui';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createSpec } from './actions';
 
@@ -11,6 +11,7 @@ export const metadata = { title: 'Thêm spec mới' };
 // Bước 1: chọn mã mẫu gần giống. Bước 2: sửa mã, quy cách và các thông số khác mẫu.
 export default async function NewSpec({ searchParams }: { searchParams: Promise<{ mau?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('san-pham');
   await requirePerm('spec', 'create');
   const supabase = await createClient();
   const [{ data: products }, { data: groups }] = await Promise.all([

@@ -3,7 +3,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf, overdueText } from '@/lib/format';
 import { DOC_TYPES, REVIEW_STATUS, STOCK_DOC_STATUS, hasRole } from '@/lib/kho';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { confirmDoc } from './actions';
 
@@ -11,6 +11,7 @@ export const metadata = { title: 'Phiếu kho' };
 
 export default async function DocsPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; tab?: string; loai?: string; q?: string }> }) {
   const sp = await searchParams;
+  await requirePage('kho-phieu');
   const me = await requirePerm('inventory', 'view');
   const tab = ['duyet', 'gia', 'tra-lai', 'nhap'].includes(sp.tab ?? '') ? sp.tab! : 'tat-ca';
   const kt = hasRole(me, 'KT_KHO');

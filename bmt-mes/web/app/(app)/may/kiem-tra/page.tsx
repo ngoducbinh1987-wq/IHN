@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Empty, Flash, Kpi, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { M_STATUS, vnToday } from '@/lib/machine';
 import { nf } from '@/lib/format';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Kiểm tra năng lực' };
@@ -19,6 +19,7 @@ export default async function CapacityPage({ searchParams }: {
   searchParams: Promise<{ ke_hoach?: string; tu?: string; den?: string; ca?: string; tang_ca?: string; sp?: string; sl?: string; thu?: string; ok?: string; err?: string }>;
 }) {
   const sp = await searchParams;
+  await requirePage('may-kiem-tra');
   await requirePerm('machine', 'view');
   const supabase = await createClient();
   const [{ data: plans }, { data: products }] = await Promise.all([

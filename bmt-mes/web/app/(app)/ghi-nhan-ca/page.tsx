@@ -6,7 +6,7 @@ import { ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import { DT_REASONS, SCRAP_REASONS, type Sample, sampleTemplate, shiftLines } from '@/lib/kh/shift';
 import { OP_NAME, UNIT, type Op, isWorkday } from '@/lib/kh/scheduler';
 import { df, nf, numIn } from '@/lib/format';
-import { requireMe } from '@/lib/session';
+import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { confirmReport, judgeSample, reopenReport, saveReport, submitReport } from './actions';
 
@@ -26,6 +26,7 @@ const ST: Record<string, [string, 'mute' | 'info' | 'ok' | 'warn']> = { DRAFT: [
 
 export default async function GhiNhanCa({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
+  await requirePage('ghi-nhan-ca');
   const me = await requireMe();
   const db = await createClient();
   const kh = await loadKh(db, { roles: me.roles });
@@ -261,7 +262,7 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
             </section>
           )}
           {rep && status === 'CONFIRMED' && (
-            <Alert tone="ok" title={`Đã xác nhận · ${rep.confirmed_by_name ?? ''} · ${df(rep.confirmed_at, true)}`}>Báo cáo ca đã khóa. Số liệu đã cộng vào Kế hoạch – Thực tế và dùng khi xếp lại lịch.</Alert>
+            <Alert tone="ok" title={`Đã xác nhận · ${rep.confirmed_by_name ?? ''} · ${df(rep.confirmed_at, true)}`}>Báo cáo ca đã khóa. Số liệu đã cộng vào Kế hoạch sản xuất chung và dùng khi xếp lại lịch.</Alert>
           )}
         </div>
       </div>

@@ -7,7 +7,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import type { Approval } from '@/lib/approvals';
 import { SPEC_STATUS, df, nf, numIn } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { deleteBomLine, newVersion, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
 
@@ -21,6 +21,7 @@ export default async function ProductDetail({ params, searchParams }:
   // Mã sản phẩm viết IN HOA từ 27/10/2026 (1p5 → 1P5): đường dẫn cũ chữ thường chuyển sang mã mới
   if (code !== code.toUpperCase()) redirect(`/san-pham/${encodeURIComponent(code.toUpperCase())}`);
   const sp = await searchParams;
+  await requirePage('san-pham');
   const me = await requirePerm('spec', 'view');
   const supabase = await createClient();
   const { data: p } = await supabase.schema('app').from('v_products').select('*').eq('code', code).maybeSingle();

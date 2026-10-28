@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Toolbar } from '@/components/ui';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createAdj, createPlan } from '../actions';
 
@@ -11,6 +11,7 @@ type Plan = { id: string; plan_no: string; period_label: string; period_month: s
 
 export default async function NewPlan({ searchParams }: { searchParams: Promise<{ err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('ke-hoach');
   await requirePerm('plan', 'create');
   const supabase = await createClient();
   const { data } = await supabase.schema('plan').from('production_plans')

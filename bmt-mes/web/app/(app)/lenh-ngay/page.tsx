@@ -6,7 +6,7 @@ import { bobbins, dayData, infoChecks, type Check, type SlipLine } from '@/lib/k
 import { ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import { UNIT, addDays, isWorkday, opName, prevWorkday as prevWd } from '@/lib/kh/scheduler';
 import { df, nf } from '@/lib/format';
-import { requireMe } from '@/lib/session';
+import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { approveSlip, releaseDay, reviewRelease } from './actions';
 
@@ -23,6 +23,7 @@ type Preview = { checks: Check[]; slip: SlipLine[] };
 
 export default async function LenhNgay({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
+  await requirePage('lenh-ngay');
   const me = await requireMe();
   const db = await createClient();
   const kh = await loadKh(db, { plan: sp.plan, roles: me.roles });

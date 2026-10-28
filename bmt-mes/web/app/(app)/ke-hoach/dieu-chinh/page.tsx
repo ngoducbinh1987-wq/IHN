@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Tabs, Toolbar } from '@/components/ui';
 import { df } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createAdj } from '../actions';
 
@@ -25,6 +25,7 @@ const TABS = [
 // TP SX / Kế hoạch SX lập → người duyệt theo Cài đặt quy trình (Giám đốc, Chủ tịch HĐQT; được sửa khi duyệt) → MES áp vào kế hoạch tháng.
 export default async function AdjustmentList({ searchParams }: { searchParams: Promise<{ tab?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('dieu-chinh');
   const me = await requirePerm('plan', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();

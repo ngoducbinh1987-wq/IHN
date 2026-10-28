@@ -7,7 +7,7 @@ import { Flash, Pill, Toolbar } from '@/components/ui';
 import { QC_LEARN_MIN_SAMPLES, ROLE, hasRole, loadConfig } from '@/lib/kh/load';
 import { DEFAULT_WD, OP_SHORT, type Op, flowOf, shiftRun } from '@/lib/kh/scheduler';
 import { df, nf, numIn } from '@/lib/format';
-import { requireMe } from '@/lib/session';
+import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { saveChangeovers, saveConfig, saveFlow, saveRates, saveShifts, setMode } from './actions';
 
@@ -27,6 +27,7 @@ const OPNAME: Record<string, string> = { MIXER: 'Trộn silicone (CD0, kg/giờ)
 
 export default async function ThamSo({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
+  await requirePage('tham-so');
   const me = await requireMe();
   const db = await createClient();
   const { cfg, machines, flowMeta } = await loadConfig(db);

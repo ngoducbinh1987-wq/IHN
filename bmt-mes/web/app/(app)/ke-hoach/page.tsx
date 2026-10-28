@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { DOC_STATUS, df, nf } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Kế hoạch & MRP' };
@@ -14,6 +14,7 @@ const TABS = [
 
 export default async function PlansPage({ searchParams }: { searchParams: Promise<{ tab?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('ke-hoach');
   const me = await requirePerm('plan', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[2];
   const supabase = await createClient();

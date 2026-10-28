@@ -80,7 +80,7 @@ export async function confirmReport(form: FormData) {
   const { error } = await db.schema('app').rpc('kh_confirm_report', { p_id: String(form.get('id')), p_note: String(form.get('note') ?? '') });
   if (error) back(form, 'err', error.message);
   revalidatePath('/ghi-nhan-ca');
-  back(form, 'ok', 'Đã chốt ca: số liệu khóa, phế cả ca ghi vào sổ phế của lô, cộng vào Kế hoạch – Thực tế.');
+  back(form, 'ok', 'Đã chốt ca: số liệu khóa, phế cả ca ghi vào sổ phế của lô, cộng vào Kế hoạch sản xuất chung.');
 }
 
 export async function reopenReport(form: FormData) {

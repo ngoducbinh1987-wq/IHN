@@ -8,7 +8,7 @@ import { StageBar, type Stage } from '@/components/stage-bar';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import type { Approval } from '@/lib/approvals';
 import { DOC_STATUS, SPEC_STATUS, df, nf } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { approve } from '../../duyet/[id]/actions';
 import { adjustMrp, chairRemoveLine, chairSaveLine, createAdj, createPr, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
@@ -24,6 +24,7 @@ export default async function PlanDetail({ params, searchParams }:
   { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string; sua?: string; mrp?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('ke-hoach');
   const me = await requirePerm('plan', 'view');
   const supabase = await createClient();
   const { data: plan } = await supabase.schema('app').from('v_plans').select('*').eq('id', id).maybeSingle();

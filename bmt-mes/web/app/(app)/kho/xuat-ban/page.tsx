@@ -3,7 +3,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { DELIVERY_STATUS, keeps } from '@/lib/kho';
-import { requireMe } from '@/lib/session';
+import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createDelivery } from './actions';
 
@@ -14,6 +14,7 @@ type Res = { so_id: string; so_no: string; label_brand: string; customer_name: s
 
 export default async function DeliveriesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('kho-xuat-ban');
   const me = await requireMe();
   const supabase = await createClient();
   const [{ data: dvs }, { data: res }] = await Promise.all([

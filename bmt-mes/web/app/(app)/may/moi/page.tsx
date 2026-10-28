@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Flash, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createMachine } from '../actions';
 
@@ -9,6 +9,7 @@ export const metadata = { title: 'Thêm máy' };
 
 export default async function NewMachine({ searchParams }: { searchParams: Promise<{ cha?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may');
   await requirePerm('machine', 'config');
   const supabase = await createClient();
   const [{ data: ops }, { data: parent }] = await Promise.all([

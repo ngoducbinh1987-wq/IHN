@@ -1,7 +1,7 @@
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
 import { nf, numIn } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { saveTerms } from './actions';
 
@@ -15,6 +15,7 @@ type Mat = {
 
 export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; q?: string; thieu?: string }> }) {
   const sp = await searchParams;
+  await requirePage('vat-tu');
   const me = await requirePerm('master', 'view');
   const supabase = await createClient();
   let query = supabase.schema('app').from('v_materials').select('*').order('group_name').order('code');

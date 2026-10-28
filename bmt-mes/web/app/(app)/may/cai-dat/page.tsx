@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Empty, Flash, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { can } from '@/lib/session';
 import { addCheckItem, deleteRow, saveSettings } from '../actions';
@@ -12,6 +12,7 @@ const DOW: [number, string][] = [[1, 'T2'], [2, 'T3'], [3, 'T4'], [4, 'T5'], [5,
 
 export default async function MachineSettings({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may-cai-dat');
   const me = await requirePerm('machine', 'view');
   const canCfg = can(me, 'machine', 'config');
   const supabase = await createClient();

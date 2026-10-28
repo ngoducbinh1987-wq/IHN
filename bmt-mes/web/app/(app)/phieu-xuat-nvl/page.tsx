@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { REQ_STATUS, hasRole } from '@/lib/kho';
-import { can, requireMe } from '@/lib/session';
+import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { paperIssue, paperReturn } from './actions';
 
@@ -20,6 +20,7 @@ const ISSUE_ROWS = 2;   // dòng nhập mỗi vật tư (ống/bao)
 
 export default async function PaperIssuePage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; ngay?: string }> }) {
   const sp = await searchParams;
+  await requirePage('phieu-xuat-nvl');
   const me = await requireMe();
   const canEnter = hasRole(me, 'KT_KHO', 'SX_TP', 'ADMIN');
   if (!canEnter && !can(me, 'inventory', 'view') && !can(me, 'production', 'view')) {

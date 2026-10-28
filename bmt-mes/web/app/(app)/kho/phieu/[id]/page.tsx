@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Flash, InfoRow, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { DOC_TYPES, QC_STATUS, REVIEW_STATUS, STOCK_DOC_STATUS, hasRole } from '@/lib/kho';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { checkReceipt, confirmDoc, returnDoc, reverseDoc, setPrices } from '../actions';
 
@@ -16,6 +16,7 @@ const REVERSIBLE = ['GR', 'ISSUE_WO', 'RETURN_WO', 'SCRAP_IN', 'FG_IN', 'WIP_IN'
 export default async function DocDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('kho-phieu');
   const me = await requirePerm('inventory', 'view');
   const supabase = await createClient();
   const { data: d } = await supabase.schema('app').from('v_stock_docs').select('*').eq('id', id).maybeSingle();

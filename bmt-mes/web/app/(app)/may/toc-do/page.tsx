@@ -3,7 +3,7 @@ import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
 import { SPEED_STATUS } from '@/lib/machine';
 import { df, nf } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { approveSpeed } from '../actions';
 
@@ -17,6 +17,7 @@ const TABS = [
 
 export default async function SpeedsPage({ searchParams }: { searchParams: Promise<{ tab?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may-toc-do');
   const me = await requirePerm('machine', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();

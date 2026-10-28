@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { COUNT_STATUS, hasRole } from '@/lib/kho';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { cancelCount, closeCount, scanCount } from '../actions';
 
@@ -14,6 +14,7 @@ export const metadata = { title: 'Phiếu kiểm kê' };
 export default async function CountDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
+  await requirePage('kho-kiem-ke');
   const me = await requirePerm('inventory', 'view');
   const supabase = await createClient();
   const { data: c } = await supabase.schema('app').from('v_counts').select('*').eq('id', id).maybeSingle();

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Empty, Flash, Kpi, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { WO_STATUS, vnToday } from '@/lib/machine';
 import { df, nf } from '@/lib/format';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Báo cáo bảo trì' };
@@ -19,6 +19,7 @@ const shift = (key: string, n: number) => { const [y, m] = key.split('-').map(Nu
 
 export default async function ReportPage({ searchParams }: { searchParams: Promise<{ thang?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may-bao-cao');
   await requirePerm('machine', 'view');
   const cur = vnToday().slice(0, 7);
   const key = /^\d{4}-\d{2}$/.test(sp.thang ?? '') && sp.thang! <= cur ? sp.thang! : cur;

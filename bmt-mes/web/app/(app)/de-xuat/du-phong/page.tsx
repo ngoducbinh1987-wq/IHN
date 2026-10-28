@@ -4,7 +4,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf, numIn } from '@/lib/format';
 import { SS_STATUS } from '@/lib/safety';
-import { can, requireMe } from '@/lib/session';
+import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createSafety, prFromSafety } from '../actions';
 
@@ -27,6 +27,7 @@ const TABS = [
 // NV mua / TP Mua đề xuất mua bổ sung; dự trù MRP tự mua bù đủ mức.
 export default async function SafetyStock({ searchParams }: { searchParams: Promise<{ tab?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('du-phong');
   const me = await requireMe();
   if (!(can(me, 'purchase', 'view') || can(me, 'inventory', 'view') || me.roles.includes('BGD'))) redirect('/?err=' + encodeURIComponent('Không có quyền xem tồn dự phòng'));
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];

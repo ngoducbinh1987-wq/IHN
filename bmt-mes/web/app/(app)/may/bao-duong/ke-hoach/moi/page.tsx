@@ -1,13 +1,14 @@
 import Link from 'next/link';
 import { Flash, Toolbar } from '@/components/ui';
 import { PlanForm } from '@/components/maint-plan-form';
-import { requirePerm } from '@/lib/session';
+import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 export const metadata = { title: 'Thêm kế hoạch bảo dưỡng' };
 
 export default async function NewPlan({ searchParams }: { searchParams: Promise<{ may?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may-bao-duong');
   await requirePerm('machine', 'config');
   const supabase = await createClient();
   const [{ data: machines }, { data: remind }] = await Promise.all([

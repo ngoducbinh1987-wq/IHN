@@ -4,7 +4,7 @@ import { Meter } from '@/components/machine-ui';
 import { SubmitButton } from '@/components/submit-button';
 import { ASSIGNEE, LEVEL, PLAN_KIND, PLAN_STATE, WO_STATUS, WO_TYPE, cycleText, remainText, usedFraction, vnToday } from '@/lib/machine';
 import { df } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createWo } from '../actions';
 
@@ -14,6 +14,7 @@ const SEVERITY: Record<string, number> = { OVERDUE: 0, DUE: 1, SOON: 2, OK: 3 };
 
 export default async function MaintPage({ searchParams }: { searchParams: Promise<{ loc?: string; day?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('may-bao-duong');
   const me = await requirePerm('machine', 'view');
   const loc = ['can-lam', 'tat-ca', 'phieu'].includes(sp.loc ?? '') ? sp.loc! : 'can-lam';
   const supabase = await createClient();

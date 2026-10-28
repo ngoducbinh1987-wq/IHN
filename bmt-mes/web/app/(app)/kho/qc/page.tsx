@@ -3,7 +3,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { df, nf } from '@/lib/format';
 import { KIND_NAMES, QC_STATUS, hasRole } from '@/lib/kho';
 import { STAGE_NAMES, qcTestsFor } from '@/lib/qc';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { failLot, passLot, rejectLot } from './actions';
 
@@ -23,6 +23,7 @@ const waitText = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} giờ ${m % 60
 
 export default async function QcPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; tab?: string }> }) {
   const sp = await searchParams;
+  await requirePage('kho-qc');
   const me = await requirePerm('quality', 'view');
   const tab = sp.tab === 'cach-ly' ? 'cach-ly' : 'cho';
   const supabase = await createClient();

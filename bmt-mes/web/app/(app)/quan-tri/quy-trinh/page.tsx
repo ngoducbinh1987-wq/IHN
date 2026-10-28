@@ -3,7 +3,7 @@ import { StageBar, type Stage } from '@/components/stage-bar';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Tabs, Toolbar } from '@/components/ui';
 import { ROLE_NAMES, nf } from '@/lib/format';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { saveStep, saveSubmit } from './actions';
 
@@ -41,6 +41,7 @@ function People({ users, role, selected }: { users: U[]; role: string | null; se
 
 export default async function FlowConfig({ searchParams }: { searchParams: Promise<{ f?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('quan-tri-quy-trinh');
   const me = await requirePerm('admin', 'view');
   const editable = can(me, 'admin', 'edit');
   const supabase = await createClient();

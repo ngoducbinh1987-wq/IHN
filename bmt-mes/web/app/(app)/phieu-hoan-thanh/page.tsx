@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { QC_STATUS, hasRole } from '@/lib/kho';
-import { can, requireMe } from '@/lib/session';
+import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { recordBobbin, voidBobbin } from './actions';
 
@@ -32,6 +32,7 @@ const vnNow = () => new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Ho_Chi_
 
 export default async function SlipsPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; muc?: string; ngay?: string }> }) {
   const sp = await searchParams;
+  await requirePage('phieu-hoan-thanh');
   const me = await requireMe();
   const canEnter = hasRole(me, 'KT_KHO', 'SX_TP', 'ADMIN');
   if (!canEnter && !can(me, 'production', 'view') && !can(me, 'quality', 'view')) {

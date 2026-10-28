@@ -49,6 +49,8 @@ insert into core.profiles (id, employee_code, full_name, status)
 select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('G_BGD','BGD'),('G_SXTP','SX_TP'),('G_KD','KD_NV')) u(code, role) on u.code = p.employee_code;
+-- Từ 4700 Kinh doanh được xem tình trạng máy (thông tin chung); kiểm thử chặn quyền xem máy bằng vai trò không có quyền này
+delete from core.role_permissions where role_code = 'KD_NV' and module = 'machine';
 
 -- ================================================================ 1. Khung gom lô
 select pg_temp.ok((select group_days = 7 from master.planning_config where id = 1) or

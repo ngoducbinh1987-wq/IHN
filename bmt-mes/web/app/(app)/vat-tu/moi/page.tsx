@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Toolbar } from '@/components/ui';
-import { can, requirePerm } from '@/lib/session';
+import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createMaterial } from './actions';
 
@@ -9,6 +9,7 @@ export const metadata = { title: 'Thêm vật tư' };
 
 export default async function NewMaterial({ searchParams }: { searchParams: Promise<{ err?: string }> }) {
   const sp = await searchParams;
+  await requirePage('vat-tu');
   const me = await requirePerm('master', 'create');
   const supabase = await createClient();
   const [{ data: groups }, { data: uoms }] = await Promise.all([
