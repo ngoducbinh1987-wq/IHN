@@ -7,7 +7,7 @@ import { type Kh, loadKh, vnNow } from '@/lib/kh/load';
 import { addDays, dayIndex, isWorkday, peopleOf } from '@/lib/kh/scheduler';
 import { requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { deleteAbsence, deleteCover, saveAbsence, saveCover, saveOperator, setCrew, setFgKeeper, setOperatorActive, setSkill } from './actions';
+import { deleteAbsence, deleteCover, deleteOpShift, saveAbsence, saveCover, saveOpShift, saveOperator, setCrew, setFgKeeper, setOperatorActive, setSkill } from './actions';
 
 export const metadata = { title: 'Nhân sự xưởng' };
 
@@ -20,10 +20,11 @@ type Mach = { id: string; code: string; name: string; machine_type: string; stat
 type Abs = { id: string; operator_code: string; full_name: string | null; date_from: string; date_to: string; part: 'FULL' | 'AM' | 'PM'; kind: string; note: string | null; created_by_name: string | null; created_at: string };
 type Cov = { id: string; operator_code: string; full_name: string | null; machine_code: string; date_from: string; date_to: string; reason: string; skill: 'MAIN' | 'LEARNING' | 'NONE'; created_by_name: string | null };
 type Crew = { work_date: string; machine_code: string; crew: number; members: string[]; note: string | null; set_by_name: string | null };
+type OpSh = { id: string; operator_code: string; full_name: string | null; date_from: string; date_to: string; shift_no: number; note: string | null; created_by_name: string | null };
 
 const TABS = [
   { key: 'nguoi', label: 'Người' }, { key: 'tay-nghe', label: 'Người × máy' }, { key: 'vang', label: 'Lịch vắng' },
-  { key: 'kiem-nhiem', label: 'Kiêm nhiệm tạm' }, { key: 'dong-goi', label: 'Tổ đóng gói' }, { key: 'canh-bao', label: 'Cảnh báo & gợi ý' },
+  { key: 'kiem-nhiem', label: 'Kiêm nhiệm tạm' }, { key: 'dong-goi', label: 'Tổ đóng gói' }, { key: 'ca', label: 'Ca 2, ca 3' }, { key: 'canh-bao', label: 'Cảnh báo & gợi ý' },
 ];
 const KIND: Record<string, string> = { PHEP: 'Nghỉ phép', OM: 'Ốm', RIENG: 'Việc riêng', CONG_TAC: 'Đi công tác', KHAC: 'Khác' };
 const KIND_SHORT: Record<string, string> = { PHEP: 'P', OM: 'Ô', RIENG: 'R', CONG_TAC: 'CT', KHAC: 'K' };
@@ -41,14 +42,16 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
   const today = vnNow().date;
   const canEdit = me.roles.some((r) => ['SX_TP', 'SX_KH', 'ADMIN'].includes(r));
   const canSkill = me.roles.some((r) => ['SX_TP', 'ADMIN'].includes(r));
-  const [{ data: opRows }, { data: mRows }, { data: absRows }, { data: covRows }, { data: crewRows }, { data: users }] = await Promise.all([
+  const [{ data: opRows }, { data: mRows }, { data: absRows }, { data: covRows }, { data: crewRows }, { data: users }, { data: shRows }] = await Promise.all([
     db.schema('app').from('v_operators_all').select('*').order('sort'),
     db.schema('app').from('v_kh_machines').select('id, code, name, machine_type, status').order('code'),
     db.schema('app').from('v_kh_absences').select('*').gte('date_to', addDays(today, -60)).order('date_from'),
     db.schema('app').from('v_kh_covers').select('*').gte('date_to', addDays(today, -30)).order('date_from'),
     db.schema('app').from('v_kh_crew_days').select('*').gte('work_date', today).order('work_date'),
     canEdit ? db.schema('app').from('v_users').select('id, full_name, status').eq('status', 'ACTIVE').order('full_name') : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
+    db.schema('app').from('v_kh_op_shifts').select('*').gte('date_to', addDays(today, -30)).order('date_from'),
   ]);
+  const opShifts = (shRows ?? []) as OpSh[];
   const ops = (opRows ?? []) as Op[];
   const active = ops.filter((o) => o.active);
   const ORDER = ['SIL-MIX', 'BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02', 'PACK-01'];
@@ -96,6 +99,16 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
       if (st.length < target) alerts.push({ d, m, tone: 'warn', sug, text: `Tổ đóng gói đặt ${target} người nhưng chỉ ${st.length} người có mặt: chạy 1 người, tốc độ ${P.pack_one_pct}%` });
     }
   }
+  // Ca 2, ca 3: máy được duyệt chạy thêm ca × người làm ca đó (14 ngày làm việc tới)
+  const mShifts = (kh?.cfg.machine_shifts ?? []).filter((x) => x.to >= today);
+  const shiftOf = (code: string, d: string) => opShifts.find((x) => x.operator_code === code && x.date_from <= d && d <= x.date_to)?.shift_no ?? 1;
+  const runsOn = (m: string, d: string) => mShifts.reduce((a, x) => (x.machine === m && x.from <= d && d <= x.to ? Math.max(a, x.shifts) : a), 1);
+  const roster = days.flatMap((d) => [2, 3].flatMap((no) => machines.filter((m) => runsOn(m.code, d) >= no).map((m) => {
+    const ppl = active.filter((o) => shiftOf(o.code, d) === no && absentOn(o.code, d)?.part !== 'FULL'
+      && (hasSkill(o, m.code) || Boolean(coverOn(o.code, m.code, d)) || Boolean(m.machine_type === 'PACKER' && crewOf(m.code, d)?.members.includes(o.code))));
+    return { d, no, m, ppl };
+  })));
+  const shiftTimes = (no: number) => { const c = kh?.cfg.shifts.find((x) => x.code === (no === 2 ? 'B' : no === 3 ? 'C' : 'A')); return c ? `${c.start_time.slice(0, 5)}–${c.end_time.slice(0, 5)}` : ''; };
   const abNow = abs.filter((a) => a.date_from <= today && today <= a.date_to);
   const covNow = covs.filter((c) => c.date_from <= today && today <= c.date_to);
 
@@ -344,6 +357,59 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
           )}
           <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Không chọn người: MES dùng người đứng chính máy đóng gói (và người kiêm nhiệm tạm) có mặt. Chọn người: chỉ những người đó đóng gói ngày đó (được cả người chưa có tay nghề, ghi kiêm nhiệm tạm). Ít người có mặt hơn tổ đặt thì MES chạy với số người có mặt.</p>
         </section>
+      )}
+
+      {tab === 'ca' && (
+        <div className="flex flex-col gap-4">
+          <section className="card overflow-x-auto">
+            <div className="card-h"><h2>Máy chạy 2 ca, 3 ca và người làm ca đó</h2><span className="text-[13px] font-normal text-muted">ca 2 {shiftTimes(2)} · ca 3 {shiftTimes(3)} · Giám đốc duyệt ở <Link className="link" href="/lich-may?tab=toiuu">Lịch máy → Tối ưu &amp; thêm ca</Link></span></div>
+            {!mShifts.length ? <Empty>Chưa có máy nào được duyệt chạy thêm ca: mọi người làm ca 1.</Empty> : !roster.length ? <Empty>14 ngày làm việc tới không có máy chạy thêm ca.</Empty> : (
+              <table className="tbl">
+                <thead><tr><th>Ngày</th><th>Ca</th><th>Máy</th><th>Người làm ca này đứng được máy</th></tr></thead>
+                <tbody>{roster.map((x) => (
+                  <tr key={x.d + x.no + x.m.code}>
+                    <td className="whitespace-nowrap"><b>{wdl(x.d)} {dd(x.d)}</b></td><td>Ca {x.no}</td><td className="mono">{x.m.code}</td>
+                    <td className="text-[12.5px]">{x.ppl.length ? x.ppl.map((o) => o.code).join(', ')
+                      : <span className="text-bad">Chưa có người: MES cho người ca trước làm ca dài (tối đa {P.day_max_h} giờ/ngày, {P.ot_month_h} giờ làm thêm/tháng) nếu có, không thì máy không chạy ca {x.no}</span>}
+                      {x.m.machine_type === 'MIXER' && x.ppl.length > 0 && <span className="text-muted"> · máy trộn cần 1 người đứng riêng</span>}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+          </section>
+          {canEdit && (
+            <section className="card">
+              <div className="card-h"><h2>Đặt người làm ca 2 / ca 3</h2><span className="text-[13px] font-normal text-muted">ngoài khoảng ngày người đó làm ca 1 · đổi ca phải nghỉ ít nhất 12 giờ</span></div>
+              <form action={saveOpShift} className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
+                {tabIn}
+                <label className="lbl"><span className="req">Người</span><select name="operator" className="inp" required>{active.map((o) => <option key={o.code} value={o.code}>{name(o.code)}</option>)}</select></label>
+                <label className="lbl"><span className="req">Ca</span><select name="shift" className="inp" required><option value="2">Ca 2 ({shiftTimes(2)})</option><option value="3">Ca 3 ({shiftTimes(3)})</option></select></label>
+                <label className="lbl"><span className="req">Từ ngày</span><input type="date" name="from" className="inp" required defaultValue={mShifts[0]?.from && mShifts[0].from > today ? mShifts[0].from : today} min={today} /></label>
+                <label className="lbl">Đến ngày<input type="date" name="to" className="inp" min={today} defaultValue={mShifts[0]?.to ?? ''} /></label>
+                <label className="lbl">Ghi chú<input name="note" className="inp" placeholder="Ví dụ: NV6 trộn silicone ca 2" /></label>
+                <div className="lg:col-span-5"><SubmitButton className="btn btn-pri">Lưu</SubmitButton> <span className="text-[12.5px] text-muted">Thiếu người: thêm công nhân ở thẻ Người, giao máy ở thẻ Người × máy (TP KT/QA ký tay nghề) hoặc kiêm nhiệm tạm. Sau đó bấm Xếp lại lịch.</span></div>
+              </form>
+            </section>
+          )}
+          <section className="card overflow-x-auto">
+            <div className="card-h"><h2>Ca của người</h2></div>
+            {!opShifts.length ? <Empty>Mọi người làm ca 1.</Empty> : (
+              <table className="tbl">
+                <thead><tr><th>Người</th><th>Ca</th><th>Ngày</th><th>Ghi chú</th><th>Người đặt</th>{canEdit && <th />}</tr></thead>
+                <tbody>{opShifts.map((x) => (
+                  <tr key={x.id} className={x.date_to < today ? 'opacity-60' : ''}>
+                    <td><b>{x.operator_code}</b>{x.full_name ? ` · ${x.full_name}` : ''}</td><td>Ca {x.shift_no} <span className="text-[12px] text-muted">{shiftTimes(x.shift_no)}</span></td>
+                    <td className="whitespace-nowrap">{dd(x.date_from)} – {dd(x.date_to)}{x.date_to < today ? ' · đã hết' : ''}</td>
+                    <td className="text-[12.5px]">{x.note}</td><td className="text-[12.5px] text-muted">{x.created_by_name}</td>
+                    {canEdit && <td>{x.date_to >= today && (
+                      <form action={deleteOpShift} className="flex items-center gap-1.5">{tabIn}{hidden('id', x.id)}
+                        <input name="reason" className="inp w-[140px] py-1" placeholder="Lý do bỏ" aria-label="Lý do bỏ ca" required /><SubmitButton className="btn btn-sm" pendingText="…">Bỏ</SubmitButton></form>)}</td>}
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+          </section>
+        </div>
       )}
 
       {tab === 'canh-bao' && (

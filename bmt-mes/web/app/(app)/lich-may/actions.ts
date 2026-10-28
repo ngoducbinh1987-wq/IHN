@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { type ChangeInput, type ProductRow, readChange, simulate, stepsFor } from '@/lib/kh/change';
 import { type Kh, ROLE, carryOver, flowSig, hasRole, loadKh, metaOf, peopleSig, rebuild, speedSig } from '@/lib/kh/load';
-import { parseNum } from '@/lib/format';
 import { flowOf } from '@/lib/kh/scheduler';
 import type { Order } from '@/lib/kh/scheduler';
 import { groupName } from '@/lib/kh/optimize';
@@ -63,7 +62,7 @@ export async function rebuildSchedule(form: FormData) {
   const kh = await loadKh(db, { plan: planId, roles: me.roles });
   if (!kh.fromPlan) go(q, 'err', 'Kế hoạch chưa có dòng nào xếp được (cần mã có spec đã phát hành, có công đoạn và số mét > 0)');
   const { credit, missingReports } = await carryOver(db, kh);
-  // Xếp lịch = chạy bộ tối ưu (đổi thứ tự lô để ít trễ hạn, xong sớm, ít đổi máy; tăng ca chỉ dùng phần Giám đốc đã duyệt)
+  // Xếp lịch = chạy bộ tối ưu (đổi thứ tự lô để ít trễ hạn, xong sớm, ít đổi máy; ca máy 2–3 ca chỉ dùng phần Giám đốc đã duyệt)
   const r = rebuild(kh, kh.orders, { credit, optimize: true });
   if (!r.sch.slots.length) go(q, 'err', ['Không xếp được việc nào: kiểm tra người đứng máy và tay nghề', ...(r.sch.warnings ?? [])].join(' · '));
   const seqTxt = [...r.orders].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)).map((o) => o.label).join(' → ');
@@ -334,48 +333,59 @@ export async function confirmMaint(form: FormData) {
   go(q, 'ok', ok ? 'Đã chốt ngày bảo dưỡng. Bảo dưỡng trong ca thành khối giữ chỗ khi bấm Xếp lại lịch.' : 'Đã trả lại TP KT/QA chọn ngày khác');
 }
 
-// ---------------- Tăng ca / trộn sớm: TP SX đề xuất theo MES → Giám đốc duyệt (Giám đốc tự đề xuất thì áp ngay) ----------------
-export async function proposeOvertime(form: FormData) {
+// ---------------- Máy chạy 2–3 ca: TP SX / Kế hoạch SX đề xuất theo MES → Giám đốc duyệt (Giám đốc tự đề xuất thì áp ngay) ----------------
+export async function proposeShifts(form: FormData) {
   const planId = String(form.get('plan_id') ?? '');
   const q = `plan=${planId}&tab=toiuu`;
-  const from = String(form.get('date_from') ?? ''), to = String(form.get('date_to') ?? '');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) go(q, 'err', 'Chọn khoảng ngày tăng ca');
-  const extra: Record<string, number> = {};
+  const items: { machines: string[]; shifts: number; from: string; to: string; group: string }[] = [];
   for (const [k, v] of form.entries()) {
-    if (!k.startsWith('ot_') || typeof v !== 'string' || v.trim() === '') continue;
-    const n = parseNum(v);
-    if (n === null || Number.isNaN(n) || n < 0) go(q, 'err', `Số phút tăng ca máy ${k.slice(3)} không hợp lệ`);
-    if (n! > 0) extra[k.slice(3)] = Math.round(n!);
+    if (!k.startsWith('n_') || typeof v !== 'string') continue;
+    const g = k.slice(2), n = Number(v);
+    if (!(n === 2 || n === 3)) continue;
+    const from = String(form.get('f_' + g) ?? ''), to = String(form.get('t_' + g) ?? '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) go(q, 'err', `Chọn khoảng ngày cho nhóm ${g}`);
+    const machines = String(form.get('m_' + g) ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (machines.length) items.push({ machines, shifts: n, from, to, group: g });
   }
-  const early = parseNum(String(form.get('mix_early_h') ?? '') || '0');
-  if (early === null || Number.isNaN(early) || early < 0) go(q, 'err', 'Số giờ trộn sớm không hợp lệ');
+  if (!items.length) go(q, 'err', 'Chưa chọn nhóm máy nào chạy 2 ca hoặc 3 ca');
   let summary: unknown = {};
   try { summary = JSON.parse(String(form.get('summary') ?? '{}')); } catch { summary = {}; }
   const db = await createClient();
-  const { error } = await db.schema('app').rpc('kh_ot_propose', {
-    p_plan: planId || null,
-    p: { extra_min: extra, mix_early_h: early, date_from: from, date_to: to, reason: String(form.get('reason') ?? '').trim(), summary },
+  const { data: id, error } = await db.schema('app').rpc('kh_shift_propose', {
+    p_plan: planId || null, p: { items, reason: String(form.get('reason') ?? '').trim(), summary },
   });
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
-  const { data: c } = await db.schema('app').from('v_kh_config').select('ot_request_id').single();
-  const { data: last } = await db.schema('app').from('v_kh_overtime').select('id, req_no, status').order('proposed_at', { ascending: false }).limit(1).single();
-  go(q, 'ok', last?.status === 'APPROVED' && c?.ot_request_id === last.id
-    ? `Đã áp dụng tăng ca ${last.req_no}. Bấm Xếp lại lịch để tính lại.`
-    : `Đã gửi Giám đốc duyệt đề xuất tăng ca ${last?.req_no ?? ''}. Cần người lao động đồng ý làm thêm giờ.`);
+  revalidatePath('/nhan-su-xuong');
+  const { data: row } = await db.schema('app').from('v_kh_shift_requests').select('req_no, status').eq('id', String(id)).maybeSingle();
+  go(q, 'ok', row?.status === 'APPROVED'
+    ? `Đã áp dụng thêm ca ${row.req_no}. TP SX đặt người làm ca 2, ca 3 ở Nhân sự xưởng rồi bấm Xếp lại lịch.`
+    : `Đã gửi Giám đốc duyệt đề xuất thêm ca ${row?.req_no ?? ''}.`);
 }
 
-export async function reviewOvertime(form: FormData) {
+export async function reviewShifts(form: FormData) {
   const planId = String(form.get('plan_id') ?? '');
   const q = `plan=${planId}&tab=toiuu`;
   const ok = form.get('approve') === '1';
   const db = await createClient();
-  const { error } = await db.schema('app').rpc('kh_ot_review', { p_req: String(form.get('id')), p_approve: ok, p_note: String(form.get('note') ?? '').trim() || null });
+  const { error } = await db.schema('app').rpc('kh_shift_review', { p_req: String(form.get('id')), p_approve: ok, p_note: String(form.get('note') ?? '').trim() || null });
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
-  go(q, 'ok', ok ? 'Đã duyệt tăng ca. TP SX bấm Xếp lại lịch để áp dụng (bản xếp của Giám đốc dùng ngay).' : 'Đã trả lại đề xuất tăng ca, TP SX nhận thông báo.');
+  revalidatePath('/nhan-su-xuong');
+  go(q, 'ok', ok ? 'Đã duyệt thêm ca. TP SX đặt người làm ca 2, ca 3 ở Nhân sự xưởng rồi bấm Xếp lại lịch.' : 'Đã trả lại đề xuất thêm ca, người lập nhận thông báo.');
 }
 
+export async function endShifts(form: FormData) {
+  const planId = String(form.get('plan_id') ?? '');
+  const q = `plan=${planId}&tab=toiuu`;
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('kh_shift_end', { p_req: String(form.get('id')), p_note: String(form.get('note') ?? '').trim() });
+  if (error) go(q, 'err', error.message);
+  revalidatePath('/lich-may');
+  go(q, 'ok', 'Đã kết thúc thêm ca: máy về 1 ca từ ngày mai. Bấm Xếp lại lịch để tính lại.');
+}
+
+// Tăng ca theo giờ (cách cũ, migration 4800): chỉ còn kết thúc đề xuất đang áp dụng
 export async function endOvertime(form: FormData) {
   const planId = String(form.get('plan_id') ?? '');
   const q = `plan=${planId}&tab=toiuu`;

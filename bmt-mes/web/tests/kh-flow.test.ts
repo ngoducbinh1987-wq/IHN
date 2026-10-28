@@ -161,32 +161,40 @@ for (const kgh of [30, 50]) {
   if (!(part.score.makespan <= none.score.makespan + 0.01 && part.score.makespan >= all.score.makespan - 0.01)) bad('tăng ca theo khoảng ngày phải nằm giữa không tăng ca và tăng ca mọi ngày');
   if (!(part.score.makespan < none.score.makespan - 0.05)) bad('tăng ca 3 ngày phải rút ngắn lịch');
 }
-// 10. Bộ tối ưu: kịp ngày chốt bằng ít giờ công nhất, không vượt 4 giờ/ngày; máy trộn 200 kg/giờ → đề xuất dồn vào máy xoắn
+// 10. Bộ tối ưu: thứ tự lô; thêm ca (máy chạy 2–3 ca) chỉ khi trễ ngày chốt; máy trộn đi cùng line silicone; chạy lại cùng kết quả
 {
   const c = ctxOf({ flow: {} });
   const tight = c.orders.map((o, i) => ({ ...o, commit: ['2026-10-31', '2026-11-05', '2026-11-05', '2026-11-05'][i] }));
   const t0 = Date.now();
-  const r = optimize(tight, c, { windows: [] }, { mode: 'due', early_max_h: 4 });
-  console.log(`tối ưu (chốt 05/11): ${r.base.score.makespan.toFixed(2)} → ${r.score.makespan.toFixed(2)} ngày, trễ ${r.base.score.late} → ${r.score.late}, ${r.evals} lần chạy, ${Date.now() - t0} ms`);
-  if (!(r.score.late < r.base.score.late)) bad('bộ tối ưu phải giảm trễ hạn');
-  if (Object.values(r.flow.extra_min ?? {}).some((x) => x > 240)) bad('tăng ca vượt 4 giờ/ngày');
-  const v = validateSchedule(r.sch, r.orders, { ...c, cfg: { ...c.cfg, flow: r.flow } });
-  if (v.length) bad(`lịch tối ưu: ${v[0]}`);
+  const r = optimize(tight, c, { windows: [] }, { mode: 'due' });
+  console.log(`tối ưu (chốt 05/11): ${r.base.score.makespan.toFixed(2)} → đủ người ${r.staffed?.score.makespan.toFixed(2)} ngày, trễ ${r.base.score.late} → ${r.staffed?.score.late}, người thật trễ ${r.realPlan?.score.late}; ${r.shiftPlan.map((x) => `${x.group} ${x.shifts} ca`).join(', ')}; ${r.evals} lần chạy, ${Date.now() - t0} ms`);
+  if (!r.shiftPlan.length || !r.staffed || !(r.staffed.score.late < r.ordered.score.late)) bad('trễ ngày chốt: bộ tối ưu phải đề xuất thêm ca làm bớt trễ');
+  if (r.shiftPlan.some((x) => x.shifts > 3 || x.shifts < 2)) bad('số ca đề xuất phải là 2 hoặc 3');
+  if (r.shiftPlan.some((x) => x.from < '2026-10-28' || x.to < x.from)) bad('khoảng ngày thêm ca không hợp lệ');
+  const sil = r.shiftPlan.find((x) => x.group === 'SIL');
+  if (sil && !(sil.machines.includes('SIL-MIX') && sil.machines.includes('EXT-SI-01'))) bad('máy trộn phải thêm ca cùng line silicone');
+  if (r.shiftPlan.some((x) => x.group !== 'SIL' && x.machines.includes('SIL-MIX'))) bad('máy trộn không thêm ca riêng');
+  if (sil && sil.persons !== 2) bad(`ca thêm máy trộn + 2 line silicone cần 2 người (1 người đứng riêng máy trộn), được ${sil.persons}`);
+  for (const x of [r.staffed, r.realPlan]) if (x) {
+    const v = validateSchedule(x.sch, x.ords, { ...c, cal: x.cal, cfg: { ...c.cfg, machine_shifts: r.machineShifts } });
+    if (v.length) bad(`lịch thêm ca: ${v[0]}`);
+  }
+  if (!(r.realPlan!.sch.warnings ?? []).some((w) => w.startsWith('Thiếu người ca'))) bad('người hiện có chỉ làm ca 1: phải báo thiếu người ca thêm');
   const c2 = ctxOf({ kgh: 200 });
   const r2 = optimize(c2.orders, c2, {}, { mode: 'fastest' });
-  const tw = r2.whatIf.find((w) => w.label.startsWith('Máy xoắn'))!, mx = r2.whatIf.find((w) => w.label.startsWith('Máy trộn'))!;
-  console.log(`tối ưu (200 kg/giờ, nhanh nhất): cổ chai ${r2.bottleneck[0].group}; thêm 1 giờ máy xoắn ${tw.gain.toFixed(2)} ngày, máy trộn ${mx.gain.toFixed(2)} ngày`);
+  console.log(`tối ưu (200 kg/giờ, nhanh nhất): cổ chai ${r2.bottleneck[0].group}; ${r2.whatIf.filter((w) => w.kind === 'shift').map((w) => `${w.group} +${w.gain.toFixed(2)}`).join(', ')}`);
   if (r2.bottleneck[0].group !== 'TWISTER') bad('200 kg/giờ: cổ chai phải là máy xoắn');
-  if (!(tw.gain > mx.gain)) bad('200 kg/giờ: thêm giờ máy xoắn phải lợi hơn máy trộn');
-  // Không có ngày chốt, chế độ kịp hạn: không đề xuất tăng ca
+  const tw = r2.whatIf.find((w) => w.group === 'TWISTER' && w.kind === 'shift'), sl = r2.whatIf.find((w) => w.group === 'SIL' && w.kind === 'shift');
+  if (!tw || !sl || !(tw.gain > sl.gain)) bad('200 kg/giờ: thêm ca máy xoắn phải lợi hơn thêm ca máy trộn');
+  // Không có ngày chốt, chế độ kịp hạn: không đề xuất thêm ca
   const r3 = optimize(c.orders.map((o) => ({ ...o, commit: null })), c, {}, { mode: 'due' });
-  if (r3.proposals.length) bad('không trễ hạn thì không đề xuất tăng ca');
+  if (r3.shiftPlan.length) bad('không trễ hạn thì không đề xuất thêm ca');
   // Thứ tự lô trả về phải đúng với lịch trả về (kể cả khi giữ thứ tự cũ)
-  const again = schedule(r.orders, { ...c, cfg: { ...c.cfg, flow: r.flow } }, { windows: [] });
+  const again = schedule(r.orders, { ...c, cfg: { ...c.cfg } }, { windows: [] });
   if (Math.abs(scoreOf(again, c.cal, r.orders).makespan - r.score.makespan) > 1e-6) bad('thứ tự lô bộ tối ưu trả về không cho ra đúng lịch');
   // Kết quả không phụ thuộc tốc độ máy chủ: chạy lại cho cùng kết quả
-  const r4 = optimize(tight, c, { windows: [] }, { mode: 'due', early_max_h: 4 });
-  if (Math.abs(r4.score.makespan - r.score.makespan) > 1e-9 || r4.evals !== r.evals) bad('bộ tối ưu chạy lại cho kết quả khác');
+  const r4 = optimize(tight, c, { windows: [] }, { mode: 'due' });
+  if (Math.abs((r4.staffed?.score.makespan ?? 0) - (r.staffed?.score.makespan ?? 0)) > 1e-9 || r4.evals !== r.evals) bad('bộ tối ưu chạy lại cho kết quả khác');
 }
 
 // 11. Thiếu thông số: không đoán số, báo rõ
@@ -297,5 +305,89 @@ for (const kgh of [30, 50]) {
   // Bảo dưỡng giữ chỗ tạm (chưa chốt) vẫn trừ giờ máy
   const pm = run('BUN-01 bảo dưỡng giữ chỗ tạm ngày 2', { win: (D) => [{ machine: 'BUN-01', from: D(1), to: D(1) + 240, kind: 'PM', label: 'BD tạm', tentative: true }] });
   if (pm.sch.slots.some((x) => x.machine === 'BUN-01' && x.start < pm.c.D(1) + 240 - 1e-6 && x.end > pm.c.D(1) + 1e-6)) bad('bảo dưỡng giữ chỗ tạm: máy bện vẫn chạy trong giờ giữ chỗ');
+}
+// 13. Máy chạy 2–3 ca (anh Bình duyệt 28/10/2026): người theo ca, máy trộn 1 người riêng, ca dài chỉ khi thiếu người, tối đa 12 giờ/ngày
+{
+  type MS = { machine: string; from: string; to: string; shifts: number };
+  const SIL = ['SIL-MIX', 'EXT-SI-01', 'EXT-SI-02'];
+  const rng = (ms: string[], n: number, from = '2026-10-28', to = '2026-12-31'): MS[] => ms.map((m) => ({ machine: m, from, to, shifts: n }));
+  const go = (tag: string, ms: MS[], o: { assume?: boolean; ops?: OperatorInfo[]; people?: PeopleCfg; shifts?: Config['shifts']; prev?: { sch: ReturnType<typeof schedule>; B: number } } = {}) => {
+    const c = ctxOf({ ops: o.ops, people: o.people });
+    c.cfg.machine_shifts = ms;
+    if (o.shifts) c.cfg.shifts = o.shifts;
+    const cal = makeCalendar(c.cfg, '2026-10-28');
+    const ctx = { ...c, cal };
+    const t0 = Date.now();
+    const sopt = o.prev ? { from: { S: o.prev.sch.S, SPD: o.prev.sch.SPD, slots: o.prev.sch.slots }, boundary: o.prev.B * cal.S * cal.SPD } : {};
+    const sch = schedule(c.orders, ctx, { ...sopt, assumeStaff: o.assume });
+    const ms0 = Date.now() - t0;
+    const v = validateSchedule(sch, c.orders, ctx, { from: o.prev ? o.prev.B * cal.S * cal.SPD : 0 });
+    if (v.length) bad(`${tag}: ${v.slice(0, 3).join('; ')}`);
+    if (ms0 > 2000) bad(`${tag}: chạy quá lâu ${ms0} ms`);
+    const sc = scoreOf(sch, cal, c.orders);
+    console.log(`${tag}: ${cal.SPD} ca/ngày, ${sc.makespan.toFixed(2)} ngày, chưa xếp ${sch.unplaced.length}, ${ms0} ms`);
+    return { sch, sc, cal, c };
+  };
+  const one = go('1 ca', []);
+  const empty = go('lịch 3 ca, không máy nào thêm ca', [{ machine: 'ZZZ', from: '2026-10-28', to: '2026-12-31', shifts: 3 }]);
+  if (Math.abs(empty.sc.makespan - one.sc.makespan) > one.sc.makespan * 0.05) bad('lịch có ca 2, ca 3 nhưng máy nào cũng 1 ca phải gần như lịch 1 ca');
+  if (empty.sch.slots.some((x) => (x.attend ?? []).some((a) => Math.floor(a.f / empty.cal.S) % 3 !== 0))) bad('máy 1 ca: người chỉ có mặt trong ca 1');
+  // Máy trộn + line silicone chạy 2 ca, đủ người: nhanh hơn rõ; 3 ca nhanh hơn nữa
+  const s2 = go('trộn + line silicone 2 ca (đủ người)', rng(SIL, 2), { assume: true });
+  const s3 = go('trộn + line silicone 3 ca (đủ người)', rng(SIL, 3), { assume: true });
+  if (!(s2.sc.makespan < one.sc.makespan - 1.5)) bad('máy cổ chai chạy 2 ca phải xong sớm hơn rõ');
+  if (!(s3.sc.makespan <= s2.sc.makespan + 0.05)) bad('3 ca không được chậm hơn 2 ca');
+  // Máy không chạy ca thêm: không có việc trong ca 2, ca 3 (validateSchedule kiểm giờ máy không chạy)
+  const S2 = s2.cal.S;
+  if (s2.sch.slots.some((x) => !SIL.includes(x.machine) && x.end > x.start + 1e-6 && Math.floor((x.start + 1e-6) / S2) % 3 !== 0)) bad('máy 1 ca có việc ngoài ca 1');
+  if (!s2.sch.slots.some((x) => SIL.includes(x.machine) && Math.floor((x.start + x.end) / 2 / S2) % 3 === 1)) bad('máy chạy 2 ca phải có việc trong ca 2');
+  // Người thật chỉ làm ca 1: ca 2 thiếu người → người ca 1 làm ca dài (≤ 4 giờ/ngày, ≤ 40 giờ/tháng), hết giờ tháng thì máy không chạy ca 2
+  const real = go('trộn + line silicone 2 ca, người hiện có', rng(SIL, 2));
+  const R = real.sch.roster!;
+  if (!R.ext.length) bad('thiếu người ca 2: người ca 1 phải làm ca dài');
+  if (R.ext.some((e) => e.hours > 4 + 1e-9)) bad('ca dài: làm thêm tối đa 4 giờ/ngày (12 giờ/ngày)');
+  for (const [p, mo] of Object.entries(R.ot)) for (const [mon, h] of Object.entries(mo)) if (h > 40 + 1e-9) bad(`${p} làm thêm ${h} giờ tháng ${mon} > 40`);
+  if (!R.shortages.some((x) => x.why.includes('hết giờ làm thêm'))) bad('hết 40 giờ làm thêm tháng: phải báo thiếu người');
+  if (!(real.sch.warnings ?? []).some((w) => w.startsWith('Thiếu người ca 2'))) bad('phải cảnh báo thiếu người ca 2');
+  if (real.sc.makespan > one.sc.makespan + 0.3) bad('thêm ca với người hiện có không được chậm hơn 1 ca');
+  // Giờ làm tối đa 10 giờ/ngày → ca dài chỉ thêm 2 giờ
+  const r10 = go('giờ làm tối đa 10 giờ/ngày', rng(SIL, 2), { people: { day_max_h: 10 } });
+  if (!r10.sch.roster!.ext.length || r10.sch.roster!.ext.some((e) => e.hours > 2 + 1e-9)) bad('10 giờ/ngày: ca dài tối đa 2 giờ');
+  // Có người làm ca 2: NV6 đứng máy trộn, NV7 đứng line silicone → không thiếu người, không ca dài; NV6, NV7 không có mặt ca 1
+  const ops2 = [...baseOps, op('NV6', ['SIL-MIX']), op('NV7', ['EXT-SI-01', 'EXT-SI-02'])];
+  const shift2 = [{ code: 'NV6', from: '2026-10-28', to: '2026-12-31', shift: 2 }, { code: 'NV7', from: '2026-10-28', to: '2026-12-31', shift: 2 }];
+  const w2 = go('trộn + line silicone 2 ca, NV6 + NV7 làm ca 2', rng(SIL, 2), { ops: ops2, people: { op_shifts: shift2 } });
+  if (w2.sch.roster!.shortages.length || w2.sch.roster!.ext.length) bad('đủ người ca 2: không thiếu người, không ca dài');
+  const inSeg = (x: { f: number }, j: number) => Math.floor((x.f + 1e-6) / w2.cal.S) % 3 === j;
+  const att = w2.sch.slots.flatMap((x) => (x.attend ?? []).map((a) => ({ ...a, m: x.machine })));
+  if (att.some((a) => (a.p === 'NV6' || a.p === 'NV7') && !inSeg(a, 1))) bad('người ca 2 chỉ có mặt trong ca 2');
+  if (!att.some((a) => a.p === 'NV6' && a.k === 'MIX')) bad('NV6 phải đứng máy trộn ca 2');
+  if (att.some((a) => a.p === 'NV6' && a.k !== 'MIX')) bad('người đứng máy trộn chỉ đứng máy trộn (1 người riêng)');
+  if (!(w2.sc.makespan < one.sc.makespan - 1)) bad('đủ người ca 2: phải nhanh hơn 1 ca');
+  // Một người ca 2 đứng cả máy trộn lẫn line silicone: máy trộn giữ người suốt giờ trộn nên line ca 2 không có người khởi động / thay bobin
+  // khi đang trộn (không có đoạn có mặt chồng nhau)
+  const solo = go('một người ca 2 đứng cả máy trộn và line', rng(SIL, 2), { ops: [...baseOps, op('NV6', [...SIL])], people: { op_shifts: [shift2[0]] } });
+  const sAtt = solo.sch.slots.flatMap((x) => (x.attend ?? []).filter((a) => a.p === 'NV6'));
+  if (!sAtt.length) bad('NV6 ca 2 phải có việc');
+  // Người ca 2 vắng nửa sau ca: không có mặt nửa sau ca 2 ngày đó
+  const pm = go('NV6 vắng nửa sau ca 2 ngày 30/10', rng(SIL, 2), { ops: ops2, people: { op_shifts: shift2, absences: [{ code: 'NV6', from: '2026-10-30', to: '2026-10-30', part: 'PM' }] } });
+  const di = pm.cal.days.indexOf('2026-10-30'), D = pm.cal.S * 3, mid = di * D + pm.cal.S * 1.5;
+  if (pm.sch.slots.some((x) => (x.attend ?? []).some((a) => a.p === 'NV6' && a.t > mid + 1e-6 && a.f < di * D + 2 * pm.cal.S - 1e-6))) bad('người ca 2 vắng nửa sau ca vẫn có mặt');
+  // Đổi ca phải nghỉ đủ: database kiểm (tests/test_machine_shifts.sql); lịch chỉ đọc ca của người
+  // Ca B trùng giờ ca A (B 14–22, A đến 17): phần trùng không tính thêm, máy chạy ca 2 từ 17:00
+  const roomB = (r: typeof s2) => { const L = r.sch.roster!.closed['EXT-SI-01'] ?? []; const d0 = 3 * r.cal.S * 3 + r.cal.S; return L.filter(([x, y]) => x < d0 + r.cal.S && y > d0).map(([x, y]) => [Math.max(x, d0) - d0, Math.min(y, d0 + r.cal.S) - d0]); };
+  const ov = roomB(s2);
+  if (!ov.length || Math.abs(ov[0][0]) > 1e-6 || Math.abs(ov[0][1] - s2.cal.S * 3 / 8) > 1) bad(`ca B 14–22 trùng ca A đến 17:00: 3/8 đầu ca B phải đóng (được ${JSON.stringify(ov)})`);
+  const shB = baseCfg.shifts.map((x) => x.code === 'B' ? { ...x, start_time: '17:00', end_time: '01:00' } : x.code === 'C' ? { ...x, start_time: '01:00', end_time: '08:00' } : x);
+  const s2b = go('ca 2 17:00–01:00 (đủ người)', rng(SIL, 2), { assume: true, shifts: shB });
+  const ov2 = roomB(s2b);
+  if (ov2.some(([x]) => x < 1)) bad('ca B 17–01 không trùng ca A: đầu ca B phải chạy');
+  if (!(s2b.sc.makespan <= s2.sc.makespan + 0.05)) bad('ca 2 không trùng ca 1 (nhiều giờ hơn) không được chậm hơn');
+  // Máy đóng gói 2 ca (đủ người): tổ 2 người ca 2
+  const pk = go('đóng gói 2 ca (đủ người)', rng(['PACK-01'], 2), { assume: true });
+  if (!pk.sch.slots.some((x) => x.op === 'CD6' && x.crew === 2 && Math.floor((x.start + 1e-6) / pk.cal.S) % 3 === 1)) bad('đóng gói ca 2: tổ 2 người');
+  // Xếp lại: lịch cũ 1 ca, từ ngày thứ 3 máy trộn + line silicone chạy 2 ca → phần trước mốc giữ, đủ mét, hợp lệ
+  const rb = go('xếp lại từ ngày 3 sang 2 ca', rng(SIL, 2, '2026-10-31'), { assume: true, prev: { sch: one.sch, B: 3 } });
+  if (!(rb.sc.makespan < one.sc.makespan - 0.5)) bad('xếp lại sang 2 ca từ ngày 3 phải xong sớm hơn');
 }
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

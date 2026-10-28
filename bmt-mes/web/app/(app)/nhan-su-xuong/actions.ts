@@ -100,3 +100,20 @@ export async function setCrew(f: FormData) {
   if (error) back(f, 'err', friendly(error.message));
   done(f, `Đã đặt tổ đóng gói ${txt(f, 'machine')} ngày ${txt(f, 'date').split('-').reverse().slice(0, 2).join('/')}`);
 }
+
+// Ca của người: làm ca 2 / ca 3 trong khoảng ngày (ngoài khoảng: ca 1); database kiểm nghỉ 12 giờ khi đổi ca
+export async function saveOpShift(f: FormData) {
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('kh_save_op_shift', {
+    p_id: opt(f, 'id'), p_operator: txt(f, 'operator'), p_from: opt(f, 'from'), p_to: opt(f, 'to') ?? opt(f, 'from'), p_shift: Number(txt(f, 'shift')), p_note: opt(f, 'note'),
+  });
+  if (error) back(f, 'err', friendly(error.message));
+  done(f, `Đã đặt ${txt(f, 'operator')} làm ca ${txt(f, 'shift')}. Bấm Xếp lại lịch ở Lịch máy.`);
+}
+
+export async function deleteOpShift(f: FormData) {
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('kh_delete_op_shift', { p_id: txt(f, 'id'), p_reason: txt(f, 'reason') });
+  if (error) back(f, 'err', friendly(error.message));
+  done(f, 'Đã bỏ ca, người đó về ca 1');
+}
