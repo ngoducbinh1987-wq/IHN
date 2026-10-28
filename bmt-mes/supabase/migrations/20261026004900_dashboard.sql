@@ -138,6 +138,8 @@ begin
      where l.committed_date is not null and l.lot_approved_at is null and l.qty_m > 0
        and coalesce(l.committed_by, '00000000-0000-0000-0000-000000000000') <> v_uid;
     if n > 0 then t := t || jsonb_build_object('key', 'lot', 'label', 'Lịch lô TP SX đệ trình chờ duyệt', 'n', n, 'href', '/lich-may?tab=thang'); end if;
+    select count(*) into n from plan.overtime_requests where status = 'PROPOSED' and proposed_by is distinct from v_uid;
+    if n > 0 then t := t || jsonb_build_object('key', 'overtime', 'label', 'Đề xuất tăng ca, trộn sớm chờ Giám đốc duyệt', 'n', n, 'href', '/lich-may?tab=toiuu'); end if;
   end if;
   -- Đơn phát sinh đang ở bước tôi làm được (cùng điều kiện với app.kh_change_step)
   select count(*) into n from plan.change_requests c

@@ -152,12 +152,14 @@ values (pg_temp.today(), 'A', 'BUN-01', 'NV2', '[{"key":"a","planned_m":1000,"de
         '[{"from":"09:00","to":"10:00","min":60,"reason":"DT_BREAKDOWN"}]', 'CONFIRMED', pg_temp.uid('Q_KTKHO'), now()),
        (pg_temp.today(), 'A', 'EXT-SI-01', 'NV1', '[{"key":"b","planned_m":2000,"declared_m":2000}]',
         '[{"from":"13:00","to":"13:30","min":30,"reason":"DT_COLOR"}]', 'SUBMITTED', pg_temp.uid('Q_KTKHO'), now());
+insert into plan.overtime_requests (req_no, plan_id, extra_min, date_from, date_to, reason, proposed_by)
+values ('TC-Q48', pg_temp.v('plan'), '{"BUN-01": 60}', pg_temp.today(), pg_temp.today() + 2, 'thử', pg_temp.uid('Q_SXTP'));
 insert into j select 'bgd2', pg_temp.dash('Q_BGD');
-select pg_temp.ok((select (pg_temp.task(d, 'release') ->> 'n')::int = 1 and (pg_temp.task(d, 'lot') ->> 'n')::int = 1
+select pg_temp.ok((select (pg_temp.task(d, 'release') ->> 'n')::int = 1 and (pg_temp.task(d, 'lot') ->> 'n')::int = 1 and (pg_temp.task(d, 'overtime') ->> 'n')::int = 1
                           and pg_temp.task(d, 'release') ->> 'href' like '/lenh-ngay%' and (d -> 'tasks' ? 'all_pending')
                    from (select v d from j where k = 'bgd2') a),
-  'Giám đốc: lệnh SX ngày TP SX đề xuất và lịch lô TP SX đệ trình hiện ở "Việc của tôi", kèm số quy trình toàn hệ thống');
-select pg_temp.ok((select pg_temp.task(d, 'release') is null and pg_temp.task(d, 'lot') is null and (pg_temp.task(d, 'shift') ->> 'n')::int = 1
+  'Giám đốc: lệnh SX ngày, lịch lô, đề xuất tăng ca TP SX gửi hiện ở "Việc của tôi", kèm số quy trình toàn hệ thống');
+select pg_temp.ok((select pg_temp.task(d, 'release') is null and pg_temp.task(d, 'lot') is null and pg_temp.task(d, 'overtime') is null and (pg_temp.task(d, 'shift') ->> 'n')::int = 1
                           and not (d -> 'tasks' ? 'all_pending')
                    from (select pg_temp.dash('Q_SXTP') d) a),
   'TP SX: không có việc của Giám đốc (không tự duyệt đề xuất của mình); có báo cáo ca chờ chốt');

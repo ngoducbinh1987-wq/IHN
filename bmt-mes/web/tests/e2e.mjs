@@ -467,6 +467,10 @@ if (!(await flash(page)).includes('không thuộc bộ phận')) fail('Vận hà
 ok('Vận hành bị chặn ở Vật tư (mục của bộ phận khác)');
 await page.goto(`${BASE}/`);
 if (!(await page.locator('#thong-tin-chung').count())) fail('Tổng quan phải có thông tin chung (sản lượng, máy, bảo dưỡng) cho mọi người');
+for (const id of ['gia-tri-ton', 'gia-thanh', 'du-phong', 'qc']) {
+  if (await page.locator(`#${id}`).count()) fail(`Vận hành không được thấy khối #${id} trên Tổng quan (giá, mục của bộ phận khác)`);
+}
+if (!(await page.locator('#so-chinh').count())) fail('Tổng quan phải có dải số chính theo quyền');
 await page.goto(`${BASE}/kh-thuc-te`);
 if (!(await page.textContent('main h1')).includes('Kế hoạch sản xuất chung')) fail('Vận hành phải xem được Kế hoạch sản xuất chung');
 ok('Vận hành xem Tổng quan (thông tin chung) và Kế hoạch sản xuất chung');
@@ -788,6 +792,26 @@ await ctx.close();
   await p.screenshot({ path: `${SHOTS}/13-phan-quyen.png`, fullPage: true });
   await c.close();
   ok('Quản trị tick/bỏ tick quyền vào mục có hiệu lực ngay; quyền thao tác theo vai trò hiện đúng');
+}
+
+// 13. Trang tổng quan theo phân quyền: Giám đốc thấy đủ khối giám sát; TP SX không thấy giá
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'bgd@bmt.test');
+  await p.goto(`${BASE}/`);
+  for (const id of ['so-chinh', 'san-luong', 'lo-ke-hoach', 'hieu-suat', 'hao-hut', 'qc', 'du-phong', 'gia-tri-ton', 'gia-thanh']) {
+    if (!(await p.locator(`#${id}`).count())) fail(`Giám đốc phải thấy khối #${id} trên Tổng quan`);
+  }
+  if (!(await p.textContent('#so-chinh')).includes('Giá trị tồn kho')) fail('Dải số chính của Giám đốc phải có Giá trị tồn kho');
+  await p.screenshot({ path: `${SHOTS}/14-tong-quan-giam-doc.png`, fullPage: true });
+  await c.close();
+  const [c2, p2] = await ctxFor();
+  await login(p2, 'sx.tp@bmt.test');
+  await p2.goto(`${BASE}/`);
+  if (!(await p2.locator('#san-luong').count()) || !(await p2.locator('#hieu-suat').count())) fail('TP SX phải thấy sản lượng, hiệu suất máy');
+  if ((await p2.locator('#gia-tri-ton').count()) || (await p2.locator('#gia-thanh').count())) fail('TP SX không được xem giá: không có khối giá trị tồn kho, giá thành');
+  await c2.close();
+  ok('Tổng quan theo phân quyền: Giám đốc đủ 9 khối; TP SX có sản lượng, hiệu suất máy, không có giá; vận hành không thấy giá, dự phòng, QC');
 }
 
 await browser.close();
