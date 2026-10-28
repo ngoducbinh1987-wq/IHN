@@ -706,7 +706,10 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   await page.screenshot({ path: `${SHOTS}/20-toi-uu-tang-ca.png`, fullPage: true });
   ok('Thẻ Tối ưu & tăng ca: máy cổ chai, nếu thêm giờ, thứ tự lô, thông số đang dùng');
   const form = page.locator('form:has(input[name=date_from])');
-  if (await form.count()) {
+  if (!(await form.count())) fail('TP SX phải thấy form đề xuất tăng ca');
+  {
+    const filled = await form.locator('input[name^=ot_]').evaluateAll((els) => els.some((e) => e.value));
+    if (!filled) await form.locator('input[name^=ot_]').first().fill('60');
     await form.locator('input[name=reason]').fill('E2E: rút ngắn kế hoạch');
     await Promise.all([page.waitForURL(/ok=|err=/), form.locator('button', { hasText: 'Đề xuất Giám đốc duyệt' }).click()]);
     const msg = await flash(page);
@@ -722,7 +725,7 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
     await page.locator('form:has(button:has-text("Kết thúc sớm")) input[name=note]').first().fill('E2E: đủ năng lực');
     await clickNav(page, 'button:has-text("Kết thúc sớm")');
     await expectOk(page, 'Giám đốc kết thúc tăng ca sớm');
-  } else ok('Không cần tăng ca với dữ liệu thử (không có đề xuất)');
+  }
   await ctx.close();
 }
 

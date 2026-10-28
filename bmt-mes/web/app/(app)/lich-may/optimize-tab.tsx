@@ -44,7 +44,9 @@ export function OptimizeTab({ kh, sp, roles, userId, ots }: { kh: Kh; sp: Record
     for (const p of best.proposals) if (p.machines.includes(code)) return p.extra_min;
     return Number(meta.ot.extra_min?.[code] ?? 0) || 0;
   };
-  const showForm = canPropose && (best.proposals.length > 0 || best.early_h > Number(meta.ot.mix_early_h));
+  // TP SX luôn lập được đề xuất (điền sẵn theo MES nếu MES thấy cần); Giám đốc duyệt
+  const showForm = canPropose;
+  const suggested = best.proposals.length > 0 || best.early_h > Number(meta.ot.mix_early_h);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
@@ -126,7 +128,7 @@ export function OptimizeTab({ kh, sp, roles, userId, ots }: { kh: Kh; sp: Record
           <form action={proposeOvertime} className="flex flex-col gap-3 border-t border-line px-4 py-3">
             <input type="hidden" name="plan_id" value={kh.planId ?? ''} />
             <input type="hidden" name="summary" value={JSON.stringify({ lines: proposalLines, gain: gainTxt })} />
-            <div className="text-[13px] text-muted">Kiểm tra, sửa số phút nếu cần (để trống = không tăng ca máy đó). Tăng ca cần người lao động đồng ý; giờ 22:00–06:00 tính làm đêm.</div>
+            <div className="text-[13px] text-muted">{suggested ? 'Đã điền sẵn theo MES. ' : 'MES chưa thấy cần tăng ca; TP SX vẫn lập được đề xuất. '}Kiểm tra, sửa số phút nếu cần (để trống = không tăng ca máy đó). Tăng ca cần người lao động đồng ý; giờ 22:00–06:00 tính làm đêm.</div>
             <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
               {best.bottleneck.flatMap((b) => machinesOf(b.group).filter((c) => b.group !== 'MIXER' || qty(c) > 0 || best.proposals.some((p) => p.group === 'MIXER')).map((code) => (
                 <label key={code} className="text-[13px]">{code} <span className="text-muted">({groupName(b.group)})</span>
