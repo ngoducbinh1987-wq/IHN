@@ -412,11 +412,18 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
   };
 }
 
+// Lúc hết ca (mã ca) ngày date trên một lịch, phút xếp lịch; ca không có trong lịch thì lấy hết ca liền trước có trong lịch
+export function cutAt(cal: Calendar, date: string, code: string): number {
+  const n = cal.shifts.filter((x) => x.code <= code).length;
+  return (dayIndex(cal, date) * cal.SPD + n) * cal.S;
+}
+
 // Dựng lịch mới (xếp lại) từ dữ liệu hiện tại; giữ phần trước mốc.
 // Máy hỏng / ngừng dùng / bảo dưỡng đã chốt rơi vào vùng khóa: xếp lại từ ngày mai để chuyển việc sang máy cùng loại.
 // optimize: chạy bộ tối ưu (đổi thứ tự lô để ít trễ hạn, xong sớm, ít đổi máy; không tự thêm giờ tăng ca) – dùng khi bấm Xếp lịch
 // fromDate: xếp lại từ ngày này nếu sớm hơn hết vùng khóa (bảng ca tuần vừa duyệt: tuần mới áp dụng ca máy, ca người mới; không sớm hơn ngày mai)
-export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?: Map<string, number>; optimize?: boolean; levers?: Levers; fromDate?: string | null } = {}) {
+// cut: tính lại sau ca (ngày, mã ca): mốc xếp lại = lúc hết ca đó; phần trước mốc giữ, sản lượng thực tế bù qua credit
+export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?: Map<string, number>; optimize?: boolean; levers?: Levers; fromDate?: string | null; cut?: { date: string; code: string } | null } = {}) {
   const base = kh.version ? kh.version.base_date : kh.cal.base;
   const cal = makeCalendar(kh.cfg, base);
   const todayIdx = dayIndex(cal, kh.now.date);
@@ -429,15 +436,17 @@ export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?
     && (kh.sch?.slots ?? []).some((x) => x.machine === w.machine && x.end > Math.max(w.from, kh.nowT) + 1e-6 && x.start < Math.min(w.to, oldFrozen) - 1e-6));
   let boundaryDay = opt.split || early ? Math.max(0, todayIdx + 1) : Math.max(0, todayIdx + kh.cfg.frozen_days);
   if (opt.fromDate) boundaryDay = Math.min(boundaryDay, Math.max(0, todayIdx + 1, dayIndex(cal, opt.fromDate)));
+  if (opt.cut) boundaryDay = Math.max(0, dayIndex(cal, opt.cut.date));
+  const bAt = (c: Calendar) => (opt.cut ? cutAt(c, opt.cut.date, opt.cut.code) : boundaryDay * c.SPD * c.S);
   const prev: PrevSchedule | null = kh.sch && kh.version
     ? { S: kh.version.params.S, SPD: kh.version.params.SPD, slots: kh.sch.slots, codes: (kh.version.params.shifts ?? []).map((x) => x.code) } : null;
   // Lô TP SX đã duyệt lịch: giữ chỗ trên lịch máy khi xếp lại
   const keep = new Set(kh.lines.filter((l) => l.lot_approved_at).map((l) => l.id));
-  const sopt = { from: prev, boundary: prev ? boundaryDay * cal.SPD * cal.S : 0, split: opt.split, credit: opt.credit, keep, windows };
+  const sopt = { from: prev, boundary: prev ? bAt(cal) : 0, split: opt.split, credit: opt.credit, keep, windows };
   // Bộ tối ưu thử thêm ca 2 / ca 3: số ca mỗi ngày đổi thì dựng lại lịch ca, mốc xếp lại, khoảng máy dừng theo lịch mới
   const remake = (cfg2: Config) => {
     const cal2 = makeCalendar(cfg2, base);
-    return { cal: cal2, opt: { ...sopt, boundary: prev ? boundaryDay * cal2.SPD * cal2.S : 0, windows: machineWindows(kh.machines, kh.maint, cal2, kh.now, kh.maintPlans, kh.sch) } };
+    return { cal: cal2, opt: { ...sopt, boundary: prev ? bAt(cal2) : 0, windows: machineWindows(kh.machines, kh.maint, cal2, kh.now, kh.maintPlans, kh.sch) } };
   };
   const ctx = { cfg: kh.cfg, cal, machines: kh.machines, operators: kh.operators, remake };
   let ords = orders, best: OptResult | null = null;

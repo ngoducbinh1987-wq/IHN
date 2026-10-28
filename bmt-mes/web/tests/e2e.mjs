@@ -849,6 +849,21 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
     if (!gb.includes('Ca 1 + 2') || !gb.includes('Ca 2 14–22') || !gb.includes('nghỉ ca 2')) fail('Biểu đồ lịch máy tuần sau phải có cột Ca 1/Ca 2, máy chạy "Ca 1 + 2", máy khác "nghỉ ca 2"');
     await page.screenshot({ path: `${SHOTS}/22-lich-may-2-ca.png`, fullPage: true });
     ok('Biểu đồ lịch máy: cột Ca 1/Ca 2 từng ngày, máy chạy Ca 1 + 2, máy khác nghỉ ca 2 (theo bảng ca tuần đã duyệt)');
+    // Tính lại tiến độ sau ca: thẻ Tiến độ, Giám đốc bấm tính lại ngay (ca vừa hết), job máy chủ cần CRON_SECRET
+    await page.goto(`${BASE}/lich-may?tab=tiendo`);
+    let tb = await page.innerText('main');
+    if (/Application error|PGRST/i.test(tb) || !tb.includes('Tính lại sau ca')) fail('Thẻ Tiến độ phải có khung Tính lại sau ca');
+    await clickNav(page, '#tinh-lai button:has-text("Tính lại tiến độ ngay")');
+    { const m = await flash(page); if (!m.includes('Đã tính lại sau ca')) fail(`Tính lại tiến độ ngay: ${m}`); ok(`Giám đốc bấm tính lại tiến độ sau ca → ${m}`); }
+    tb = await page.innerText('#tinh-lai');
+    if (!tb.includes('Bấm tay') || !tb.includes('Đã tính') || !/lịch bản \d+/.test(tb)) fail('Nhật ký tính lại phải ghi lần bấm tay, đã tính, lịch bản mới');
+    if (!tb.includes('chưa có phiếu')) fail('Máy có việc trong ca mà chưa có phiếu hoàn thành phải ghi "chưa có phiếu"');
+    const cr = await page.evaluate(async (u) => { const a = await fetch(u); const b = await fetch(u, { headers: { authorization: 'Bearer sai' } }); return [a.status, b.status]; }, `${BASE}/api/cron/replan`);
+    if (cr[0] !== 401 || cr[1] !== 401) fail(`Job tính lại phải cần CRON_SECRET: ${cr}`);
+    { const r = await fetch(`${BASE}/api/cron/replan`, { headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } }); const j = await r.json().catch(() => ({}));
+      if (r.status !== 200 || !Array.isArray(j.runs)) fail(`Job tính lại (service role) lỗi: ${r.status} ${JSON.stringify(j).slice(0, 200)}`);
+      else if (j.runs.some((x) => !x.ok)) fail(`Job tính lại báo lỗi: ${JSON.stringify(j.runs).slice(0, 300)}`); }
+    ok('Nhật ký tính lại: bấm tay, lịch bản mới, máy chưa có phiếu; job máy chủ cần CRON_SECRET');
     // Bản in bảng ca, sổ giờ
     const rid = await page.evaluate(async (u) => { const r = await fetch(u); const t = await r.text(); return (t.match(/\/in\/bang-ca\?id=([0-9a-f-]{36})/) || [])[1] || ''; }, `${BASE}/nhan-su-xuong?tab=ca&w=${W}`);
     if (rid) {

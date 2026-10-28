@@ -5,6 +5,8 @@ import { can, canPage, requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_NAMES } from '@/lib/format';
 import { signOut } from '../login/actions';
+import { after } from 'next/server';
+import { replanDue } from '@/lib/kh/replan';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -22,6 +24,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // Đơn mua MES tự sinh chờ NV mua kiểm tra (RLS: người xem được mua hàng)
     supabase.schema('purchase').from('purchase_orders').select('id', { count: 'exact', head: true }).eq('status', 'DRAFT'),
   ]);
+  // Tính lại tiến độ sau ca: 1 giờ sau khi hết ca, lần đầu TP SX / Kế hoạch SX / Giám đốc mở MES thì MES tính (sau khi trả trang,
+  // không làm chậm trang); job máy chủ bmt_replan làm việc này khi đã cấu hình CRON_SECRET + khóa máy chủ
+  if (me.roles.some((r) => ['SX_TP', 'SX_KH', 'BGD', 'ADMIN'].includes(r))) {
+    after(async () => { try { await replanDue(supabase, me.roles); } catch { /* lần sau thử lại */ } });
+  }
   const buyer = me.roles.includes('MUA_NV') || me.roles.includes('MUA_TP');
   const maintDue = can(me, 'machine', 'view') ? maintAll : 0;
 

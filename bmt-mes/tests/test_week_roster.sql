@@ -150,6 +150,7 @@ select pg_temp.api_fails($q$select app.sign_skills_all()$q$, 'Không còn tay ng
 update master.operators set active = false where code = (select j #>> '{}' from x where k = 'nv');
 
 -- ================================================================ 4. Sổ giờ đứng máy: ghi khi bản lịch thành lịch đang dùng (từ hôm nay)
+delete from plan.operator_day_hours where true;   -- sổ giờ của kế hoạch thật (rollback)
 with p as (insert into plan.production_plans (plan_no, period_label) values ('KH-TEST-PCA', 'Thử bảng ca') returning id) insert into t select 'plan', id from p;
 insert into plan.operator_day_hours (plan_id, work_date, operator_code, attend_min) values ((select v from t where k = 'plan'), pg_temp.today() - 5, 'NV3', 400);
 insert into plan.schedule_versions (plan_id, version, base_date, params, reason, is_current, status)

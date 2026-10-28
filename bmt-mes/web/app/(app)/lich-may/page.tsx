@@ -15,7 +15,7 @@ import { adminDeleteDoc } from '../quan-tri/doc-actions';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { type OtRow, OptimizeTab, type ShiftReqRow } from './optimize-tab';
-import { applyChange, approveLot, approveLots, changeStep, commitLot, commitLots, confirmMaint, createChange, editChange, proposeMaint, rebuildSchedule, returnChange, reviewSchedule, setLine, setStart } from './actions';
+import { applyChange, approveLot, approveLots, changeStep, commitLot, commitLots, confirmMaint, createChange, editChange, proposeMaint, rebuildSchedule, replanNow, returnChange, reviewSchedule, setLine, setStart } from './actions';
 
 export const metadata = { title: 'Lịch máy' };
 
@@ -135,6 +135,9 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
           {view && tab === 'thang' && <Month kh={kh} view={view} me={me.roles} />}
           {view && tab === 'lich' && <Gantt kh={kh} view={view} sp={sp} qs={qs} canPlan={canPlan} />}
           {view && tab === 'tiendo' && <Progress kh={kh} view={view} />}
+          {tab === 'tiendo' && <ReplanCard kh={kh} canPlan={canPlan}
+            after={Number(((await db.schema('master').from('planning_config').select('replan_after_min').eq('id', 1).maybeSingle()).data as { replan_after_min?: number } | null)?.replan_after_min ?? 60)}
+            runs={((await db.schema('app').from('v_kh_replans').select('*').eq('plan_id', kh.planId).order('started_at', { ascending: false }).limit(10)).data ?? []) as ReplanRow[]} />}
           {tab === 'toiuu' && <OptimizeTab kh={kh} sp={sp} roles={me.roles} userId={me.id}
             ots={((await db.schema('app').from('v_kh_overtime').select('*').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as OtRow[]}
             reqs={((await db.schema('app').from('v_kh_shift_requests').select('*').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as ShiftReqRow[]} />}
@@ -586,6 +589,74 @@ function SlotDetail({ kh, view, sel, canPlan }: { kh: Kh; view: View; sel: Slot;
 }
 
 // ----------------------------------------------------------------- Tiến độ
+// Tính lại sau ca: sản lượng máy thực tế so với lịch, lô nhanh / chậm, ngày xong mới
+type ReplanLot = { line: string; label: string; product: string; old: string | null; new: string | null; target: string | null; target_kind: string | null; diff: number | null; late: number | null };
+type ReplanRow = {
+  id: string; kind: string; work_date: string; shift_no: number; shift_end: string; status: string; started_at: string; finished_at: string | null;
+  run_by_name: string | null; version: number | null; error: string | null; lots: ReplanLot[];
+  result: { machines?: { machine: string; planned: number; actual: number; slips: number; missing: boolean }[]; missing?: string[]; short?: { lot: string; op: string; m: number }[]; slower?: number; faster?: number; late?: number };
+};
+function ReplanCard({ kh, runs, canPlan, after }: { kh: Kh; runs: ReplanRow[]; canPlan: boolean; after: number }) {
+  const ST: Record<string, [string, 'ok' | 'bad' | 'warn' | 'mute']> = { DONE: ['Đã tính', 'ok'], ERROR: ['Lỗi', 'bad'], RUNNING: ['Đang tính', 'warn'], SKIPPED: ['Bỏ qua', 'mute'] };
+  return (
+    <section className="card" id="tinh-lai">
+      <div className="card-h"><h2>Tính lại sau ca</h2>
+        <span className="text-[12.5px] text-muted">{after} phút sau khi hết ca, MES lấy sản lượng thực tế (phiếu hoàn thành bobin, báo cáo ca), tính lại số mét còn phải làm, xếp lại lịch máy từ lúc hết ca và báo Giám đốc, TP SX</span></div>
+      {canPlan && kh.planStatus === 'APPROVED' && (
+        <form action={replanNow} className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+          <input type="hidden" name="plan_id" value={kh.planId ?? ''} />
+          <SubmitButton className="btn btn-sm btn-pri" pendingText="MES đang tính…">Tính lại tiến độ ngay</SubmitButton>
+          <span className="text-[12.5px] text-muted">theo ca vừa hết, không chờ {after} phút (Kế toán SX đã nhập xong phiếu hoàn thành). Giữ thứ tự lô, lô đã duyệt lịch; lịch mới dùng ngay.</span>
+        </form>
+      )}
+      {!runs.length ? <Empty>Chưa có lần tính lại nào. Kế hoạch đã duyệt và có lịch đang dùng thì MES tự tính sau mỗi ca.</Empty> : (
+        <div className="flex flex-col divide-y divide-line">
+          {runs.map((r) => {
+            const ch = (r.lots ?? []).filter((x) => (x.diff ?? 0) !== 0 || (x.late ?? 0) > 0 || !x.new);
+            return (
+              <div key={r.id} className="flex flex-col gap-1.5 px-4 py-3 text-[13px]">
+                <div className="flex flex-wrap items-center gap-2">
+                  <b>Ca {r.shift_no} {dd(r.work_date)}</b>
+                  <Pill tone={ST[r.status]?.[1] ?? 'mute'}>{ST[r.status]?.[0] ?? r.status}</Pill>
+                  {r.kind === 'MANUAL' && <Pill tone="info">Bấm tay{r.run_by_name ? ` · ${r.run_by_name}` : ''}</Pill>}
+                  <span className="text-muted">{df(r.finished_at ?? r.started_at, true)}{r.version ? ` · lịch bản ${r.version}` : ''}</span>
+                  {r.status === 'DONE' && <span className={(r.result.slower ?? 0) > 0 ? 'text-bad' : (r.result.faster ?? 0) > 0 ? 'text-ok' : 'text-muted'}>
+                    {(r.result.slower ?? 0) + (r.result.faster ?? 0) === 0 ? 'lịch hoàn thành không đổi' : [(r.result.slower ?? 0) > 0 ? `${r.result.slower} lô chậm` : '', (r.result.faster ?? 0) > 0 ? `${r.result.faster} lô nhanh` : ''].filter(Boolean).join(', ')}
+                    {(r.result.late ?? 0) > 0 ? ` · ${r.result.late} lô trễ hạn` : ''}</span>}
+                </div>
+                {r.error && <div className="text-bad">{r.error}</div>}
+                {ch.length > 0 && (
+                  <div className="overflow-x-auto"><table className="tbl">
+                    <thead><tr><th>Lô</th><th className="num">Xong trước</th><th className="num">Xong mới</th><th>Nhanh / chậm</th><th>So ngày chốt / hạn giao</th></tr></thead>
+                    <tbody>{ch.map((x) => (
+                      <tr key={x.line}><td><b>{x.label}</b> {x.product}</td><td className="num">{dd(x.old)}</td><td className="num"><b>{x.new ? dd(x.new) : 'chưa xếp được'}</b></td>
+                        <td>{(x.diff ?? 0) > 0 ? <Pill tone="bad">chậm {x.diff} ngày</Pill> : (x.diff ?? 0) < 0 ? <Pill tone="ok">nhanh {Math.abs(x.diff ?? 0)} ngày</Pill> : 'không đổi'}</td>
+                        <td>{x.target ? ((x.late ?? 0) > 0 ? <span className="text-bad">trễ {x.late} ngày so với {x.target_kind} {dd(x.target)}</span> : <span className="text-ok">kịp {x.target_kind} {dd(x.target)}</span>) : '—'}</td></tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+                {(r.result.machines ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12.5px]">
+                    <span className="text-muted">Máy đạt trong ca (thực tế / lịch):</span>
+                    {(r.result.machines ?? []).map((m) => (
+                      <span key={m.machine} className={m.missing ? 'text-warn' : m.planned > 0 && m.actual < m.planned * 0.9 ? 'text-bad' : ''}>
+                        <b>{m.machine}</b> {m.missing ? 'chưa có phiếu' : `${nf(m.actual)}/${nf(m.planned)} m${m.planned > 0 ? ` (${Math.round((m.actual / m.planned) * 100)} %)` : ''}`}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {(r.result.short ?? []).length > 0 && (
+                  <div className="text-[12.5px] text-muted">Mét bù vào lịch: {(r.result.short ?? []).map((x) => `${x.lot} ${OP_SHORT[x.op as Op] ?? x.op} ${x.m > 0 ? '+' : ''}${nf(x.m)} m`).join(' · ')}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Progress({ kh, view }: { kh: Kh; view: View }) {
   const ops = (['CD0', 'CD1', 'CD2', 'CD3', 'CD5', 'CD6'] as Op[]).filter((op) => kh.orders.some((o) => o.route.includes(op)));
   const sh = (t: number) => { const s = Math.floor(t / view.sch.S); const d = shiftDate(kh.cal, s); return `${dd(d)}${kh.cal.SPD > 1 ? ' ' + shiftCode(kh.cal, s) : ''}`; };

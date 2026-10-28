@@ -8,6 +8,7 @@ import type { Order } from '@/lib/kh/scheduler';
 import { groupName } from '@/lib/kh/optimize';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { replanPlan } from '@/lib/kh/replan';
 
 const go = (q: string, kind: 'ok' | 'err', msg: string): never => redirect(`/lich-may?${q}${q ? '&' : ''}${kind}=${encodeURIComponent(msg)}`);
 
@@ -367,4 +368,20 @@ export async function endOvertime(form: FormData) {
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
   go(q, 'ok', 'Đã kết thúc tăng ca. Bấm Xếp lại lịch để tính lại.');
+}
+
+// Tính lại tiến độ ngay theo sản lượng thực tế của ca vừa hết (không chờ 1 giờ): TP SX, Kế hoạch SX, Giám đốc
+export async function replanNow(form: FormData) {
+  const planId = String(form.get('plan_id'));
+  const q = `plan=${planId}&tab=tiendo`;
+  const me = await requireMe();
+  if (!hasRole(me.roles, [...ROLE.plan, 'ADMIN'])) go(q, 'err', 'Chỉ TP SX, Kế hoạch SX, Giám đốc tính lại tiến độ');
+  const db = await createClient();
+  const r = await replanPlan(db, planId, { manual: true, roles: me.roles });
+  revalidatePath('/lich-may');
+  revalidatePath('/lenh-ngay');
+  if (!r.ok) go(q, 'err', r.message);
+  const changed = Boolean(r.slower || r.faster || r.late);
+  go(q, 'ok', [r.message, r.slower ? `${r.slower} lô chậm` : '', r.faster ? `${r.faster} lô nhanh` : '', r.late ? `${r.late} lô trễ hạn` : '',
+    changed ? 'đã báo Giám đốc, TP SX' : 'lịch hoàn thành không đổi'].filter(Boolean).join(' · '));
 }
