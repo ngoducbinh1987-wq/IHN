@@ -4,7 +4,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
 import { bobbins, dayData, dayPeople, infoChecks, type Check, type SlipLine } from '@/lib/kh/day';
 import { ROLE, hasRole, loadKh } from '@/lib/kh/load';
-import { UNIT, addDays, isWorkday, opName, prevWorkday as prevWd } from '@/lib/kh/scheduler';
+import { UNIT, addDays, isWorkday, opName, prevWorkday as prevWd, shiftNoOf, shiftsOn } from '@/lib/kh/scheduler';
 import { df, nf } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -182,7 +182,12 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
                   {rows.map((x, i) => {
                     const head = i === 0 || rows[i - 1].s !== x.s;
                     const sh = kh.cal.shifts.find((s) => s.code === x.shift);
-                    const headRow = head ? <tr key={'h' + x.s}><td colSpan={10} className="bg-sunk text-[12.5px] font-medium">Ca {x.shift}{sh ? ` · ${sh.start_time} – ${sh.end_time}` : ''}</td></tr> : null;
+                    const no = shiftNoOf(x.shift), msx = kh.cfg.machine_shifts ?? [];
+                    // ca 2, ca 3: chỉ máy được duyệt chạy ca đó (bảng ca tuần)
+                    const runs = (m: string) => no === 1 || shiftsOn(msx, m, date) >= no;
+                    const on = kh.machines.filter((m) => runs(m.code)).map((m) => m.code);
+                    const headRow = head ? <tr key={'h' + x.s}><td colSpan={10} className="bg-sunk text-[12.5px] font-medium">Ca {no}{sh ? ` · ${sh.start_time.slice(0, 5)} – ${sh.end_time.slice(0, 5)}` : ''}{no > 1 ? ` · máy chạy ca ${no}: ${on.join(', ') || 'không có'}` : ''}</td></tr> : null;
+                    if (!runs(x.machine.code) && !x.r) return [headRow];
                     if (!x.r) return [headRow, <tr key={x.machine.code + x.s}><td className="mono">{x.machine.code}</td><td colSpan={9} className="text-[12.5px] text-muted">Không chạy{idle.includes(x.machine.code) ? ' cả ngày' : ' ca này'}</td></tr>];
                     const o = orderOf.get(x.r.sl.lineId);
                     const a = actual(x.machine.code, x.shift, x.r.sl.key);

@@ -69,8 +69,13 @@ export type PeopleCfg = {
   day_max_h?: number;      // giờ làm tối đa mỗi người mỗi ngày (cả làm thêm), luật ≤ 12
   ot_day_min?: number;     // làm thêm tối đa mỗi ngày (phút)
   ot_month_h?: number;     // làm thêm tối đa mỗi tháng (giờ/người)
+  // Luân phiên đứng máy (anh Bình duyệt 28/10/2026): sổ giờ đứng máy theo lịch (phút thật mỗi người mỗi ngày),
+  // MES xếp người ít giờ cộng dồn 4 tuần trước; lệch quá balance_pct % so với bình quân thì đổi người máy trộn / đóng gói đầu ngày
+  ledger?: { code: string; date: string; min: number }[];
+  balance_pct?: number;
+  qc_cover?: { from: string; to: string }[]; // ngày ca 2 / ca 3 có người đo mẫu QC (QC làm ca 2 hoặc ủy quyền người phụ trách ca)
 };
-export const PEOPLE_DEFAULT = { start_min: 20, bobbin_min: 5, watch_max: 6, pack_crew: 2, pack_one_pct: 50, day_max_h: 12, ot_day_min: 240, ot_month_h: 40 };
+export const PEOPLE_DEFAULT = { start_min: 20, bobbin_min: 5, watch_max: 6, pack_crew: 2, pack_one_pct: 50, day_max_h: 12, ot_day_min: 240, ot_month_h: 40, balance_pct: 15 };
 export function peopleOf(cfg: Pick<Config, 'people'>) {
   const p = cfg.people ?? {};
   const n = (v: unknown, d: number, lo: number, hi: number) => (v == null || Number.isNaN(Number(v)) ? d : Math.min(hi, Math.max(lo, Number(v))));
@@ -81,8 +86,17 @@ export function peopleOf(cfg: Pick<Config, 'people'>) {
     absences: p.absences ?? [], covers: p.covers ?? [], crews: p.crews ?? [], op_shifts: p.op_shifts ?? [],
     day_max_h: n(p.day_max_h, PEOPLE_DEFAULT.day_max_h, 8, 12), ot_day_min: n(p.ot_day_min, PEOPLE_DEFAULT.ot_day_min, 0, 240),
     ot_month_h: n(p.ot_month_h, PEOPLE_DEFAULT.ot_month_h, 0, 300),
+    ledger: p.ledger ?? [], balance_pct: n(p.balance_pct, PEOPLE_DEFAULT.balance_pct, 1, 100), qc_cover: p.qc_cover ?? [],
   };
 }
+// Giờ làm đêm (22:00–06:00, Bộ luật Lao động Điều 106) trong khoảng [h0, h1] tính bằng giờ kể từ 00:00 của một ngày
+export function nightHours(h0: number, h1: number): number {
+  let n = 0;
+  for (let k = Math.floor((h0 - 6) / 24) - 1; 24 * k + 22 < h1; k++) n += Math.max(0, Math.min(h1, 24 * k + 30) - Math.max(h0, 24 * k + 22));
+  return n;
+}
+// Một dòng sổ giờ đứng máy: ngày, người, phút đứng máy (giờ thật), phút làm đêm, ca của người ngày đó
+export type HoursRow = { d: string; p: string; m: number; n: number; s: number };
 // Máy cần người đứng liên tục (máy trộn, máy đóng gói); máy khác tự chạy
 export const CONT_TYPES = ['MIXER', 'PACKER'];
 // Đoạn người có mặt trên một khối: START khởi động (gồm đổi máy), BOB thay bobin, RUN đứng liên tục, MIX trộn; c = kiêm nhiệm tạm
@@ -216,6 +230,7 @@ export type Schedule = {
   roster?: Roster;  // máy chạy nhiều ca: giờ máy không chạy, người ngoài ca, thiếu người, ca dài
   mix?: MixLog;   // máy trộn làm nguồn cấp: năng lực, phần đã dùng, từng lần cấp (để kiểm hạn dùng)
   warnings?: string[]; // thiếu thông số (tốc độ, phút đổi máy, máy trộn…) cần khai báo
+  hours?: HoursRow[];  // sổ giờ đứng máy theo lịch này (người thật, mọi ngày có đoạn có mặt)
 };
 // Phân ca: máy chạy ca nào, người nào làm ca nào, thiếu người, người làm ca dài (làm thêm)
 export type Roster = {
@@ -558,6 +573,23 @@ export function schedule(
   type Wk = OperatorInfo & { busy: Busy; mins: number; cont: boolean; off: Set<string> };
   const workers: Wk[] = [...ctx.operators, ...virt].map((w) => ({ ...w, busy: new Busy(), mins: 0, cont: w.skills.some(isCont), off: new Set<string>() }));
   const wByCode = new Map(workers.map((w) => [w.code, w]));
+  // Luân phiên: giờ đứng máy 4 tuần trước mốc xếp lại (sổ giờ) là điểm xuất phát; người ít giờ cộng dồn được xếp trước
+  const realW = workers.filter((w) => !virt.includes(w));
+  const bDate = cal.days[Math.min(ND - 1, Math.max(0, Math.floor(B / DAY + 1e-9)))];
+  {
+    const hFrom = addDays(bDate, -28);
+    for (const x of P.ledger) if (x.date >= hFrom && x.date < bDate) { const w = wByCode.get(x.code); if (w && !virt.includes(w)) w.mins += Number(x.min) * real2s; }
+  }
+  const BAL = P.balance_pct / 100;
+  // Mức giờ cộng dồn so với bình quân người thật: 0 = ít hơn quá BAL, 1 = trong khoảng, 2 = nhiều hơn quá BAL (người giả định: 1)
+  const tierOf = (w: Wk) => {
+    if (virt.includes(w) || realW.length < 2) return 1;
+    const avg = realW.reduce((a, x) => a + x.mins, 0) / realW.length;
+    return w.mins > avg * (1 + BAL) + 1e-6 ? 2 : w.mins < avg * (1 - BAL) - 1e-6 ? 0 : 1;
+  };
+  // Người trộn trong ngày (máy trộn → ngày → người): người này đứng máy trộn suốt ngày, việc khởi động / thay bobin / đóng gói ưu tiên người khác
+  const mixDay = new Map<string, Map<number, string>>();
+  const isDayMixer = (code: string, di: number) => { for (const mp of mixDay.values()) if (mp.get(di) === code) return true; return false; };
   // Ca của người ngày di (1, 2, 3) và các ca của lịch người đó làm: ca 1 = mọi ca cả xưởng; ca 2 / 3 = ca B / C
   const wShift = (code: string, di: number) => opShiftOn(OPSH, code, dateAt(di));
   const ownSegs = (code: string, di: number) => {
@@ -679,6 +711,29 @@ export function schedule(
   const NOCL: [number, number][] = [];
   const clOf = (code: string) => closedIv.get(code) ?? NOCL;
   const firstEnd = (L: [number, number][], t: number) => { let a = 0, b = L.length; while (a < b) { const mid = (a + b) >> 1; if (L[mid][1] <= t + 1e-9) a = mid + 1; else b = mid; } return a; };
+  // QC chỉ làm giờ ca 1 (cả xưởng); ca 2 / ca 3 có người đo mẫu (QC làm ca 2 hoặc ủy quyền người phụ trách ca, theo bảng ca tuần) thì QC
+  // làm cả ca đó. Bobin xong lúc không có người đo mẫu thì chờ đến ca có người. Bộ tối ưu tính "đủ người" thì coi như có người đo mẫu.
+  const qcL: [number, number][] = [];
+  if (multi && !opt.assumeStaff) for (let di = 0; di < ND; di++) {
+    const d = cal.days[di];
+    if (P.qc_cover.some((x) => x.from <= d && d <= x.to)) continue;
+    for (let j = 0; j < SPD; j++) if (EXTRA[j]) {
+      const last = qcL[qcL.length - 1], f = di * DAY + j * S, t = f + S;
+      if (last && f <= last[1] + 1e-9) last[1] = t; else qcL.push([f, t]);
+    }
+  }
+  // Giờ có kết quả QC của bobin xong lúc x: chạy QC phút QC trong giờ có người đo mẫu
+  const qcDone = (x: number) => {
+    if (!qcL.length) return x + QC;
+    let s = x, left = QC, i = firstEnd(qcL, s);
+    for (let g = 0; g < 100000; g++) {
+      while (i < qcL.length && qcL[i][0] <= s + 1e-9) { s = Math.max(s, qcL[i][1]); i++; }
+      const ce = i < qcL.length ? qcL[i][0] : Infinity;
+      if (s + left <= ce + 1e-9) return s + left;
+      left -= ce - s; s = qcL[i][1]; i++;
+    }
+    return s + left;
+  };
   // Giờ máy không chạy (ca máy không chạy / không có người) kế tiếp từ t: đầu khoảng đó (đang trong khoảng → t); không có → Infinity
   const closedNext = (code: string, t: number) => { const L = clOf(code); const i = firstEnd(L, t); return i < L.length ? Math.max(t, L[i][0]) : Infinity; };
   // Giờ sớm nhất ≥ t máy chạy được (bỏ qua giờ máy không chạy)
@@ -739,14 +794,15 @@ export function schedule(
   };
   type Staff = { w: Wk; at: number; cover: boolean };
   const lexLess = (a: number[], b: number[]) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i]; return false; };
-  // Người có mặt sớm nhất cho một đoạn; cùng lúc thì ưu tiên người đang phụ trách máy, người không phải giữ máy trộn / đóng gói,
-  // người có tay nghề (hơn người kiêm nhiệm tạm), người ít phút có mặt hơn
+  // Người có mặt sớm nhất cho một đoạn (không để máy chờ người); cùng lúc thì luân phiên: không lấy người đang đứng máy trộn hôm đó,
+  // người ít giờ đứng máy cộng dồn (4 tuần trước + lịch này, làm tròn nửa giờ xếp lịch) trước, rồi người đang phụ trách máy,
+  // người không phải giữ máy trộn / đóng gói, người có tay nghề (hơn người kiêm nhiệm tạm)
   const findStaff = (m: string, t: number, len: number, prefer: string | null): Staff | null => {
     let best: Staff | null = null, bk: number[] = [];
     for (const w of staffOf.get(m) ?? []) {
       const at = earliestFor(w, m, t, len);
       if (!Number.isFinite(at)) continue;
-      const key = [at, w.code === prefer ? 0 : 1, w.cont ? 1 : 0, w.skills.includes(m) ? 0 : 1, w.mins];
+      const key = [at, isDayMixer(w.code, dayOf(at)) ? 1 : 0, virt.includes(w) ? 0 : Math.round(w.mins / 30), w.code === prefer ? 0 : 1, w.cont ? 1 : 0, w.skills.includes(m) ? 0 : 1, w.mins];
       if (!best || lexLess(key, bk)) { best = { w, at, cover: !w.skills.includes(m) }; bk = key; }
     }
     return best;
@@ -927,11 +983,10 @@ export function schedule(
     for (const p of predOf.get(t.id)!) {
       if (pending.has(p.id) || dead.has(p.id)) return null;
       const sp = tspan.get(p.id); if (!sp || sp.end <= 0) continue;
-      const g = QC + SAFE(p.op);
       const first = Math.min(fwdOpen(sp.m, sp.start, F.unit_m[p.op] / Math.max(1e-6, sp.rate)), Math.max(sp.start, sp.end));
       // xong không sớm hơn: việc trước xong + QC, rồi chạy bobin cuối trên máy này (QC xong lúc máy nghỉ thì bobin cuối chạy ca sau)
-      const e0 = fwdOpen(mcode, sp.end + g, Math.min(run, F.unit_m[t.op] / Math.max(1e-6, v)));
-      r = Math.max(r, first + g, backOpen(mcode, e0, run));
+      const e0 = fwdOpen(mcode, qcDone(sp.end) + SAFE(p.op), Math.min(run, F.unit_m[t.op] / Math.max(1e-6, v)));
+      r = Math.max(r, qcDone(first) + SAFE(p.op), backOpen(mcode, e0, run));
     }
     return r;
   };
@@ -940,7 +995,7 @@ export function schedule(
     let e = 0;
     for (const p of predOf.get(t.id)!) {
       const sp = tspan.get(p.id); if (!sp || sp.end <= 0) continue;
-      e = Math.max(e, sp.end + QC + SAFE(p.op) + Math.min(run, F.unit_m[t.op] / Math.max(1e-6, v)));
+      e = Math.max(e, qcDone(sp.end) + SAFE(p.op) + Math.min(run, F.unit_m[t.op] / Math.max(1e-6, v)));
     }
     return e;
   };
@@ -1051,16 +1106,24 @@ export function schedule(
   };
   // Giữ người trộn cho một khoảng: mỗi máy trộn chạy được một người có tay nghề (hoặc kiêm nhiệm tạm), có mặt suốt khoảng (giờ trong ca)
   // hoặc không vắng (trộn sớm trước ca: nửa đầu; tăng ca sau ca: nửa sau). Thiếu người thì máy đó không trộn trong khoảng này.
-  let lastMixer: string | null = null;
+  // Luân phiên: trong ngày giữ một người trộn (không đổi giữa ca); sang ngày mới giữ người hôm trước nếu giờ đứng máy cộng dồn
+  // chưa lệch quá BAL so với bình quân, lệch thì đổi người ít giờ nhất.
+  const mixPrev = (mx: string, di: number) => {
+    let bd = -1, code: string | null = null;
+    for (const [d, c] of mixDay.get(mx) ?? []) if (d < di && d > bd) { bd = d; code = c; }
+    return code;
+  };
   const claim = (bk: Bk, di: number): boolean => {
     const inShift = bk.t1 > bk.t0 + 1e-9;
     const used = new Set<Wk>();
     for (const mx of bk.mixers) {
       let best: Wk | null = null, bkey: number[] = [];
+      const today = mixDay.get(mx.code)?.get(di) ?? null, prev = today ? null : mixPrev(mx.code, di);
       for (const w of staffOf.get(mx.code) ?? []) {
         if (used.has(w) || !eligible(w, mx.code, Math.min(di, ND - 1))) continue;
         if (inShift ? !w.busy.free(bk.t0, bk.t1 - bk.t0) : absentAt(w, di, bk.early ? 'AM' : 'PM')) continue;
-        const key = [w.code === lastMixer ? 0 : 1, w.skills.includes(mx.code) ? 0 : 1, w.mins];
+        const tr = tierOf(w);
+        const key = [w.code === today ? 0 : 1, w.code === prev && tr < 2 ? 0 : 1, tr, w.skills.includes(mx.code) ? 0 : 1, w.mins];
         if (!best || lexLess(key, bkey)) { best = w; bkey = key; }
       }
       if (!best) continue;
@@ -1068,12 +1131,12 @@ export function schedule(
       const iv = inShift ? best.busy.add(bk.t0, bk.t1, mx.code) : null;
       if (inShift) best.mins += bk.t1 - bk.t0;
       bk.staff.push({ m: mx.code, w: best, iv, cover: !best.skills.includes(mx.code) });
+      if (!today) { const mp = mixDay.get(mx.code) ?? new Map<number, string>(); mp.set(di, best.code); mixDay.set(mx.code, mp); }
     }
     if (!bk.staff.length) return false;
     const tot = bk.mixers.reduce((a, x) => a + x.kgh, 0);
     const got = bk.mixers.filter((x) => bk.staff.some((s) => s.m === x.code)).reduce((a, x) => a + x.kgh, 0);
     bk.cap = tot > 0 ? bk.capFull * got / tot : 0;
-    lastMixer = bk.staff[0].w.code;
     return true;
   };
   const release = (bk: Bk) => {
@@ -1225,6 +1288,8 @@ export function schedule(
   // khối kéo dài đến khi một người trong tổ hết rảnh (vắng nửa ca, thay bobin máy khác…), sau đó xếp tiếp với người có mặt;
   // trong ngày có mặt ít người hơn tổ đặt (vắng) thì chạy với số người có mặt; 1 người: tốc độ pack_one_pct %.
   // Người TP SX chọn vào tổ được ưu tiên; tổ còn thiếu thì lấy thêm người có tay nghề / kiêm nhiệm.
+  const packDay = new Map<string, Set<string>>(); // máy|ngày → người đã đứng đóng gói ngày đó
+  const packPrev = (mc: string, di: number) => { for (let d = di - 1; d >= 0 && d >= di - 14; d--) { const x = packDay.get(mc + '|' + d); if (x) return x; } return null; };
   const placePack = (m: M, c: Cand): Pl | null => {
     const [su, why] = changeover(cfg, m.last, c.t);
     const raw = Math.max(m.free, c.r);
@@ -1240,11 +1305,13 @@ export function schedule(
       if (f1.s > s + 1e-9) { hit = f1.hit; s = f1.s; continue; }
       const row = crewRow(m.code, di);
       const target = Math.round(row?.crew ?? P.pack_crew);
-      // người rảnh được ít nhất một đoạn ngắn trong phần còn lại của ngày
+      // người rảnh được ít nhất một đoạn ngắn trong phần còn lại của ngày; người TP SX chọn trước; trong ngày giữ tổ đã đứng
+      // (không đổi giữa ca); sang ngày mới: người ít giờ đứng máy cộng dồn trước, người hôm trước nếu chưa lệch quá BAL
+      const today = packDay.get(m.code + '|' + di), prev = packPrev(m.code, di);
+      const keyOf = (w: Wk) => { const tr = tierOf(w); return [pickedFor(w, m.code, di) ? 0 : 1, today?.has(w.code) ? 0 : 1, isDayMixer(w.code, di) ? 1 : 0, tr, prev?.has(w.code) && tr < 2 ? 0 : 1, w.skills.includes(m.code) ? 0 : 1, w.mins]; };
       const avail = (staffOf.get(m.code) ?? []).filter((w) => eligible(w, m.code, di) && !w.off.has(di + '|FULL'))
-        .map((w) => ({ w, at: earliestFor(w, m.code, s, minLen) })).filter((x) => x.at <= dayEnd - minLen + 1e-9)
-        .sort((a, b) => a.at - b.at || (pickedFor(b.w, m.code, di) ? 1 : 0) - (pickedFor(a.w, m.code, di) ? 1 : 0)
-          || (a.w.code === m.owner ? -1 : b.w.code === m.owner ? 1 : 0) || (a.w.skills.includes(m.code) ? 0 : 1) - (b.w.skills.includes(m.code) ? 0 : 1) || a.w.mins - b.w.mins);
+        .map((w) => ({ w, at: earliestFor(w, m.code, s, minLen), k: keyOf(w) })).filter((x) => x.at <= dayEnd - minLen + 1e-9)
+        .sort((a, b) => a.at - b.at || (lexLess(a.k, b.k) ? -1 : lexLess(b.k, a.k) ? 1 : 0));
       if (!avail.length) { s = dayEnd; continue; }
       const N = Math.min(target, avail.length);
       const aN = avail[N - 1].at;
@@ -1291,10 +1358,13 @@ export function schedule(
         if (pl) cands.push({ ...c, pl });
       }
     }
-    // Việc dừng vì hết giờ máy chạy: ca sau chạy tiếp trên đúng máy đó (không chia sang máy khác chạy song song)
+    // Việc dừng vì hết giờ máy chạy: ca sau chạy tiếp trên đúng máy đó (không chia sang máy khác chạy song song);
+    // máy đó không chạy tiếp được sớm (hỏng, dừng, giữ chỗ: chậm hơn máy khác quá một ca) thì chuyển sang máy khác
     for (const { m, cands } of per) for (let i = cands.length - 1; i >= 0; i--) {
       const cm = contOn.get(cands[i].t.id);
-      if (cm && cm !== m.code && per.some((x) => x.m.code === cm && x.cands.some((c) => c.t === cands[i].t))) cands.splice(i, 1);
+      if (!cm || cm === m.code) continue;
+      const own = per.find((x) => x.m.code === cm)?.cands.find((c) => c.t === cands[i].t);
+      if (own && own.pl.st <= cands[i].pl.st + S + 1e-9) cands.splice(i, 1);
     }
     for (const { m, cands } of per) {
       if (!cands.length) continue;
@@ -1342,6 +1412,7 @@ export function schedule(
       else { end = st0 + pl.need!; meters = Math.min(t.m, (pl.need! - su) * sp.v * factor); part = meters < t.m - 1e-6; }
       rate = meters / Math.max(1e-6, end - st0 - su);
       for (const w of crew) addAttend(attend, w, m.code, st0, end, 'RUN', !w.skills.includes(m.code));
+      { const k = m.code + '|' + dayOf(st0), set = packDay.get(k) ?? new Set<string>(); crew.forEach((w) => set.add(w.code)); packDay.set(k, set); }
       owner = crew[0].code;
       const covers = crew.filter((w) => !w.skills.includes(m.code)).map((w) => w.code);
       reason += ` · Tổ đóng gói ${crew.length} người: ${crew.map((w) => w.code).join(', ')}${covers.length ? ` (${covers.join(', ')} kiêm nhiệm tạm)` : ''}`
@@ -1583,13 +1654,55 @@ export function schedule(
     for (const [code, mo] of Object.entries(otUsed)) for (const [mon, h] of Object.entries(mo)) if (h >= P.ot_month_h - 1e-9)
       warnings.add(`${code} làm ca dài đã dùng hết ${P.ot_month_h} giờ làm thêm tháng ${mon.slice(5, 7)}/${mon.slice(0, 4)}: những ngày sau máy thiếu người không chạy ca thêm`);
   }
+  // ---------- Sổ giờ đứng máy theo lịch: phút thật mỗi người mỗi ngày (gồm giờ làm đêm 22:00–06:00), ca của người ----------
+  const hrs = new Map<string, HoursRow>();
+  for (const m of machines) for (const sl of m.slots) for (const a of sl.attend ?? []) {
+    const w = wByCode.get(a.p);
+    if (!w || virt.includes(w) || !(a.t > a.f)) continue;
+    // tách theo từng ca của lịch (giờ thật không liền nhau giữa các ca / các ngày)
+    for (let x = a.f, g = 0; x < a.t - 1e-9 && g < 1000; g++) {
+      const y = Math.min(a.t, (Math.floor(x / S + 1e-9) + 1) * S);
+      const di = dayOf(x), d = dateAt(di);
+      if (d) {
+        const r0 = realAt(x), r1 = Math.max(r0, realAt(y, true));
+        const k = d + '|' + a.p;
+        const row = hrs.get(k) ?? { d, p: a.p, m: 0, n: 0, s: wShift(a.p, di) };
+        row.m += (r1 - r0) * 60; row.n += nightHours(r0, r1) * 60;
+        hrs.set(k, row);
+      }
+      x = y;
+    }
+  }
+  const hours = [...hrs.values()].map((x) => ({ ...x, m: Math.round(x.m * 10) / 10, n: Math.round(x.n * 10) / 10 }))
+    .sort((a, b) => a.d.localeCompare(b.d) || a.p.localeCompare(b.p));
+  // Cảnh báo luân phiên: 4 tuần tới từ mốc, giờ đứng máy mỗi người lệch quá BAL so với bình quân; người rảnh cả ngày trong 6 ngày đầu
+  if (realW.length >= 2) {
+    const until = addDays(bDate, 28);
+    const tot = new Map(realW.map((w) => [w.code, 0]));
+    for (const x of hours) if (x.d >= bDate && x.d < until) tot.set(x.p, (tot.get(x.p) ?? 0) + x.m);
+    const avg = [...tot.values()].reduce((a, x) => a + x, 0) / realW.length;
+    if (avg > 60) {
+      const off = [...tot].filter(([, v]) => Math.abs(v - avg) > avg * BAL + 1e-6)
+        .map(([p, v]) => `${p} ${Math.round(v / 60)} giờ (${v > avg ? '+' : '−'}${Math.round(Math.abs(v - avg) / avg * 100)} %)`);
+      if (off.length) warnings.add(`Giờ đứng máy 4 tuần tới lệch quá ${Math.round(BAL * 100)} % so với bình quân ${Math.round(avg / 60)} giờ/người: ${off.join(', ')}. TP SX xem bảng ca tuần, sổ giờ ở Nhân sự xưởng`);
+    }
+    const di0 = Math.max(0, dayOf(B));
+    for (let di = di0; di < Math.min(ND, di0 + 6); di++) {
+      const d = cal.days[di];
+      const busyH = new Map(realW.map((w) => [w.code, (hrs.get(d + '|' + w.code)?.m ?? 0) / 60]));
+      const maxH = Math.max(0, ...busyH.values());
+      if (maxH < 4) continue;
+      const idle = realW.filter((w) => !w.off.has(di + '|FULL') && !w.off.has(di + '|AM') && !w.off.has(di + '|PM') && (busyH.get(w.code) ?? 0) < 0.25).map((w) => w.code);
+      if (idle.length) warnings.add(`${idle.join(', ')} không có việc đứng máy ngày ${dmy(d)} trong khi người khác đứng đến ${Math.round(maxH * 10) / 10} giờ: xem xét cho máy cổ chai chạy ca 2 (bảng ca tuần)`);
+    }
+  }
   const roster: Roster = {
     multi, closed: Object.fromEntries(closedIv), off: Object.fromEntries([...offIv].filter(([k]) => !virt.some((v) => v.code === k))),
     absent: absentIv, shortages, ext: extList, ot: otUsed, posts, virtual: virt.map((v) => v.code),
   };
   const byMachine = new Map(machines.map((m) => [m.code, m.slots.sort((a, b) => a.start - b.start)]));
   return {
-    slots: machines.flatMap((m) => m.slots), byMachine, opDone, unplaced: [...pending, ...dead].map((id) => tasks[id]), S, SPD, RUN: cal.RUN, mix: mixLog, roster,
+    slots: machines.flatMap((m) => m.slots), byMachine, opDone, unplaced: [...pending, ...dead].map((id) => tasks[id]), S, SPD, RUN: cal.RUN, mix: mixLog, roster, hours,
     warnings: [...warnings, ...(supply && mixers.every((m) => !(kghOf.get(m.code)! > 0)) ? ['Máy trộn chưa có năng lực (kg/giờ): line silicone không chạy được'] : []),
       ...[...dead].map((id) => `Không có silicone cho ${tasks[id].order.label} ${tasks[id].order.product_code} màu ${tasks[id].color ?? ''}: máy trộn ngừng hoặc thiếu người trộn`)],
   };

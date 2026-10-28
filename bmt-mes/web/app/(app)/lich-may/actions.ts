@@ -3,40 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { type ChangeInput, type ProductRow, readChange, simulate, stepsFor } from '@/lib/kh/change';
-import { type Kh, ROLE, carryOver, flowSig, hasRole, loadKh, metaOf, peopleSig, rebuild, speedSig } from '@/lib/kh/load';
-import { flowOf } from '@/lib/kh/scheduler';
+import { type Kh, ROLE, carryOver, hasRole, loadKh, rebuild, schedulePayload as payload } from '@/lib/kh/load';
 import type { Order } from '@/lib/kh/scheduler';
 import { groupName } from '@/lib/kh/optimize';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
 const go = (q: string, kind: 'ok' | 'err', msg: string): never => redirect(`/lich-may?${q}${q ? '&' : ''}${kind}=${encodeURIComponent(msg)}`);
-const r3 = (v: number) => Math.round(v * 1000) / 1000;
-
-// Gói lịch để lưu thành phiên bản mới
-function payload(kh: Kh, orders: Order[], r: ReturnType<typeof rebuild>) {
-  return {
-    p_base: r.cal.base,
-    p_params: {
-      S: r.cal.S, SPD: r.cal.SPD, RUN: r.cal.RUN, fill_pct: kh.cfg.fill_pct, frozen_days: kh.cfg.frozen_days,
-      machines_per_operator: kh.cfg.machines_per_operator, plan_no: kh.planNo, workdays: r.cal.wd,
-      group_days: kh.cfg.group_days ?? 0, speeds_sig: speedSig(kh.cfg), flow_sig: flowSig(kh.cfg), people_sig: peopleSig(kh.cfg), flow: flowOf(kh.cfg),
-      // thứ tự lô (bộ tối ưu chọn): xếp lại sau giữ thứ tự này, lô mới chen theo hạn giao
-      seq: Object.fromEntries(r.orders.filter((o) => o.seq != null).map((o) => [o.id, o.seq!])),
-      shifts: r.cal.shifts.map((s) => ({ code: s.code, start_time: s.start_time, end_time: s.end_time, break_min: s.break_min })),
-    },
-    p_orders: orders.map((o) => ({
-      plan_line_id: o.id, label: o.label, product_code: o.product_code, product_name: o.product_name, group_code: o.group, qty_m: o.qty,
-      due_date: o.due, priority: o.prio, source: o.source, finish_date: r.fin.get(o.id)?.finDate ?? null, meta: metaOf(o),
-    })),
-    p_slots: r.sch.slots.map((s) => ({
-      plan_line_id: s.lineId, op_code: s.op, color: s.color, machine_code: s.machine, operator_code: s.operator, lane: s.lane,
-      start_min: r3(s.start), run_start_min: r3(s.runStart), end_min: r3(s.end), setup_min: r3(s.setup), meters: r3(s.meters),
-      rate: r3(s.rate), speed: r3(s.speed), reason: s.reason, setup_why: s.why, part: s.part,
-      attend: (s.attend ?? []).map((a) => ({ ...a, f: r3(a.f), t: r3(a.t) })), crew: s.crew ?? null,
-    })),
-  };
-}
 
 // Số lệnh đã có trong lịch cũ bị đổi ngày xong (không tính lệnh mới thêm)
 const moved = (kh: Kh, r: ReturnType<typeof rebuild>) => kh.orders.filter((o) => kh.fin.has(o.id) && kh.fin.get(o.id)!.placed && (kh.fin.get(o.id)!.finDate ?? null) !== (r.fin.get(o.id)?.finDate ?? null)).length;

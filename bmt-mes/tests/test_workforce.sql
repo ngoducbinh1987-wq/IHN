@@ -163,6 +163,8 @@ select pg_temp.as_user('W_VH');
 select pg_temp.fails($$select app.kh_save_absence(null, 'NV1', pg_temp.wday(5), null, 'FULL', 'PHEP')$$, 'Chỉ TP SX', 'Công nhân không nhập lịch vắng');
 
 -- ================================================================ 5. Kiêm nhiệm tạm
+-- từ migration 5400 mọi công nhân đứng chính mọi máy: bỏ tay nghề của NV2, NV3 ở line silicone để thử kiêm nhiệm
+delete from master.operator_skills where operator_code in ('NV2', 'NV3') and machine_code like 'EXT-SI-%';
 select pg_temp.as_user('W_SXKH');
 select pg_temp.fails($$select app.kh_save_cover(null, 'NV1', 'EXT-SI-01', pg_temp.wday(2), null, 'NV5 nghỉ')$$, 'đứng chính', 'Người đã đứng chính máy không cần kiêm nhiệm');
 select pg_temp.fails($$select app.kh_save_cover(null, 'NV2', 'EXT-SI-01', pg_temp.wday(2), null, ' ')$$, 'lý do', 'Kiêm nhiệm bắt buộc lý do');

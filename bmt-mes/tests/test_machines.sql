@@ -310,6 +310,9 @@ select pg_temp.fails($$select app.maint_report(current_date)$$, 'quyền', 'Kinh
 reset role;
 
 -- ============================================================ 9. Lịch làm việc dùng chung với Kế hoạch SX
+-- ca 2, ca 3 nối tiếp ca 1 07:30–16:30 của kịch bản (từ migration 5400 các ca không được chồng giờ)
+update master.shifts set start_time = '16:30', end_time = '00:30' where code = 'B';
+update master.shifts set start_time = '00:30', end_time = '07:30', break_min = 30 where code = 'C';
 select pg_temp.ok((mfg.machine_setting('shift') -> 'sessions')::text = (
   select format('[["%s", "%s"], ["%s", "%s"]]', to_char(start_time, 'HH24:MI'), to_char(start_time + make_interval(mins => ((extract(epoch from end_time - start_time) / 60)::int - break_min) / 2), 'HH24:MI'),
     to_char(start_time + make_interval(mins => ((extract(epoch from end_time - start_time) / 60)::int - break_min) / 2 + break_min), 'HH24:MI'), to_char(end_time, 'HH24:MI'))

@@ -7,9 +7,9 @@ import { SubmitButton } from '@/components/submit-button';
 import { Empty, Pill } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { type Kh, QC_LEARN_MIN_SAMPLES, analyze } from '@/lib/kh/load';
-import { SHIFT_GROUPS, groupName } from '@/lib/kh/optimize';
+import { groupName } from '@/lib/kh/optimize';
 import { finishInfo, flowOf, mixerKgh, peopleOf, shiftRun } from '@/lib/kh/scheduler';
-import { endOvertime, endShifts, proposeShifts, reviewShifts } from './actions';
+import { endOvertime, endShifts, reviewShifts } from './actions';
 
 export type OtRow = {
   id: string; req_no: string; plan_no: string | null; extra_min: Record<string, number>; mix_early_h: number; date_from: string; date_to: string;
@@ -37,7 +37,6 @@ export function OptimizeTab({ kh, sp, roles, userId, ots, reqs }: { kh: Kh; sp: 
   const F = flowOf(kh.cfg);
   const P = peopleOf(kh.cfg);
   const meta = kh.flowMeta;
-  const canPropose = ['SX_TP', 'SX_KH', 'BGD', 'ADMIN'].some((x) => roles.includes(x));
   const isGd = roles.includes('BGD') || roles.includes('ADMIN');
   const base = best.ordered.score, fin = r.fin;
   const finS = best.staffed ? finishInfo(best.staffed.sch, best.staffed.cal, best.staffed.ords) : null;
@@ -55,13 +54,7 @@ export function OptimizeTab({ kh, sp, roles, userId, ots, reqs }: { kh: Kh; sp: 
   const ext = best.realPlan?.sch.roster?.ext ?? [];
   const extBy = new Map<string, number>();
   for (const e of ext) extBy.set(e.code, (extBy.get(e.code) ?? 0) + e.hours);
-  // Nhóm máy cho form: mọi nhóm có máy, điền sẵn theo MES
-  const groups = Object.keys(SHIFT_GROUPS).map((g) => ({ g, machines: kh.machines.filter((m) => SHIFT_GROUPS[g].includes(m.machine_type) && m.status !== 'OFF').map((m) => m.code) }))
-    .filter((x) => x.machines.length);
-  const lastFin = [...fin.values()].map((f) => f.finDate).filter(Boolean).sort().at(-1) ?? today;
-  const pre = (g: string) => plan.find((p) => p.group === g);
   const approved = (kh.cfg.machine_shifts ?? []).filter((x) => x.to >= today);
-  const summary = JSON.stringify({ gain: gainTxt, persons: plan.map((p) => `${groupName(p.group)}: ${p.persons} người mỗi ca thêm`).join('; '), short: shortW.slice(0, 6) });
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
@@ -149,31 +142,10 @@ export function OptimizeTab({ kh, sp, roles, userId, ots, reqs }: { kh: Kh; sp: 
             <div className="mt-1 text-muted">Sau khi Giám đốc duyệt: TP SX đặt người làm ca 2, ca 3 (và thêm công nhân, tay nghề) ở <Link className="link" href="/nhan-su-xuong">Nhân sự xưởng</Link>, rồi bấm Xếp lại lịch.</div>
           </div>
         )}
-        {canPropose && (
-          <form action={proposeShifts} className="flex flex-col gap-3 border-t border-line px-4 py-3">
-            <input type="hidden" name="plan_id" value={kh.planId ?? ''} />
-            <input type="hidden" name="summary" value={summary} />
-            <div className="text-[13px] text-muted">{plan.length ? 'Đã điền sẵn theo MES. ' : 'MES chưa thấy cần thêm ca; TP SX vẫn lập được đề xuất. '}Chọn số ca từng nhóm máy (1 ca = không thêm) và khoảng ngày (tối đa 2 tháng). Máy trộn đi cùng line silicone. Giờ 22:00–06:00 tính làm đêm.</div>
-            <div className="overflow-x-auto"><table className="tbl">
-              <thead><tr><th>Nhóm máy</th><th>Máy</th><th>Số ca</th><th>Từ ngày</th><th>Đến ngày</th></tr></thead>
-              <tbody>{groups.map(({ g, machines }) => {
-                const p = pre(g);
-                return (
-                  <tr key={g}><td><b>{groupName(g)}</b></td><td className="text-[12.5px]">{machines.join(', ')}<input type="hidden" name={`m_${g}`} value={machines.join(',')} /></td>
-                    <td><select className="inp w-[90px] py-1" name={`n_${g}`} defaultValue={String(p?.shifts ?? 1)} aria-label={`Số ca ${groupName(g)}`}>
-                      <option value="1">1 ca</option><option value="2">2 ca</option><option value="3">3 ca</option></select></td>
-                    <td><input type="date" className="inp w-[150px] py-1" name={`f_${g}`} defaultValue={p?.from ?? today} aria-label={`Từ ngày ${groupName(g)}`} /></td>
-                    <td><input type="date" className="inp w-[150px] py-1" name={`t_${g}`} defaultValue={p?.to ?? (lastFin < today ? today : lastFin)} aria-label={`Đến ngày ${groupName(g)}`} /></td></tr>
-                );
-              })}</tbody>
-            </table></div>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="min-w-[280px] flex-1 text-[13px]">Lý do
-                <input className="inp mt-1 py-1" name="reason" required defaultValue={plan.length ? (late.length ? `Kịp ngày chốt: ${gainTxt}` : `Rút ngắn kế hoạch: ${gainTxt}`) : ''} /></label>
-              <SubmitButton className="btn btn-pri" pendingText="Đang gửi…">{isGd ? 'Áp dụng thêm ca' : 'Đề xuất Giám đốc duyệt'}</SubmitButton>
-            </div>
-          </form>
-        )}
+        <div className="border-t border-line px-4 py-3 text-[13.5px]">
+          Máy nào chạy ca 2 và ai làm ca 2 do <b>bảng ca tuần</b> quyết định: MES lập (thêm ca khi có lô trễ, hoặc có người rảnh cả ngày mà thêm ca giúp xong sớm hơn), TP SX sửa, gửi; Giám đốc duyệt một lần cả ca máy và ca người trước 12:00 thứ 7, MES gửi lịch ca cho công nhân.{' '}
+          <Link className="link" href="/nhan-su-xuong?tab=ca">Nhân sự xưởng → Bảng ca tuần</Link>
+        </div>
       </section>
 
       <section className="card">

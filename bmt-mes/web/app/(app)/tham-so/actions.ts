@@ -37,8 +37,8 @@ export async function saveShifts(form: FormData) {
   const e = 'shifts';
   const rows = ['A', 'B', 'C'].map((c) => {
     const st = String(form.get(`start_${c}`) ?? ''), en = String(form.get(`end_${c}`) ?? '');
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(st) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(en)) go('err', `Ca ${c}: giờ nhập dạng HH:MM`, e);
-    return { code: c, start_time: st, end_time: en, break_min: num(form, `break_${c}`, `Ca ${c} · phút nghỉ`, e), active: c === 'A' || form.get(`active_${c}`) === '1' };
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(st) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(en)) go('err', `Ca ${c === 'A' ? 1 : c === 'B' ? 2 : 3}: giờ nhập dạng HH:MM`, e);
+    return { code: c, start_time: st, end_time: en, break_min: num(form, `break_${c}`, `Ca ${c} · phút nghỉ`, e) };
   });
   const reason = String(form.get('reason') ?? '');
   const wd = form.getAll('workday').map(Number).filter((d) => d >= 1 && d <= 7).sort();
@@ -170,4 +170,15 @@ export async function availExclude(form: FormData) {
   if (error) go('err', error.message);
   revalidatePath('/tham-so'); revalidatePath('/lich-may');
   redirect(`/tham-so?ok=${encodeURIComponent('Đã tính lại tỷ lệ xếp lịch riêng')}#ty-le-rieng`);
+}
+
+// Ngưỡng lệch giờ đứng máy (luân phiên): Giám đốc
+export async function saveBalance(form: FormData) {
+  const v = parseNum(form.get('balance_pct'));
+  if (v === null || Number.isNaN(v)) go('err', 'Ngưỡng lệch giờ đứng máy: nhập số');
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('kh_save_balance', { p_pct: v, p_reason: String(form.get('reason') ?? '') });
+  if (error) go('err', error.message);
+  revalidatePath('/tham-so'); revalidatePath('/lich-may'); revalidatePath('/nhan-su-xuong');
+  redirect(`/tham-so?ok=${encodeURIComponent('Đã lưu ngưỡng lệch giờ đứng máy. Bấm Xếp lại lịch để áp dụng.')}#luan-phien`);
 }

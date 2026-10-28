@@ -745,7 +745,7 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
 
 
 // 12. Thuật toán xếp lịch theo thông số + máy chạy 2–3 ca: TP KT/QA sửa thông số dòng chảy; thẻ Tối ưu & thêm ca;
-//     TP SX đề xuất máy trộn + line silicone chạy 2 ca → Giám đốc duyệt → lịch có ca 2; TP SX đặt người làm ca 2; kết thúc
+//     bảng ca tuần: TP SX (MES lập) → Giám đốc duyệt → MES gửi công nhân; lịch máy ghi máy chạy ca 1 / ca 2; sổ giờ
 {
   [ctx, page] = await ctxFor();
   await login(page, 'kt.tp@bmt.test');
@@ -784,71 +784,80 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   if (/Application error|PGRST/i.test(ob)) fail('Thẻ Tối ưu & thêm ca lỗi');
   await page.screenshot({ path: `${SHOTS}/20-toi-uu-them-ca.png`, fullPage: true });
   ok('Thẻ Tối ưu & thêm ca: máy cổ chai, nếu thêm ca / thêm người, thứ tự lô, máy chạy 2–3 ca, thông số đang dùng');
-  const form = page.locator('form:has(select[name=n_SIL])');
-  if (!(await form.count())) fail('TP SX phải thấy form đề xuất thêm ca');
+  if (!ob.includes('Bảng ca tuần')) fail('Thẻ Tối ưu & thêm ca phải dẫn sang Bảng ca tuần');
+  await ctx.close();
+  // Bảng ca tuần sau: TP SX bấm MES lập → sửa (máy trộn + line silicone 2 ca, NV3 + NV4 ca 2) → gửi Giám đốc → Giám đốc duyệt, MES gửi công nhân
   {
-    for (const sel of await form.locator('select[name^=n_]').all()) await sel.selectOption('1');
-    await form.locator('select[name=n_SIL]').selectOption('2');
-    await form.locator('input[name=reason]').fill('E2E: máy trộn là cổ chai');
-    await Promise.all([page.waitForURL(/ok=|err=/), form.locator('button', { hasText: 'Đề xuất Giám đốc duyệt' }).click()]);
-    const msg = await flash(page);
-    if (!msg.includes('Giám đốc duyệt')) fail(`Đề xuất thêm ca: ${msg}`);
-    ok('TP SX đề xuất máy trộn + line silicone chạy 2 ca, gửi Giám đốc duyệt');
-    if ((await page.locator('form:has(input[name=note]) button:has-text("Duyệt")').count())) fail('TP SX không được tự duyệt thêm ca');
-    await ctx.close();
-    [ctx, page] = await ctxFor();
-    await login(page, 'bgd@bmt.test');
-    await page.goto(`${BASE}/lich-may?tab=toiuu`);
-    await clickNav(page, 'form:has(input[name=note]) button:has-text("Duyệt")');
-    await expectOk(page, 'Giám đốc duyệt thêm ca');
-    const ab = await page.innerText('main');
-    if (!ab.includes('Đang áp dụng') && !ab.includes('Đã duyệt, từ')) fail('Thêm ca đã duyệt phải hiện Đang áp dụng');
-    if (!/Đang duyệt: .*SIL-MIX 2 ca/.test(ab)) fail('Thẻ thêm ca phải liệt kê máy đang chạy 2 ca');
-    // Giám đốc xếp lại lịch: lịch có ca 2, máy trộn + line silicone ghi "2 ca"
-    await page.goto(`${BASE}/lich-may?tab=lich`);
-    const rbt = page.locator('form button', { hasText: /Xếp lại lịch|Xếp lịch/ }).first();
-    if (await rbt.count()) { await Promise.all([page.waitForURL(/ok=|err=/), rbt.click()]); await flash(page); }
-    await page.goto(`${BASE}/lich-may?tab=lich`);
-    let gb = await page.innerText('main');
-    if (!gb.includes('2 ca')) { await page.goto(`${BASE}/lich-may?tab=lich&w=1`); gb = await page.innerText('main'); }
-    if (/Application error|PGRST/i.test(gb)) fail('Lịch máy lỗi sau khi thêm ca');
-    if (!gb.includes('3 ca/ngày') || !gb.includes('Ca B') || !gb.includes('2 ca')) fail('Lịch máy sau khi thêm ca phải có ca B và máy ghi "2 ca"');
-    await page.screenshot({ path: `${SHOTS}/22-lich-may-2-ca.png`, fullPage: true });
-    ok('Lịch máy: máy trộn + line silicone chạy 2 ca (cột ca B, máy khác nghỉ giờ ca 2)');
-    await ctx.close();
-    // TP SX đặt người làm ca 2 ở Nhân sự xưởng (thứ Hai → thứ Bảy tuần sau: Chủ nhật nghỉ, đủ 12 giờ khi về ca 1)
-    [ctx, page] = await ctxFor();
-    await login(page, 'sx.tp@bmt.test');
-    await page.goto(`${BASE}/nhan-su-xuong?tab=ca`);
-    const nb = await page.innerText('main');
-    if (!nb.includes('Máy chạy 2 ca, 3 ca và người làm ca đó') || !nb.includes('Chưa có người')) fail('Nhân sự xưởng → Ca 2, ca 3 phải liệt kê máy chạy ca 2 thiếu người');
     const now = new Date(Date.now() + 7 * 3600e3);
     const mon = new Date(now); mon.setUTCDate(now.getUTCDate() + ((8 - now.getUTCDay()) % 7 || 7));
-    const sat = new Date(mon); sat.setUTCDate(mon.getUTCDate() + 5);
-    const fri = new Date(mon); fri.setUTCDate(mon.getUTCDate() + 4);
-    const iso = (d) => d.toISOString().slice(0, 10);
-    const sf = page.locator('form:has(select[name=shift])');
-    await sf.locator('select[name=shift]').selectOption('2');
-    await sf.locator('input[name=from]').fill(iso(mon));
-    await sf.locator('input[name=to]').fill(iso(fri));
-    await Promise.all([page.waitForURL(/ok=|err=/), sf.locator('button', { hasText: 'Lưu' }).click()]);
-    if (!(await flash(page)).includes('12 giờ')) fail('Ca 2 đến thứ Sáu rồi thứ Bảy về ca 1 (nghỉ 10 giờ) phải bị chặn');
-    ok('Đổi ca phải nghỉ ít nhất 12 giờ: ca 2 thứ Hai–thứ Sáu rồi thứ Bảy ca 1 bị chặn');
-    const sf2 = page.locator('form:has(select[name=shift])');
-    await sf2.locator('select[name=shift]').selectOption('2');
-    await sf2.locator('input[name=from]').fill(iso(mon));
-    await sf2.locator('input[name=to]').fill(iso(sat));
-    await clickNav(page, 'form:has(select[name=shift]) button:has-text("Lưu")');
-    await expectOk(page, 'TP SX đặt người làm ca 2 (thứ Hai – thứ Bảy)');
-    if (!(await page.innerText('main')).includes('Ca 2')) fail('Bảng Ca của người phải có người làm ca 2');
-    await page.screenshot({ path: `${SHOTS}/23-nhan-su-ca-2.png`, fullPage: true });
+    const W = mon.toISOString().slice(0, 10);
+    [ctx, page] = await ctxFor();
+    await login(page, 'sx.tp@bmt.test');
+    await page.goto(`${BASE}/nhan-su-xuong?tab=ca&w=${W}`);
+    let nb = await page.innerText('main');
+    if (!nb.includes('Hạn Giám đốc duyệt, MES gửi công nhân') || !nb.includes('12:00 thứ 7')) fail('Bảng ca tuần phải ghi hạn 12:00 thứ 7');
+    await clickNav(page, 'button:has-text("MES lập bảng ca tuần này")');
+    { const m = await flash(page); if (!m.includes('MES đã lập bảng ca')) fail(`MES lập bảng ca: ${m}`); ok(`TP SX bấm MES lập bảng ca tuần sau → ${m}`); }
+    nb = await page.innerText('main');
+    if (!nb.includes('Máy chạy ca nào') || !nb.includes('Kế hoạch xong sau')) fail('Bảng ca phải có bảng máy chạy ca nào và ngày xong kế hoạch');
+    const sf = page.locator('#sua-bang-ca form');
+    const setPeople = async (two) => {
+      for (const sel of await sf.locator('select[name^=ps_]').all()) await sel.selectOption('1');
+      for (const c of two) await sf.locator(`select[name=ps_${c}]`).selectOption('2');
+    };
+    for (const sel of await sf.locator('select[name^=ms_]').all()) await sel.selectOption('1');
+    await sf.locator('select[name="ms_SIL-MIX"]').selectOption('2');
+    await sf.locator('select[name="ms_EXT-SI-01"]').selectOption('2');
+    // Ca 2 một người: bị chặn
+    await setPeople(['NV3']);
+    await sf.locator('input[name=lead2][value=NV3]').check();
+    await clickNav(page, '#sua-bang-ca button:has-text("Lưu và tính lại")');
+    if (!(await flash(page)).includes('ít nhất 2 người')) fail('Ca 2 chỉ một người phải bị chặn');
+    ok('Ca 2 chỉ một người bị chặn (ít nhất 2 người, 1 phụ trách)');
+    const sf2 = page.locator('#sua-bang-ca form');
+    for (const sel of await sf2.locator('select[name^=ms_]').all()) await sel.selectOption('1');
+    await sf2.locator('select[name="ms_SIL-MIX"]').selectOption('2');
+    await sf2.locator('select[name="ms_EXT-SI-01"]').selectOption('2');
+    for (const sel of await sf2.locator('select[name^=ps_]').all()) await sel.selectOption('1');
+    await sf2.locator('select[name=ps_NV3]').selectOption('2');
+    await sf2.locator('select[name=ps_NV4]').selectOption('2');
+    await sf2.locator('input[name=lead2][value=NV3]').check();
+    await sf2.locator('input[name=qc_mode][value=LEAD]').check();
+    await clickNav(page, '#sua-bang-ca button:has-text("Lưu và tính lại")');
+    await expectOk(page, 'TP SX sửa bảng ca: máy trộn + line silicone 2 ca, NV3 + NV4 ca 2 (NV3 phụ trách, đo mẫu QC)');
+    nb = await page.innerText('#bang-ca');
+    if (!nb.includes('Ca 1 + 2') || !nb.includes('Phụ trách ca')) fail('Bảng ca phải ghi máy chạy "Ca 1 + 2" và người phụ trách ca');
+    await clickNav(page, '#gui-giam-doc button:has-text("Duyệt và gửi Giám đốc")');
+    await expectOk(page, 'TP SX duyệt và gửi Giám đốc');
+    if (await page.locator('#giam-doc-duyet').count()) fail('TP SX không được tự duyệt bảng ca');
+    await page.screenshot({ path: `${SHOTS}/23-bang-ca-tuan.png`, fullPage: true });
     await ctx.close();
     [ctx, page] = await ctxFor();
     await login(page, 'bgd@bmt.test');
-    await page.goto(`${BASE}/lich-may?tab=toiuu`);
-    await page.locator('form:has(button:has-text("Kết thúc sớm")) input[name=note]').first().fill('E2E: đủ năng lực');
-    await clickNav(page, 'button:has-text("Kết thúc sớm")');
-    await expectOk(page, 'Giám đốc kết thúc thêm ca sớm');
+    await page.goto(`${BASE}/nhan-su-xuong?tab=ca&w=${W}`);
+    if (!(await page.locator('#sua-bang-ca').count())) fail('Giám đốc phải sửa được bảng ca khi duyệt');
+    await clickNav(page, '#giam-doc-duyet button:has-text("Duyệt và gửi công nhân")');
+    await expectOk(page, 'Giám đốc duyệt bảng ca, MES gửi công nhân');
+    if (!(await flash(page)).includes('gửi lịch ca')) fail('Duyệt bảng ca phải báo đã gửi lịch ca');
+    nb = await page.innerText('main');
+    if (!nb.includes('Đã duyệt') || !nb.includes('Ca 2')) fail('Bảng ca đã duyệt phải hiện người làm ca 2');
+    // Lịch máy: bảng máy chạy ca nào, Gantt có cột ca 2
+    await page.goto(`${BASE}/lich-may?tab=lich&w=1`);
+    let gb = await page.innerText('main');
+    if (/Application error|PGRST/i.test(gb)) fail('Lịch máy lỗi sau khi duyệt bảng ca');
+    if (!gb.includes('Máy chạy ca nào') || !gb.includes('Ca 2')) fail('Lịch máy tuần sau phải ghi máy nào chạy ca 1, ca 2');
+    await page.screenshot({ path: `${SHOTS}/22-lich-may-2-ca.png`, fullPage: true });
+    ok('Lịch máy ghi máy chạy ca 1 / ca 2 theo bảng ca tuần đã duyệt');
+    // Bản in bảng ca, sổ giờ
+    const rid = await page.evaluate(async (u) => { const r = await fetch(u); const t = await r.text(); return (t.match(/\/in\/bang-ca\?id=([0-9a-f-]{36})/) || [])[1] || ''; }, `${BASE}/nhan-su-xuong?tab=ca&w=${W}`);
+    if (rid) {
+      await page.goto(`${BASE}/in/bang-ca?id=${rid}`);
+      const pb = await page.innerText('body');
+      if (!pb.includes('NV3') || !/ký/i.test(pb)) fail('Bản in bảng ca phải có người và chỗ ký nhận');
+    } else fail('Không thấy link In bảng ca');
+    await page.goto(`${BASE}/nhan-su-xuong?tab=so-gio`);
+    if (!(await page.innerText('main')).includes('Sổ giờ đứng máy')) fail('Thiếu thẻ Sổ giờ đứng máy');
+    ok('In bảng ca có chữ ký nhận; Sổ giờ đứng máy');
   }
   await ctx.close();
 }
@@ -971,6 +980,7 @@ await ctx.close();
   const add = p.locator('#them-nguoi');
   await add.locator('input[name=name]').fill('Người thử E2E');
   await add.locator('input[name=job]').fill('Đóng gói');
+  await add.locator('input[name=all_machines]').uncheck();
   await clickNav(p, '#them-nguoi button:has-text("Thêm người")');
   await expectOk(p, 'TP SX thêm người đứng máy');
   if (!(await p.innerText('main')).includes('Người thử E2E')) fail('Người mới không hiện trong danh sách');
@@ -982,10 +992,12 @@ await ctx.close();
   await fa.locator('input[name=from]').fill(tom);
   await clickNav(p, 'form:has(select[name=part]) button:has-text("Lưu lịch vắng")');
   await expectOk(p, 'TP SX nhập lịch vắng NV5');
-  // Kiêm nhiệm tạm NV3 đứng EXT-SI-01 ngày mai
+  // Kiêm nhiệm tạm: người mới (chưa có tay nghề) đứng EXT-SI-01 ngày mai
   await p.goto(`${BASE}/nhan-su-xuong?tab=kiem-nhiem`);
   const fc = p.locator('form:has(button:has-text("Phân công"))');
-  await fc.locator('select[name=operator]').selectOption('NV3');
+  const newCode = await fc.locator('select[name=operator] option', { hasText: 'Người thử E2E' }).first().getAttribute('value');
+  if (!newCode) fail('Người mới phải có trong danh sách kiêm nhiệm');
+  await fc.locator('select[name=operator]').selectOption(newCode);
   await fc.locator('select[name=machine]').selectOption('EXT-SI-01');
   await fc.locator('input[name=from]').fill(tom);
   await fc.locator('input[name=reason]').fill('E2E: NV5 nghỉ phép');

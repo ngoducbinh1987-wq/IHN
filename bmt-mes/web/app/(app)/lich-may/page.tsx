@@ -415,6 +415,7 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
         <Link className="btn btn-sm" href={qs({ w: String(w + 1) })} scroll={false}>Tuần sau<ChevronRight size={15} /></Link>
         <span className="text-[13px] text-muted">{days.length ? `${dd(days[0])} – ${dd(days[days.length - 1])}` : ''} · bấm vào khối để xem căn cứ xếp</span>
       </div>
+      <MachineShifts kh={kh} view={view} days={days} startDay={startDay} />
       <section className="card overflow-x-auto">
         <div className="min-w-[980px]">
           <div className="grid grid-cols-[180px_1fr] border-b border-line">
@@ -429,7 +430,7 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
               </div>
               {SPD > 1 && (
                 <div className="grid border-t border-line" style={{ gridTemplateColumns: `repeat(${N}, 1fr)` }}>
-                  {Array.from({ length: N }, (_, s) => <div key={s} className="border-l border-line px-1 text-[11px] text-muted">Ca {cal.shifts[s % SPD].code}</div>)}
+                  {Array.from({ length: N }, (_, s) => <div key={s} className="border-l border-line px-1 text-[11px] text-muted">Ca {shiftNoOf(cal.shifts[s % SPD].code)}</div>)}
                 </div>
               )}
             </div>
@@ -464,6 +465,44 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
       <PeopleRows kh={kh} view={view} days={days} startDay={startDay} X={X} W0={W0} W={W} grid={grid} />
       <div id="chi-tiet">{sel ? <SlotDetail kh={kh} view={view} sel={sel} canPlan={canPlan} /> : <div className="card px-4 py-3 text-[13px] text-muted">Bấm vào một khối trên lịch để xem người đứng máy, căn cứ xếp, cách tính thời gian và ngày dự kiến xong.</div>}</div>
     </div>
+  );
+}
+
+// Máy nào chạy ca nào từng ngày (bảng ca tuần Giám đốc duyệt): ca có việc theo lịch in đậm, ca không có việc in nhạt
+function MachineShifts({ kh, view, days, startDay }: { kh: Kh; view: View; days: string[]; startDay: number }) {
+  const msx = kh.cfg.machine_shifts ?? [];
+  const S = view.sch.S, SPD = kh.cal.SPD, DAY = S * SPD;
+  const segOf = (no: number) => kh.cal.shifts.findIndex((x) => shiftNoOf(x.code) === no);
+  const work = (m: string, i: number, no: number) => {
+    const j = segOf(no);
+    if (j < 0) return false;
+    const f = (startDay + i) * DAY + j * S, t = f + S;
+    return (view.sch.byMachine.get(m) ?? []).some((x) => x.end > f + 1 && x.start < t - 1);
+  };
+  const any = days.some((d) => kh.machines.some((m) => shiftsOn(msx, m.code, d) > 1));
+  const times = (no: number) => { const x = kh.cfg.shifts.find((y) => shiftNoOf(y.code) === no); return x ? `${x.start_time.slice(0, 5)}–${x.end_time.slice(0, 5)}` : ''; };
+  return (
+    <section className="card overflow-x-auto" id="ca-may">
+      <div className="card-h"><h2>Máy chạy ca nào</h2><span className="text-[12.5px] text-muted">ca 1 {times(1)}{any ? ` · ca 2 ${times(2)}` : ''} · theo bảng ca tuần Giám đốc duyệt · <Link className="link" href={`/nhan-su-xuong?tab=ca&w=${days[0] ?? ''}`}>Bảng ca tuần</Link></span></div>
+      <table className="tbl">
+        <thead><tr><th>Máy</th>{days.map((d) => <th key={d} className="text-center">{wdl(d)} {dd(d)}</th>)}</tr></thead>
+        <tbody>{kh.machines.map((m) => (
+          <tr key={m.code}><td className="whitespace-nowrap"><b>{m.code}</b></td>
+            {days.map((d, i) => {
+              const n = shiftsOn(msx, m.code, d);
+              return (
+                <td key={d} className={`text-center text-[12.5px] ${n > 1 ? 'bg-info/10' : ''}`}>
+                  {Array.from({ length: n }, (_, k) => k + 1).map((no) => (
+                    <span key={no} className={`mx-0.5 ${work(m.code, i, no) ? 'font-semibold' : 'text-muted'}`} title={work(m.code, i, no) ? 'Có việc theo lịch' : 'Không có việc theo lịch'}>Ca {no}</span>
+                  ))}
+                </td>
+              );
+            })}
+          </tr>
+        ))}</tbody>
+      </table>
+      <p className="border-t border-line px-4 py-2 text-[12.5px] text-muted">In đậm: ca có việc theo lịch đang dùng; in nhạt: máy chạy ca đó nhưng lịch chưa có việc (bảng ca vừa duyệt thì bấm Xếp lại lịch).</p>
+    </section>
   );
 }
 

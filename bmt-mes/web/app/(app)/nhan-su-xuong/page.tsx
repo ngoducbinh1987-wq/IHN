@@ -7,7 +7,8 @@ import { type Kh, loadKh, vnNow } from '@/lib/kh/load';
 import { addDays, dayIndex, isWorkday, peopleOf } from '@/lib/kh/scheduler';
 import { requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { deleteAbsence, deleteCover, deleteOpShift, saveAbsence, saveCover, saveOpShift, saveOperator, setCrew, setFgKeeper, setOperatorActive, setSkill } from './actions';
+import { deleteAbsence, deleteCover, saveAbsence, saveCover, saveOperator, setCrew, setFgKeeper, setOperatorActive, setSkill, signAll, skillAll } from './actions';
+import { type HoursRow, HoursTab, type RosterRow, RosterTab } from './roster-tab';
 
 export const metadata = { title: 'Nhân sự xưởng' };
 
@@ -24,7 +25,7 @@ type OpSh = { id: string; operator_code: string; full_name: string | null; date_
 
 const TABS = [
   { key: 'nguoi', label: 'Người' }, { key: 'tay-nghe', label: 'Người × máy' }, { key: 'vang', label: 'Lịch vắng' },
-  { key: 'kiem-nhiem', label: 'Kiêm nhiệm tạm' }, { key: 'dong-goi', label: 'Tổ đóng gói' }, { key: 'ca', label: 'Ca 2, ca 3' }, { key: 'canh-bao', label: 'Cảnh báo & gợi ý' },
+  { key: 'kiem-nhiem', label: 'Kiêm nhiệm tạm' }, { key: 'dong-goi', label: 'Tổ đóng gói' }, { key: 'ca', label: 'Bảng ca tuần' }, { key: 'so-gio', label: 'Sổ giờ' }, { key: 'canh-bao', label: 'Cảnh báo & gợi ý' },
 ];
 const KIND: Record<string, string> = { PHEP: 'Nghỉ phép', OM: 'Ốm', RIENG: 'Việc riêng', CONG_TAC: 'Đi công tác', KHAC: 'Khác' };
 const KIND_SHORT: Record<string, string> = { PHEP: 'P', OM: 'Ô', RIENG: 'R', CONG_TAC: 'CT', KHAC: 'K' };
@@ -37,6 +38,7 @@ const wdl = (d: string) => WD[new Date(d + 'T00:00:00Z').getUTCDay()];
 export default async function NhanSuXuong({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const me = await requirePage('nhan-su-xuong');
+  const isKt = me.roles.some((r) => ['KT_TP', 'ADMIN'].includes(r));
   const db = await createClient();
   const tab = TABS.find((t) => t.key === sp.tab)?.key ?? 'nguoi';
   const today = vnNow().date;
@@ -49,7 +51,11 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
     db.schema('app').from('v_kh_covers').select('*').gte('date_to', addDays(today, -30)).order('date_from'),
     db.schema('app').from('v_kh_crew_days').select('*').gte('work_date', today).order('work_date'),
     canEdit ? db.schema('app').from('v_users').select('id, full_name, status').eq('status', 'ACTIVE').order('full_name') : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
-    db.schema('app').from('v_kh_op_shifts').select('*').gte('date_to', addDays(today, -30)).order('date_from'),
+    db.schema('app').from('v_kh_op_shifts').select('*').gte('date_to', addDays(today, -84)).order('date_from'),
+  ]);
+  const [{ data: rosterRows }, { data: hourRows }] = await Promise.all([
+    db.schema('app').from('v_kh_rosters').select('*').gte('week_start', addDays(today, -84)).order('week_start', { ascending: false }).order('created_at', { ascending: false }),
+    db.schema('app').from('v_kh_op_hours').select('*').gte('work_date', addDays(today, -84)).lte('work_date', addDays(today, 14)),
   ]);
   const opShifts = (shRows ?? []) as OpSh[];
   const ops = (opRows ?? []) as Op[];
@@ -99,16 +105,6 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
       if (st.length < target) alerts.push({ d, m, tone: 'warn', sug, text: `Tổ đóng gói đặt ${target} người nhưng chỉ ${st.length} người có mặt: chạy 1 người, tốc độ ${P.pack_one_pct}%` });
     }
   }
-  // Ca 2, ca 3: máy được duyệt chạy thêm ca × người làm ca đó (14 ngày làm việc tới)
-  const mShifts = (kh?.cfg.machine_shifts ?? []).filter((x) => x.to >= today);
-  const shiftOf = (code: string, d: string) => opShifts.find((x) => x.operator_code === code && x.date_from <= d && d <= x.date_to)?.shift_no ?? 1;
-  const runsOn = (m: string, d: string) => mShifts.reduce((a, x) => (x.machine === m && x.from <= d && d <= x.to ? Math.max(a, x.shifts) : a), 1);
-  const roster = days.flatMap((d) => [2, 3].flatMap((no) => machines.filter((m) => runsOn(m.code, d) >= no).map((m) => {
-    const ppl = active.filter((o) => shiftOf(o.code, d) === no && absentOn(o.code, d)?.part !== 'FULL'
-      && (hasSkill(o, m.code) || Boolean(coverOn(o.code, m.code, d)) || Boolean(m.machine_type === 'PACKER' && crewOf(m.code, d)?.members.includes(o.code))));
-    return { d, no, m, ppl };
-  })));
-  const shiftTimes = (no: number) => { const c = kh?.cfg.shifts.find((x) => x.code === (no === 2 ? 'B' : no === 3 ? 'C' : 'A')); return c ? `${c.start_time.slice(0, 5)}–${c.end_time.slice(0, 5)}` : ''; };
   const abNow = abs.filter((a) => a.date_from <= today && today <= a.date_to);
   const covNow = covs.filter((c) => c.date_from <= today && today <= c.date_to);
 
@@ -192,6 +188,7 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
                 <label className="lbl"><span className="req">Công việc chính</span><input name="job" className="inp" placeholder="Ví dụ: chạy line đùn" required /></label>
                 <label className="lbl">Việc kiêm thêm<input name="extra" className="inp" placeholder="Ví dụ: nhập kho" /></label>
                 <label className="lbl">Ghi chú<input name="note" className="inp" /></label>
+                <label className="inline-flex items-center gap-1.5 text-[13.5px] lg:col-span-4"><input type="checkbox" name="all_machines" value="1" defaultChecked />Đứng chính mọi máy (TP KT/QA ký tay nghề)</label>
                 <div className="lg:col-span-4"><SubmitButton className="btn btn-pri">Thêm người</SubmitButton></div>
               </form>
             </section>
@@ -201,12 +198,14 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
 
       {tab === 'tay-nghe' && (
         <section className="card overflow-x-auto">
-          <div className="card-h"><h2>Người × máy</h2><span className="text-[13px] font-normal text-muted">TP SX giao · TP KT/QA ký xác nhận tay nghề (✓) ở hồ sơ máy</span></div>
+          <div className="card-h"><h2>Người × máy</h2><span className="flex flex-wrap items-center gap-2 text-[13px] font-normal text-muted">mọi công nhân đứng được mọi máy (anh Bình 28/10/2026) · TP KT/QA ký xác nhận (✓)
+            {isKt && active.some((o) => o.skills.some((k) => !k.signed)) && <form action={signAll}>{tabIn}<SubmitButton className="btn btn-sm btn-pri" pendingText="…">Ký tất cả tay nghề chưa ký</SubmitButton></form>}</span></div>
           <table className="tbl">
             <thead><tr><th>Người</th>{sched.map((m) => <th key={m.code} className="text-center"><Link className="link" href={`/may/${m.id}?tab=nguoi`}>{m.code}</Link><div className="text-[11.5px] font-normal text-muted">{TYPE_NAME[m.machine_type] ?? m.machine_type}</div></th>)}</tr></thead>
             <tbody>{active.map((o) => (
               <tr key={o.code}>
-                <td className="whitespace-nowrap"><b>{o.code}</b>{o.full_name && <div className="text-[12px] text-muted">{o.full_name}</div>}</td>
+                <td className="whitespace-nowrap"><b>{o.code}</b>{o.full_name && <div className="text-[12px] text-muted">{o.full_name}</div>}
+                  {canSkill && sched.some((m) => !hasSkill(o, m.code)) && <form action={skillAll} className="mt-1">{tabIn}{hidden('code', o.code)}<SubmitButton className="btn btn-sm px-1.5 py-0.5 text-[12px]" pendingText="…">Đứng mọi máy</SubmitButton></form>}</td>
                 {sched.map((m) => {
                   const sk = o.skills.find((s) => s.machine === m.code);
                   const cv = covs.find((c) => c.operator_code === o.code && c.machine_code === m.code && c.date_to >= today);
@@ -359,58 +358,10 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
         </section>
       )}
 
-      {tab === 'ca' && (
-        <div className="flex flex-col gap-4">
-          <section className="card overflow-x-auto">
-            <div className="card-h"><h2>Máy chạy 2 ca, 3 ca và người làm ca đó</h2><span className="text-[13px] font-normal text-muted">ca 2 {shiftTimes(2)} · ca 3 {shiftTimes(3)} · Giám đốc duyệt ở <Link className="link" href="/lich-may?tab=toiuu">Lịch máy → Tối ưu &amp; thêm ca</Link></span></div>
-            {!mShifts.length ? <Empty>Chưa có máy nào được duyệt chạy thêm ca: mọi người làm ca 1.</Empty> : !roster.length ? <Empty>14 ngày làm việc tới không có máy chạy thêm ca.</Empty> : (
-              <table className="tbl">
-                <thead><tr><th>Ngày</th><th>Ca</th><th>Máy</th><th>Người làm ca này đứng được máy</th></tr></thead>
-                <tbody>{roster.map((x) => (
-                  <tr key={x.d + x.no + x.m.code}>
-                    <td className="whitespace-nowrap"><b>{wdl(x.d)} {dd(x.d)}</b></td><td>Ca {x.no}</td><td className="mono">{x.m.code}</td>
-                    <td className="text-[12.5px]">{x.ppl.length ? x.ppl.map((o) => o.code).join(', ')
-                      : <span className="text-bad">Chưa có người: MES cho người ca trước làm ca dài (tối đa {P.day_max_h} giờ/ngày, {P.ot_month_h} giờ làm thêm/tháng) nếu có, không thì máy không chạy ca {x.no}</span>}
-                      {x.m.machine_type === 'MIXER' && x.ppl.length > 0 && <span className="text-muted"> · máy trộn cần 1 người đứng riêng</span>}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            )}
-          </section>
-          {canEdit && (
-            <section className="card">
-              <div className="card-h"><h2>Đặt người làm ca 2 / ca 3</h2><span className="text-[13px] font-normal text-muted">ngoài khoảng ngày người đó làm ca 1 · đổi ca phải nghỉ ít nhất 12 giờ</span></div>
-              <form action={saveOpShift} className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
-                {tabIn}
-                <label className="lbl"><span className="req">Người</span><select name="operator" className="inp" required>{active.map((o) => <option key={o.code} value={o.code}>{name(o.code)}</option>)}</select></label>
-                <label className="lbl"><span className="req">Ca</span><select name="shift" className="inp" required><option value="2">Ca 2 ({shiftTimes(2)})</option><option value="3">Ca 3 ({shiftTimes(3)})</option></select></label>
-                <label className="lbl"><span className="req">Từ ngày</span><input type="date" name="from" className="inp" required defaultValue={mShifts[0]?.from && mShifts[0].from > today ? mShifts[0].from : today} min={today} /></label>
-                <label className="lbl">Đến ngày<input type="date" name="to" className="inp" min={today} defaultValue={mShifts[0]?.to ?? ''} /></label>
-                <label className="lbl">Ghi chú<input name="note" className="inp" placeholder="Ví dụ: NV6 trộn silicone ca 2" /></label>
-                <div className="lg:col-span-5"><SubmitButton className="btn btn-pri">Lưu</SubmitButton> <span className="text-[12.5px] text-muted">Thiếu người: thêm công nhân ở thẻ Người, giao máy ở thẻ Người × máy (TP KT/QA ký tay nghề) hoặc kiêm nhiệm tạm. Sau đó bấm Xếp lại lịch.</span></div>
-              </form>
-            </section>
-          )}
-          <section className="card overflow-x-auto">
-            <div className="card-h"><h2>Ca của người</h2></div>
-            {!opShifts.length ? <Empty>Mọi người làm ca 1.</Empty> : (
-              <table className="tbl">
-                <thead><tr><th>Người</th><th>Ca</th><th>Ngày</th><th>Ghi chú</th><th>Người đặt</th>{canEdit && <th />}</tr></thead>
-                <tbody>{opShifts.map((x) => (
-                  <tr key={x.id} className={x.date_to < today ? 'opacity-60' : ''}>
-                    <td><b>{x.operator_code}</b>{x.full_name ? ` · ${x.full_name}` : ''}</td><td>Ca {x.shift_no} <span className="text-[12px] text-muted">{shiftTimes(x.shift_no)}</span></td>
-                    <td className="whitespace-nowrap">{dd(x.date_from)} – {dd(x.date_to)}{x.date_to < today ? ' · đã hết' : ''}</td>
-                    <td className="text-[12.5px]">{x.note}</td><td className="text-[12.5px] text-muted">{x.created_by_name}</td>
-                    {canEdit && <td>{x.date_to >= today && (
-                      <form action={deleteOpShift} className="flex items-center gap-1.5">{tabIn}{hidden('id', x.id)}
-                        <input name="reason" className="inp w-[140px] py-1" placeholder="Lý do bỏ" aria-label="Lý do bỏ ca" required /><SubmitButton className="btn btn-sm" pendingText="…">Bỏ</SubmitButton></form>)}</td>}
-                  </tr>
-                ))}</tbody>
-              </table>
-            )}
-          </section>
-        </div>
-      )}
+      {tab === 'ca' && (kh ? <RosterTab kh={kh} rosters={(rosterRows ?? []) as RosterRow[]} sp={sp} roles={me.roles} userId={me.id} canEdit={canEdit}
+        ops={active.map((o) => ({ code: o.code, full_name: o.full_name, is_deputy: o.is_deputy }))} opShifts={opShifts} /> : <div className="card"><Empty>Chưa đọc được lịch máy.</Empty></div>)}
+      {tab === 'so-gio' && (kh ? <HoursTab kh={kh} hours={((hourRows ?? []) as HoursRow[]).map((h) => ({ ...h, attend_min: Number(h.attend_min), night_min: Number(h.night_min) }))}
+        ops={active.map((o) => ({ code: o.code, full_name: o.full_name, is_deputy: o.is_deputy }))} opShifts={opShifts} /> : <div className="card"><Empty>Chưa đọc được lịch máy.</Empty></div>)}
 
       {tab === 'canh-bao' && (
         <section className="card overflow-x-auto">
@@ -440,7 +391,7 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
           <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">MES chỉ gợi ý; QLSX quyết định và phân công. Sau khi phân công, TP SX bấm Xếp lại lịch ở <Link className="link" href="/lich-may">Lịch máy</Link>. Lịch máy cũng cảnh báo khi một người phụ trách quá {P.watch_max} máy chạy cùng lúc.</p>
         </section>
       )}
-      {!canEdit && tab !== 'canh-bao' && <div className="mt-2"><LockNote>Chỉ TP SX / Kế hoạch SX sửa</LockNote></div>}
+      {!canEdit && !['canh-bao', 'so-gio', 'ca'].includes(tab) && <div className="mt-2"><LockNote>Chỉ TP SX / Kế hoạch SX sửa</LockNote></div>}
     </>
   );
 }

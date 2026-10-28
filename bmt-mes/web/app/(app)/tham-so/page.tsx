@@ -5,11 +5,11 @@ import { Alert, LockNote } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { QC_LEARN_MIN_SAMPLES, ROLE, hasRole, loadConfig } from '@/lib/kh/load';
-import { DEFAULT_WD, OP_SHORT, type Op, flowOf, peopleOf, shiftRun } from '@/lib/kh/scheduler';
+import { DEFAULT_WD, OP_SHORT, type Op, flowOf, nightHours, peopleOf, shiftRun, toMin } from '@/lib/kh/scheduler';
 import { df, nf, numIn } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { availExclude, saveChangeovers, saveConfig, saveFlow, savePeople, saveRates, saveShifts, setMode } from './actions';
+import { availExclude, saveBalance, saveChangeovers, saveConfig, saveFlow, savePeople, saveRates, saveShifts, setMode } from './actions';
 
 export const metadata = { title: 'Tham số xếp lịch' };
 
@@ -69,8 +69,14 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
     </div>
   );
   const shifts = ['A', 'B', 'C'].map((c) => cfg.shifts.find((s) => s.code === c)!).filter(Boolean);
-  const shA = shifts.find((s) => s.code === 'A'), shB = shifts.find((s) => s.code === 'B');
-  const overlapB = Boolean(shA && shB && shB.start_time.slice(0, 5) < shA.end_time.slice(0, 5) && shB.start_time.slice(0, 5) > shA.start_time.slice(0, 5));
+  // Ca 1, ca 2, ca 3 nối tiếp nhau (database chặn chồng giờ khi lưu); giờ làm đêm 22:00–06:00
+  const span = (x: { start_time: string; end_time: string }) => { const a = toMin(x.start_time), b0 = toMin(x.end_time); return [a, b0 <= a ? b0 + 1440 : b0]; };
+  const night = (x: { start_time: string; end_time: string }) => { const [a, b] = span(x); return nightHours(a / 60, b / 60); };
+  const shA = shifts.find((s) => s.code === 'A');
+  const off = (x: { start_time: string }) => (shA ? (toMin(x.start_time) - toMin(shA.start_time) + 1440) % 1440 : 0);
+  const shB = shifts.find((s) => s.code === 'B'), shC = shifts.find((s) => s.code === 'C');
+  const len = (x: { start_time: string; end_time: string }) => { const [a, b] = span(x); return b - a; };
+  const overlapB = Boolean(shA && shB && shC && (off(shB) < len(shA) || off(shC) < off(shB) + len(shB) || off(shC) + len(shC) > 1440));
   const lbl = (k: string) => k === 'cutoff_time' ? cfg.cutoff_time : nf((cfg as unknown as Record<string, number>)[k], k === 'plc_dev_pct' ? 1 : 0);
 
   return (
@@ -113,16 +119,17 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
             {head('shifts', 'Ca làm việc', isBgd, 'Giám đốc')}
             <form action={saveShifts}>
               <div className="overflow-x-auto"><table className="tbl">
-                <thead><tr><th>Ca</th><th>Giờ</th><th className="num">Nghỉ (phút)</th><th className="num">Phút chạy</th><th>Cả xưởng</th></tr></thead>
+                <thead><tr><th>Ca</th><th>Giờ</th><th className="num">Nghỉ (phút)</th><th className="num">Phút chạy</th><th className="num">Giờ đêm</th><th>Áp dụng</th></tr></thead>
                 <tbody>{shifts.map((s) => E('shifts', isBgd) ? (
-                  <tr key={s.code}><td><b>{s.code}</b> <span className="text-[12px] text-muted">ca {s.code === 'A' ? 1 : s.code === 'B' ? 2 : 3}</span></td>
+                  <tr key={s.code}><td><b>Ca {s.code === 'A' ? 1 : s.code === 'B' ? 2 : 3}</b> <span className="text-[12px] text-muted">({s.code})</span></td>
                     <td className="whitespace-nowrap"><input name={`start_${s.code}`} defaultValue={s.start_time} className="inp mono inline-block w-[76px] py-1" aria-label={`Ca ${s.code} bắt đầu`} /> – <input name={`end_${s.code}`} defaultValue={s.end_time} className="inp mono inline-block w-[76px] py-1" aria-label={`Ca ${s.code} kết thúc`} /></td>
                     <td className="num"><input name={`break_${s.code}`} defaultValue={String(s.break_min)} className="inp w-[70px] py-1 text-right" aria-label={`Ca ${s.code} phút nghỉ`} /></td>
-                    <td className="num text-muted">{shiftRun(s)}</td>
-                    <td>{s.code === 'A' ? <Pill tone="ok">Luôn dùng</Pill> : <label className="flex items-center gap-1.5 text-[13.5px]"><input type="checkbox" name={`active_${s.code}`} value="1" defaultChecked={s.active} />Dùng</label>}</td></tr>
+                    <td className="num text-muted">{shiftRun(s)}</td><td className="num text-muted">{night(s) ? `${nf(night(s), 1)} giờ` : '—'}</td>
+                    <td className="text-[12.5px]">{s.code === 'A' ? 'Mọi máy, mọi người' : 'Máy, người trong bảng ca tuần'}</td></tr>
                 ) : (
-                  <tr key={s.code}><td><b>{s.code}</b> <span className="text-[12px] text-muted">ca {s.code === 'A' ? 1 : s.code === 'B' ? 2 : 3}</span></td><td className="mono">{s.start_time} – {s.end_time}</td><td className="num">{s.break_min}′</td><td className="num">{shiftRun(s)}</td>
-                    <td>{s.code === 'A' || s.active ? <Pill tone="ok">Mọi máy</Pill> : <Pill>Chỉ máy được duyệt thêm ca</Pill>}</td></tr>
+                  <tr key={s.code}><td><b>Ca {s.code === 'A' ? 1 : s.code === 'B' ? 2 : 3}</b> <span className="text-[12px] text-muted">({s.code})</span></td><td className="mono">{s.start_time} – {s.end_time}</td><td className="num">{s.break_min}′</td><td className="num">{shiftRun(s)}</td>
+                    <td className="num">{night(s) ? `${nf(night(s), 1)} giờ` : '—'}</td>
+                    <td>{s.code === 'A' ? <Pill tone="ok">Mọi máy, mọi người</Pill> : <Pill>Máy, người trong bảng ca tuần</Pill>}</td></tr>
                 ))}</tbody>
               </table></div>
               <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3 text-[13.5px]">
@@ -132,8 +139,8 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
                   {DOW.map(([d, t]) => <label key={d} className="inline-flex items-center gap-1.5"><input type="checkbox" name="workday" value={d} defaultChecked={wd.includes(d)} />{t}</label>)}
                 </> : <b>{DOW.filter(([d]) => wd.includes(d)).map(([, t]) => t).join(', ')}</b>}
               </div>
-              {overlapB && <p className="border-t border-line px-4 py-3 text-[12.5px] text-warn">Ca B bắt đầu {shB!.start_time} trước khi ca A kết thúc {shA!.end_time}: phần trùng không tính thêm giờ máy. Máy chạy 2 ca nên đặt ca B nối tiếp ca A (ví dụ {shA!.end_time}–01:00), ca C nối tiếp ca B.</p>}
-              {E('shifts', isBgd) ? foot('shifts', 'Ví dụ: Máy trộn và line silicone chạy 2 ca từ 03/11, đặt ca 2 17:00–01:00.') : <p className="px-4 py-3 text-[12.5px] text-muted">Máy chậm thì chạy 2 ca, 3 ca theo giờ ca B (ca 2), ca C (ca 3): TP SX đề xuất ở <Link className="link" href="/lich-may?tab=toiuu">Lịch máy → Tối ưu &amp; thêm ca</Link>, Giám đốc duyệt; người làm ca 2, ca 3 đặt ở <Link className="link" href="/nhan-su-xuong">Nhân sự xưởng</Link>. Tích &quot;Cả xưởng&quot; chỉ khi mọi máy cùng chạy ca đó.</p>}
+              {overlapB && <p className="border-t border-line px-4 py-3 text-[12.5px] text-bad">Giờ các ca đang chồng nhau: Giám đốc đặt lại để ca 2 bắt đầu khi ca 1 kết thúc, ca 3 nối tiếp ca 2 (ví dụ ca 1 06:00–14:00, ca 2 14:00–22:00, ca 3 22:00–06:00).</p>}
+              {E('shifts', isBgd) ? foot('shifts', 'Ví dụ: Đổi giờ ca 1 07:00–15:00, ca 2 15:00–23:00 theo thực tế xưởng.') : <p className="px-4 py-3 text-[12.5px] text-muted">Giờ ca là biến số, Giám đốc khai báo ở đây; ca 1, ca 2, ca 3 nối tiếp nhau, không chồng giờ, mỗi ca 4–12 giờ. Ca 1 là ca cả xưởng. Máy nào chạy ca 2, ca 3 và ai làm ca đó do bảng ca tuần quyết định: MES lập, TP SX sửa, Giám đốc duyệt trước 12:00 thứ 7 ở <Link className="link" href="/nhan-su-xuong?tab=ca">Nhân sự xưởng → Bảng ca tuần</Link>. Giờ 22:00–06:00 là giờ làm đêm (trả thêm ít nhất 30 %, nghỉ giữa ca ít nhất 45 phút).</p>}
             </form>
           </section>
 
@@ -253,6 +260,15 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
               </tbody></table></div>
               {E('people', isBgd || isKt) ? foot('people', 'Ví dụ: Bấm giờ thực tế: khởi động line đùn 25 phút.')
                 : <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Máy trộn: 1 người đứng suốt giờ trộn, không rời máy trộn để thay bobin line khác. Một người không có mặt hai nơi cùng lúc; người vắng không xếp; người kiêm nhiệm tạm (TP SX phân công ở <Link href="/nhan-su-xuong" className="link">Nhân sự xưởng</Link>) được đứng máy chưa có tay nghề.</p>}
+            </form>
+            <form action={saveBalance} className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3 text-[13.5px]" id="luan-phien">
+              <span>Luân phiên: giờ đứng máy 4 tuần mỗi người lệch tối đa so với bình quân</span>
+              {isBgd ? <>
+                <input name="balance_pct" defaultValue={numIn(PP.balance_pct)} className="inp inline-block w-[70px] py-1 text-right" aria-label="Ngưỡng lệch giờ đứng máy (%)" /> %
+                <input name="reason" className="inp w-[200px] py-1" placeholder="Lý do (bắt buộc)" aria-label="Lý do đổi ngưỡng lệch" required />
+                <SubmitButton className="btn btn-sm" pendingText="…">Lưu</SubmitButton>
+              </> : <b>{nf(PP.balance_pct)} %</b>}
+              <span className="text-[12.5px] text-muted">vượt thì cảnh báo TP SX; máy trộn, đóng gói đổi người đầu ngày (Giám đốc sửa)</span>
             </form>
           </section>
 

@@ -390,4 +390,69 @@ for (const kgh of [30, 50]) {
   const rb = go('xếp lại từ ngày 3 sang 2 ca', rng(SIL, 2, '2026-10-31'), { assume: true, prev: { sch: one.sch, B: 3 } });
   if (!(rb.sc.makespan < one.sc.makespan - 0.5)) bad('xếp lại sang 2 ca từ ngày 3 phải xong sớm hơn');
 }
+// 14. Luân phiên đứng máy, ca 2 xoay theo tuần (anh Bình duyệt 28/10/2026, bản 2): mọi người đứng mọi máy; người ít giờ cộng dồn xếp trước;
+//     máy trộn / đóng gói đổi người đầu ngày khi lệch quá 15 %; sổ giờ đứng máy; QC ca 2; máy dừng thì việc chạy dở chuyển máy khác
+{
+  const ALL = baseMachines.map((m) => m.code);
+  const allOps = baseOps.map((o) => ({ ...o, skills: [...ALL] }));
+  const ca1 = { code: 'A', active: true, start_time: '06:00', end_time: '14:00', break_min: 30 };
+  const SH = [ca1, { code: 'B', active: false, start_time: '14:00', end_time: '22:00', break_min: 30 }, { code: 'C', active: false, start_time: '22:00', end_time: '06:00', break_min: 45 }];
+  const go = (tag: string, o: { people?: PeopleCfg; ms?: { machine: string; from: string; to: string; shifts: number }[]; ops?: OperatorInfo[]; shifts?: Config['shifts']; win?: (D: (d: number) => number) => Window[] } = {}) => {
+    const c = ctxOf({ ops: o.ops ?? allOps, people: o.people });
+    c.cfg.shifts = o.shifts ?? SH;
+    c.cfg.machine_shifts = o.ms ?? [];
+    const cal = makeCalendar(c.cfg, '2026-10-28');
+    const D = (d: number) => d * cal.S * cal.SPD;
+    const windows = o.win ? o.win(D) : [];
+    const ctx = { ...c, cal };
+    const sch = schedule(c.orders, ctx, { windows });
+    const v = validateSchedule(sch, c.orders, ctx, { windows });
+    if (v.length) bad(`${tag}: ${v.slice(0, 3).join('; ')}`);
+    const sc = scoreOf(sch, cal, c.orders);
+    const tot = new Map<string, number>();
+    for (const h of sch.hours ?? []) tot.set(h.p, (tot.get(h.p) ?? 0) + h.m);
+    const vals = (o.ops ?? allOps).map((w) => tot.get(w.code) ?? 0), avg = vals.reduce((a, x) => a + x, 0) / vals.length;
+    const dev = Math.max(...vals.map((x) => Math.abs(x - avg) / Math.max(1, avg)));
+    console.log(`${tag}: ${sc.makespan.toFixed(2)} ngày, giờ đứng máy ${(o.ops ?? allOps).map((w) => `${w.code} ${Math.round((tot.get(w.code) ?? 0) / 60)}`).join(', ')}, lệch ±${Math.round(dev * 100)} %`);
+    return { sch, sc, cal, tot, dev, D };
+  };
+  const narrow = go('tay nghề hẹp (như trước), ca 1 06–14', { ops: baseOps });
+  const rot = go('mọi người mọi máy, luân phiên', {});
+  if (!(narrow.dev > 0.5)) bad('tay nghề hẹp: giờ đứng máy phải lệch nhiều (đối chứng)');
+  // dữ liệu thử ngắn (3 tuần, mỗi ngày đứng máy trộn / đóng gói 7,5 giờ ≈ 17 % bình quân): yêu cầu lệch giảm hơn một nửa và dưới 40 %
+  if (!(rot.dev <= 0.4 && rot.dev < narrow.dev / 2)) bad(`luân phiên: giờ đứng máy mỗi người phải gần bình quân (lệch ±${Math.round(rot.dev * 100)} %)`);
+  if (rot.sc.makespan > narrow.sc.makespan + 0.5) bad('luân phiên không được làm kế hoạch chậm hơn rõ');
+  if (!(narrow.sch.warnings ?? []).some((w) => w.startsWith('Giờ đứng máy 4 tuần tới lệch quá'))) bad('tay nghề hẹp: phải cảnh báo lệch giờ đứng máy');
+  // máy trộn: mỗi ngày một người trộn (không đổi giữa ca), đổi người qua các ngày
+  const mixBy = new Map<number, Set<string>>();
+  for (const x of rot.sch.slots.filter((y) => y.op === 'CD0')) for (const a of x.attend ?? []) {
+    const d = Math.floor(a.f / (rot.cal.S * rot.cal.SPD)); const st = mixBy.get(d) ?? new Set<string>(); st.add(a.p); mixBy.set(d, st);
+  }
+  const oneADay = [...mixBy.values()].filter((st) => st.size === 1).length;
+  if (oneADay < mixBy.size * 0.8) bad(`máy trộn: phần lớn các ngày chỉ một người trộn (được ${oneADay}/${mixBy.size})`);
+  if (new Set([...mixBy.values()].flatMap((st) => [...st])).size < 3) bad('máy trộn: người trộn phải luân phiên qua các ngày');
+  // sổ giờ 4 tuần trước: NV1 đã đứng nhiều thì được xếp ít hơn
+  const led = [] as { code: string; date: string; min: number }[];
+  for (let i = 1; i <= 24; i++) led.push({ code: 'NV1', date: new Date(Date.parse('2026-10-28') - i * 864e5).toISOString().slice(0, 10), min: 420 });
+  const hist = go('NV1 đã đứng máy nhiều 4 tuần trước', { people: { ledger: led } });
+  const avgH = [...hist.tot.values()].reduce((a, x) => a + x, 0) / allOps.length;
+  if (!((hist.tot.get('NV1') ?? 0) < avgH * 0.9)) bad('người nhiều giờ cộng dồn 4 tuần trước phải được xếp ít hơn');
+  // sổ giờ: có dòng mỗi người mỗi ngày; ca 1 06–14 không có giờ đêm; ca 2 17–01 có giờ đêm
+  if (!(rot.sch.hours ?? []).length || (rot.sch.hours ?? []).some((h) => h.n > 0)) bad('sổ giờ: ca 1 06–14 phải có giờ đứng máy, không có giờ đêm');
+  const SIL = ['SIL-MIX', 'EXT-SI-01', 'EXT-SI-02'];
+  const ms = SIL.map((m) => ({ machine: m, from: '2026-10-28', to: '2026-11-07', shifts: 2 }));
+  const ca2 = [{ code: 'NV3', from: '2026-10-28', to: '2026-11-07', shift: 2 }, { code: 'NV4', from: '2026-10-28', to: '2026-11-07', shift: 2 }];
+  const SH17 = [{ ...ca1, start_time: '08:00', end_time: '17:00', break_min: 60 }, { code: 'B', active: false, start_time: '17:00', end_time: '01:00', break_min: 45 }, { code: 'C', active: false, start_time: '01:00', end_time: '08:00', break_min: 30 }];
+  const night = go('ca 2 17:00–01:00, NV3 + NV4 làm ca 2', { ms, shifts: SH17, people: { op_shifts: ca2, qc_cover: [{ from: '2026-10-28', to: '2026-11-07' }] } });
+  if (!(night.sch.hours ?? []).some((h) => (h.p === 'NV3' || h.p === 'NV4') && h.n > 0 && h.s === 2)) bad('sổ giờ: người ca 2 17–01 phải có giờ đêm, ghi ca 2');
+  if ((night.sch.hours ?? []).some((h) => h.p !== 'NV3' && h.p !== 'NV4' && h.n > 0)) bad('sổ giờ: người ca 1 không có giờ đêm');
+  // QC ca 2: có người đo mẫu thì bobin ca 2 không chờ sáng hôm sau; không có thì chậm hơn hoặc bằng
+  const cov = go('ca 2 14–22 có người đo mẫu QC', { ms, people: { op_shifts: ca2, qc_cover: [{ from: '2026-10-28', to: '2026-11-07' }] } });
+  const noc = go('ca 2 14–22 không có người đo mẫu QC', { ms, people: { op_shifts: ca2 } });
+  if (noc.sc.makespan < cov.sc.makespan - 0.05) bad('không có người đo mẫu ca 2 không được nhanh hơn có người đo mẫu');
+  // Máy chạy 2 ca mà line silicone đang chạy dở bị hỏng: việc chuyển sang line còn lại (không treo, không "Không có silicone")
+  const down = go('2 ca, EXT-SI-02 hỏng từ ngày 3', { ms, people: { op_shifts: ca2, qc_cover: [{ from: '2026-10-28', to: '2026-11-07' }] },
+    win: (D) => [{ machine: 'EXT-SI-02', from: D(2), to: Infinity, kind: 'DOWN', label: 'EXT-SI-02 hỏng' }] });
+  if (down.sch.unplaced.length || (down.sch.warnings ?? []).some((w) => w.startsWith('Không có silicone'))) bad('line hỏng giữa chừng: việc chạy dở phải chuyển line khác, không treo');
+}
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

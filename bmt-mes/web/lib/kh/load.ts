@@ -197,6 +197,10 @@ export async function loadConfig(db: Db) {
     // Máy chạy 2–3 ca (migration 5300): ca của người, giờ làm tối đa/ngày, làm thêm tối đa ngày / tháng (ca dài khi thiếu người)
     op_shifts: ((c.op_shifts ?? []) as OpShift[]).map((x) => ({ ...x, shift: Number(x.shift) })),
     day_max_h: num(c.day_max_h), ot_day_min: num(c.ot_max_min), ot_month_h: num(c.ot_month_h),
+    // Luân phiên đứng máy (migration 5400): sổ giờ đứng máy theo lịch, ngưỡng lệch, ngày ca 2 / ca 3 có người đo mẫu QC
+    ledger: ((c.op_hours ?? []) as { code: string; date: string; min: number }[]).map((x) => ({ code: x.code, date: String(x.date), min: Number(x.min) })),
+    balance_pct: num(c.balance_pct),
+    qc_cover: ((c.qc_cover ?? []) as { from: string; to: string }[]).map((x) => ({ from: String(x.from), to: String(x.to) })),
   };
   cfg.machine_shifts = ((c.machine_shifts ?? []) as MachineShift[]).map((x) => ({ ...x, shifts: Number(x.shifts) }));
   cfg.avail = Object.fromEntries(Object.entries((c.avail ?? {}) as Record<string, { fill: number; down_pct?: number; days?: number }>)
@@ -215,7 +219,7 @@ export const flowSig = (cfg: Pick<Config, 'flow'>) => JSON.stringify(flowOf(cfg)
 // Lịch vắng, kiêm nhiệm, tổ đóng gói đổi thì ghi nhật ký tham số nên cũng làm lịch cần xếp lại.
 export const peopleSig = (cfg: Pick<Config, 'people' | 'avail'>) => {
   const p = peopleOf(cfg);
-  return JSON.stringify([p.start_min, p.bobbin_min, p.watch_max, p.pack_crew, p.pack_one_pct,
+  return JSON.stringify([p.start_min, p.bobbin_min, p.watch_max, p.pack_crew, p.pack_one_pct, ...(p.balance_pct !== 15 ? [p.balance_pct] : []),
     Object.entries(cfg.avail ?? {}).map(([k, v]) => k + ':' + Math.round(Number(v.fill))).sort()]);
 };
 // Thứ tự lô bộ tối ưu đã chọn (lưu trong phiên bản lịch): lô mới thêm chen theo hạn giao
@@ -411,7 +415,8 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
 // Dựng lịch mới (xếp lại) từ dữ liệu hiện tại; giữ phần trước mốc.
 // Máy hỏng / ngừng dùng / bảo dưỡng đã chốt rơi vào vùng khóa: xếp lại từ ngày mai để chuyển việc sang máy cùng loại.
 // optimize: chạy bộ tối ưu (đổi thứ tự lô để ít trễ hạn, xong sớm, ít đổi máy; không tự thêm giờ tăng ca) – dùng khi bấm Xếp lịch
-export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?: Map<string, number>; optimize?: boolean; levers?: Levers } = {}) {
+// fromDate: xếp lại từ ngày này nếu sớm hơn hết vùng khóa (bảng ca tuần vừa duyệt: tuần mới áp dụng ca máy, ca người mới; không sớm hơn ngày mai)
+export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?: Map<string, number>; optimize?: boolean; levers?: Levers; fromDate?: string | null } = {}) {
   const base = kh.version ? kh.version.base_date : kh.cal.base;
   const cal = makeCalendar(kh.cfg, base);
   const todayIdx = dayIndex(cal, kh.now.date);
@@ -422,7 +427,8 @@ export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?
   const oldFrozen = Math.max(0, kh.todayIdx + kh.cfg.frozen_days) * kh.cal.SPD * kh.cal.S;
   const early = frozenEnd > 0 && kh.windows.some((w) => !w.tentative && w.from < oldFrozen
     && (kh.sch?.slots ?? []).some((x) => x.machine === w.machine && x.end > Math.max(w.from, kh.nowT) + 1e-6 && x.start < Math.min(w.to, oldFrozen) - 1e-6));
-  const boundaryDay = opt.split || early ? Math.max(0, todayIdx + 1) : Math.max(0, todayIdx + kh.cfg.frozen_days);
+  let boundaryDay = opt.split || early ? Math.max(0, todayIdx + 1) : Math.max(0, todayIdx + kh.cfg.frozen_days);
+  if (opt.fromDate) boundaryDay = Math.min(boundaryDay, Math.max(0, todayIdx + 1, dayIndex(cal, opt.fromDate)));
   const prev: PrevSchedule | null = kh.sch && kh.version ? { S: kh.version.params.S, SPD: kh.version.params.SPD, slots: kh.sch.slots } : null;
   // Lô TP SX đã duyệt lịch: giữ chỗ trên lịch máy khi xếp lại
   const keep = new Set(kh.lines.filter((l) => l.lot_approved_at).map((l) => l.id));
@@ -492,3 +498,32 @@ export async function carryOver(db: Db, kh: Kh) {
   }
   return { credit, checked, missingReports };
 }
+
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+// Gói lịch để lưu thành phiên bản mới
+export function schedulePayload(kh: Kh, orders: Order[], r: ReturnType<typeof rebuild>) {
+  return {
+    p_base: r.cal.base,
+    p_params: {
+      S: r.cal.S, SPD: r.cal.SPD, RUN: r.cal.RUN, fill_pct: kh.cfg.fill_pct, frozen_days: kh.cfg.frozen_days,
+      machines_per_operator: kh.cfg.machines_per_operator, plan_no: kh.planNo, workdays: r.cal.wd,
+      group_days: kh.cfg.group_days ?? 0, speeds_sig: speedSig(kh.cfg), flow_sig: flowSig(kh.cfg), people_sig: peopleSig(kh.cfg), flow: flowOf(kh.cfg),
+      // thứ tự lô (bộ tối ưu chọn): xếp lại sau giữ thứ tự này, lô mới chen theo hạn giao
+      seq: Object.fromEntries(r.orders.filter((o) => o.seq != null).map((o) => [o.id, o.seq!])),
+      shifts: r.cal.shifts.map((s) => ({ code: s.code, start_time: s.start_time, end_time: s.end_time, break_min: s.break_min })),
+      // sổ giờ đứng máy theo lịch này (database ghi vào sổ khi bản lịch thành lịch đang dùng, từ hôm nay)
+      hours: r.sch.hours ?? [],
+    },
+    p_orders: orders.map((o) => ({
+      plan_line_id: o.id, label: o.label, product_code: o.product_code, product_name: o.product_name, group_code: o.group, qty_m: o.qty,
+      due_date: o.due, priority: o.prio, source: o.source, finish_date: r.fin.get(o.id)?.finDate ?? null, meta: metaOf(o),
+    })),
+    p_slots: r.sch.slots.map((s) => ({
+      plan_line_id: s.lineId, op_code: s.op, color: s.color, machine_code: s.machine, operator_code: s.operator, lane: s.lane,
+      start_min: r3(s.start), run_start_min: r3(s.runStart), end_min: r3(s.end), setup_min: r3(s.setup), meters: r3(s.meters),
+      rate: r3(s.rate), speed: r3(s.speed), reason: s.reason, setup_why: s.why, part: s.part,
+      attend: (s.attend ?? []).map((a) => ({ ...a, f: r3(a.f), t: r3(a.t) })), crew: s.crew ?? null,
+    })),
+  };
+}
+
