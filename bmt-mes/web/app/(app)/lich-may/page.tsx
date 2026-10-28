@@ -360,7 +360,7 @@ function Gantt({ kh, view, sp, qs, canPlan }: { kh: Kh; view: View; sp: SP; qs: 
     const cl = closedSegs(m.code);
     const nShift = Math.max(1, ...days.map((d) => shiftsOn(msx, m.code, d)));
     const closedIn = (a: number, b: number) => cl.reduce((acc, [x, y]) => acc + Math.max(0, Math.min(b, y) - Math.max(a, x)), 0);
-    for (const [x, y] of cl) els.push(<div key={'c' + x} className="absolute inset-y-0 bg-ink/[0.06]" style={{ left: `${X(x)}%`, width: `${X(y) - X(x)}%` }} title="Máy không chạy ca này" />);
+    for (const [x, y] of cl) els.push(<div key={'c' + x} className="absolute inset-y-0 bg-ink/[0.1]" style={{ left: `${X(x)}%`, width: `${X(y) - X(x)}%` }} title="Máy không chạy ca này" />);
     slots.forEach((sl) => {
       if (sl.start - prevEnd - closedIn(prevEnd, sl.start) > S / 2) {
         const why = idleWhy(sl);
