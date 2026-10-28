@@ -4,12 +4,12 @@ import type { ReactNode } from 'react';
 import { Alert, LockNote } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Toolbar } from '@/components/ui';
-import { ROLE, hasRole, loadConfig } from '@/lib/kh/load';
-import { DEFAULT_WD, shiftRun } from '@/lib/kh/scheduler';
+import { QC_LEARN_MIN_SAMPLES, ROLE, hasRole, loadConfig } from '@/lib/kh/load';
+import { DEFAULT_WD, OP_SHORT, type Op, flowOf, shiftRun } from '@/lib/kh/scheduler';
 import { df, nf, numIn } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { saveChangeovers, saveConfig, saveRates, saveShifts, setMode } from './actions';
+import { saveChangeovers, saveConfig, saveFlow, saveRates, saveShifts, setMode } from './actions';
 
 export const metadata = { title: 'Tham số xếp lịch' };
 
@@ -30,13 +30,14 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
   await requirePage('tham-so');
   const me = await requireMe();
   const db = await createClient();
-  const { cfg, machines } = await loadConfig(db);
+  const { cfg, machines, flowMeta } = await loadConfig(db);
+  const F = flowOf(cfg);
   const wd = cfg.workdays ?? DEFAULT_WD;
   const { data: log } = await db.schema('app').from('v_kh_param_log').select('*').order('at', { ascending: false }).limit(100);
   const isBgd = hasRole(me.roles, ROLE.params), isKt = hasRole(me.roles, ROLE.rates);
   const edit = sp.sua ?? null;
   const E = (s: string, ok: boolean) => ok && edit === s;
-  const mine = [isBgd && 'ca làm việc, tham số xếp lịch, cách nhập dữ liệu máy', isKt && 'tốc độ chuẩn, phút đổi máy'].filter(Boolean).join('; ');
+  const mine = [isBgd && 'ca làm việc, tham số xếp lịch, cách nhập dữ liệu máy, giới hạn tăng ca', isKt && 'tốc độ chuẩn, phút đổi máy, thông số dòng chảy (QC, mét/bobin, hạn dùng silicone)'].filter(Boolean).join('; ');
   const head = (sec: string, title: string, ok: boolean, owner: string) => (
     <div className="card-h"><h2>{title}</h2>
       {E(sec, ok) ? <Pill tone="info">Đang sửa</Pill>
@@ -89,7 +90,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
               </tr>
             ))}</tbody>
           </table></div>
-          <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Tốc độ xếp lịch theo cách nhập: <b>Nhập tay</b> và <b>Song song</b> dùng bảng tốc độ tự nhập của máy (chủng loại × cỡ ruột); <b>Tự động (PLC)</b> dùng tốc độ thực tế đo từ PLC 30 ngày gần nhất, cần ít nhất 120 phút chạy cùng mã hoặc cùng cỡ ruột, chưa đủ thì dùng bảng tự nhập.</p>
+          <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Tốc độ xếp lịch theo cách nhập: <b>Nhập tay</b> và <b>Song song</b> dùng bảng tốc độ tự nhập của máy (chủng loại × cỡ ruột); <b>Tự động (PLC)</b> dùng tốc độ thực tế đo từ PLC 30 ngày gần nhất, cần ít nhất {nf(F.plc_min_run)} phút chạy cùng mã hoặc cùng cỡ ruột (thông số ở thẻ Dòng chảy), chưa đủ thì dùng bảng tự nhập.</p>
         </section>
 
         <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
@@ -139,7 +140,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
             <form action={saveRates}>
               <input type="hidden" name="ops" value={cfg.rates.map((r) => r.op_code).join(',')} />
               <div className="overflow-x-auto"><table className="tbl">
-                <thead><tr><th>Công đoạn</th><th className="num">Cỡ &lt; 2,5 mm²</th><th className="num">Cỡ ≥ 2,5 mm²</th><th>Đơn vị</th></tr></thead>
+                <thead><tr><th>Công đoạn</th><th className="num">Cỡ &lt; {nf(F.size_large_mm2, 2)} mm²</th><th className="num">Cỡ ≥ {nf(F.size_large_mm2, 2)} mm²</th><th>Đơn vị</th></tr></thead>
                 <tbody>{cfg.rates.map((r) => (
                   <tr key={r.op_code}><td>{r.label}</td>
                     {(['small', 'large'] as const).map((j) => <td key={j} className="num">{E('rates', isKt)
@@ -170,13 +171,60 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
           </section>
         </div>
 
+
+        <section className="card">
+          {head('flow', 'Dòng chảy, máy trộn, tăng ca', isBgd || isKt, 'Giám đốc, TP Kỹ thuật/QA')}
+          <form action={saveFlow}>
+            <input type="hidden" name="bgd" value={isBgd ? '1' : '0'} />
+            <div className="grid gap-4 p-4 lg:grid-cols-3 [&>*]:min-w-0">
+              <div>
+                <h3 className="mb-2 text-[13.5px] font-semibold">Gối đầu theo bobin + QC <span className="font-normal text-muted">(TP KT/QA)</span></h3>
+                <table className="tbl"><tbody>
+                  <tr><td>Thời gian QC một bobin</td><td className="num">{E('flow', isBgd || isKt) ? <input name="qc_min" defaultValue={numIn(flowMeta.qc_set)} className="inp inline-block w-[80px] py-1 text-right" aria-label="Thời gian QC" /> : <b>{nf(flowMeta.qc_set)}</b>} phút</td></tr>
+                  <tr><td colSpan={2} className="text-[12.5px]">{E('flow', isBgd || isKt) ? <label className="inline-flex items-center gap-1.5"><input type="checkbox" name="qc_learn" value="1" defaultChecked={flowMeta.qc_learn} />MES tự học từ phiếu hoàn thành (trung vị 30 ngày, cần ≥ {QC_LEARN_MIN_SAMPLES} bobin)</label>
+                    : <>MES tự học: <b>{flowMeta.qc_learn ? 'bật' : 'tắt'}</b></>} · hiện {flowMeta.qc_learned.n} bobin{flowMeta.qc_learned.median != null ? `, trung vị ${nf(flowMeta.qc_learned.median)} phút` : ''} · đang dùng <b>{nf(F.qc_min)} phút</b></td></tr>
+                  {(['CD1', 'CD2', 'CD3', 'CD5', 'CD6'] as Op[]).map((op) => (
+                    <tr key={op}><td>{OP_SHORT[op]}: mét một bobin{op === 'CD6' ? ' (bobin gỗ)' : ''}</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt)
+                      ? <input name={`unit_${op}`} defaultValue={numIn(F.unit_m[op])} className="inp inline-block w-[90px] py-1 text-right" aria-label={`Mét một bobin ${op}`} /> : <b>{nf(F.unit_m[op])}</b>} m</td></tr>
+                  ))}
+                </tbody></table>
+              </div>
+              <div>
+                <h3 className="mb-2 text-[13.5px] font-semibold">Máy trộn, đệm an toàn <span className="font-normal text-muted">(TP KT/QA)</span></h3>
+                <table className="tbl"><tbody>
+                  <tr><td>Hạn dùng silicone đã pha lưu hóa</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt) ? <input name="pot_life_h" defaultValue={numIn(F.pot_life_h)} className="inp inline-block w-[80px] py-1 text-right" aria-label="Hạn dùng silicone" /> : <b>{nf(F.pot_life_h, Number.isInteger(F.pot_life_h) ? 0 : 1)}</b>} giờ</td></tr>
+                  <tr><td>kg một mẻ trộn</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt) ? <input name="mix_batch_kg" defaultValue={numIn(F.mix_batch_kg)} className="inp inline-block w-[80px] py-1 text-right" aria-label="kg một mẻ" /> : <b>{nf(F.mix_batch_kg)}</b>} kg</td></tr>
+                  {(['CD1', 'CD2', 'CD3', 'CD5'] as Op[]).map((op) => (
+                    <tr key={op}><td>Đệm: {OP_SHORT[op].toLowerCase()} đi trước công đoạn sau</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt)
+                      ? <input name={`safety_${op}`} defaultValue={F.safety_min[op] ? numIn(F.safety_min[op]!) : ''} placeholder="0" className="inp inline-block w-[80px] py-1 text-right" aria-label={`Đệm an toàn ${op}`} /> : <b>{nf(F.safety_min[op] ?? 0)}</b>} phút</td></tr>
+                  ))}
+                  <tr><td>Ngưỡng cỡ lớn (tốc độ mặc định)</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt) ? <input name="size_large_mm2" defaultValue={numIn(F.size_large_mm2)} className="inp inline-block w-[80px] py-1 text-right" aria-label="Ngưỡng cỡ lớn" /> : <b>{nf(F.size_large_mm2, 2)}</b>} mm²</td></tr>
+                  <tr><td>Phút chạy tối thiểu để tin tốc độ PLC</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt) ? <input name="plc_min_run" defaultValue={numIn(F.plc_min_run)} className="inp inline-block w-[80px] py-1 text-right" aria-label="Phút chạy PLC tối thiểu" /> : <b>{nf(F.plc_min_run)}</b>} phút</td></tr>
+                </tbody></table>
+              </div>
+              <div>
+                <h3 className="mb-2 text-[13.5px] font-semibold">Giới hạn tăng ca, gom lô <span className="font-normal text-muted">(Giám đốc)</span></h3>
+                <table className="tbl"><tbody>
+                  {([['mix_early_max_h', 'Trộn sớm trước ca tối đa', flowMeta.levers.early_max_h, 'giờ'], ['ot_max_min', 'Tăng ca tối đa mỗi ngày', flowMeta.levers.ot_max_min, 'phút/người'],
+                    ['ot_month_h', 'Tăng ca tối đa mỗi tháng', flowMeta.levers.ot_month_h, 'giờ/người']] as [string, string, number, string][]).map(([k, l, v, u]) => (
+                    <tr key={k}><td>{l}</td><td className="num whitespace-nowrap">{E('flow', isBgd) ? <input name={k} defaultValue={numIn(v)} className="inp inline-block w-[80px] py-1 text-right" aria-label={l} /> : <b>{nf(v, Number.isInteger(v) ? 0 : 1)}</b>} {u}</td></tr>
+                  ))}
+                  <tr><td>Khung coi như bắt đầu cùng lúc (gom lô)</td><td className="num whitespace-nowrap">{E('flow', isBgd) ? <input name="pick_window_min" defaultValue={F.pick_window_min == null ? '' : numIn(F.pick_window_min)} placeholder="nửa ca" className="inp inline-block w-[80px] py-1 text-right" aria-label="Khung coi như cùng lúc" /> : <b>{F.pick_window_min == null ? 'nửa ca' : nf(F.pick_window_min)}</b>} phút</td></tr>
+                  <tr><td colSpan={2} className="text-[12.5px] text-muted">Luật Lao động 2019: làm thêm ≤ 50 % giờ làm bình thường trong ngày, ≤ 40 giờ/tháng, người lao động đồng ý. Tăng ca, trộn sớm cụ thể: TP SX đề xuất ở Lịch máy → Tối ưu &amp; tăng ca, Giám đốc duyệt.</td></tr>
+                </tbody></table>
+              </div>
+            </div>
+            {E('flow', isBgd || isKt) ? foot('flow', 'Ví dụ: Đo thực tế tuần 44: QC trả kết quả trung bình 90 phút, silicone pha dùng tối đa 8 giờ.')
+              : <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Thuật toán xếp lịch không dùng số cố định: đổi các thông số này (hoặc tốc độ máy) rồi bấm Xếp lại lịch, MES tự tính lại gối đầu, máy cổ chai, thứ tự lô và đề xuất tăng ca.</p>}
+          </form>
+        </section>
         <section className="card">
           <div className="card-h"><h2>Nhật ký thay đổi tham số</h2><span className="text-[13px] font-normal text-muted">lưu vĩnh viễn, không sửa xóa được</span></div>
           <div className="overflow-x-auto"><table className="tbl">
             <thead><tr><th>Lúc</th><th>Người sửa</th><th>Mục</th><th>Tham số</th><th className="num">Cũ</th><th className="num">Mới</th><th>Lý do</th></tr></thead>
             <tbody>{(log ?? []).length ? (log ?? []).map((l) => (
               <tr key={l.id}><td className="whitespace-nowrap">{df(l.at, true)}</td><td className="text-[12.5px]">{l.user_name ?? ''}</td><td className="text-[12.5px]">{l.section}</td><td>{l.item}</td>
-                <td className="num text-muted">{l.old_value}</td><td className="num"><b>{l.new_value}</b></td><td className="text-[12.5px]">{l.reason}</td></tr>
+                <td className="max-w-[240px] break-words text-right tabular-nums text-muted">{l.old_value}</td><td className="max-w-[240px] break-words text-right tabular-nums"><b>{l.new_value}</b></td><td className="text-[12.5px]">{l.reason}</td></tr>
             )) : <tr><td colSpan={7} className="text-[13px] text-muted">Chưa có thay đổi nào.</td></tr>}</tbody>
           </table></div>
         </section>

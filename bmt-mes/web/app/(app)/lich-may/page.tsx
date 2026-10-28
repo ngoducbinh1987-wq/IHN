@@ -7,13 +7,14 @@ import { LEVEL, type ProductRow, type Step, readChange, simulate, stepsFor } fro
 import { type Kh, ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import {
   BOBBIN, type Finish, OP_NAME, OP_SHORT, type Op, type Schedule, type Slot, UNIT, addDays, dayIndex, isWorkday, makeCalendar, nextWorkday, opName,
-  schedule, finishInfo, shiftDate, shiftCode, workdaysBetween,
+  schedule, finishInfo, flowOf, shiftDate, shiftCode, workdaysBetween,
 } from '@/lib/kh/scheduler';
 import { M_STATUS } from '@/lib/machine';
 import { DOC_STATUS, df, nf } from '@/lib/format';
 import { adminDeleteDoc } from '../quan-tri/doc-actions';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { type OtRow, OptimizeTab } from './optimize-tab';
 import { applyChange, approveLot, approveLots, changeStep, commitLot, commitLots, confirmMaint, createChange, editChange, proposeMaint, rebuildSchedule, returnChange, reviewSchedule, setLine, setStart } from './actions';
 
 export const metadata = { title: 'Lịch máy' };
@@ -21,7 +22,8 @@ export const metadata = { title: 'Lịch máy' };
 type SP = Record<string, string | undefined>;
 const TABS = [
   { key: 'thang', label: 'Kế hoạch tháng & công suất' }, { key: 'lich', label: 'Lịch máy' }, { key: 'tiendo', label: 'Tiến độ từng lệnh' },
-  { key: 'cancu', label: 'Căn cứ xếp lịch' }, { key: 'phatsinh', label: 'Đơn phát sinh & thay đổi' }, { key: 'baoduong', label: 'Bảo dưỡng & máy hỏng' },
+  { key: 'toiuu', label: 'Tối ưu & tăng ca' }, { key: 'cancu', label: 'Căn cứ xếp lịch' }, { key: 'phatsinh', label: 'Đơn phát sinh & thay đổi' },
+  { key: 'baoduong', label: 'Bảo dưỡng & máy hỏng' },
 ];
 
 export default async function LichMay({ searchParams }: { searchParams: Promise<SP> }) {
@@ -129,10 +131,12 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
       {kh.planId && (
         <>
           <SubTabs active={tab} items={TABS.map((t) => ({ ...t, href: qs({ tab: t.key }) }))} />
-          {!view && tab !== 'cancu' && tab !== 'phatsinh' && tab !== 'baoduong' && <div className="card"><Empty>Kế hoạch chưa có dòng nào xếp được. Cần mã có spec đã phát hành, có đường đi công đoạn và số mét &gt; 0.</Empty></div>}
+          {!view && tab !== 'cancu' && tab !== 'phatsinh' && tab !== 'baoduong' && tab !== 'toiuu' && <div className="card"><Empty>Kế hoạch chưa có dòng nào xếp được. Cần mã có spec đã phát hành, có đường đi công đoạn và số mét &gt; 0.</Empty></div>}
           {view && tab === 'thang' && <Month kh={kh} view={view} me={me.roles} />}
           {view && tab === 'lich' && <Gantt kh={kh} view={view} sp={sp} qs={qs} canPlan={canPlan} />}
           {view && tab === 'tiendo' && <Progress kh={kh} view={view} />}
+          {tab === 'toiuu' && <OptimizeTab kh={kh} sp={sp} roles={me.roles} userId={me.id}
+            ots={((await db.schema('app').from('v_kh_overtime').select('*').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as OtRow[]} />}
           {tab === 'cancu' && <Basis kh={kh} view={view} />}
           {tab === 'phatsinh' && <Changes kh={kh} sp={sp} roles={me.roles} userId={me.id} />}
           {tab === 'baoduong' && <Maint kh={kh} view={view} roles={me.roles} userId={me.id} />}
@@ -534,7 +538,7 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
           <div className="overflow-x-auto"><table className="tbl"><tbody>
             <tr><td className="w-[160px]"><b>Kế hoạch tháng</b></td><td>{kh.planNo}: {kh.orders.length} dòng, số mét, hạn giao và mức ưu tiên do Giám đốc đặt</td></tr>
             <tr><td><b>Đường đi công đoạn</b></td><td>Theo nhóm sản phẩm. Silicone trộn trên máy trộn trong phòng lạnh (năng lực kg/giờ, đổi ra mét cáp theo kg hỗn hợp/km trong BOM) trước khi bọc; cách điện silicone chạy line silicone; HDPE/PVC chạy line vỏ. Cáp chống nhiễu: xoắn và quấn AL/PET liền dây trên máy xoắn. Đóng gói trên máy cuốn bobin gỗ 500/305 m</td></tr>
-            <tr><td><b>Tốc độ</b></td><td>{(c.speeds ?? []).length ? `Khai báo theo máy: ${[...new Set((c.speeds ?? []).map((x) => x.machine_code))].join(', ')}${(c.speeds ?? []).some((x) => x.status !== 'APPROVED') ? ' (có dòng chờ TP Kỹ thuật/QA duyệt)' : ''}. ` : 'Chưa máy nào khai báo tốc độ riêng. '}Mặc định theo công đoạn (cỡ &lt; 2,5 mm²): bện {r('CD1')?.rate_small}, bọc cách điện {r('CD2')?.rate_small}, xoắn {r('CD3')?.rate_small}, AL/PET {r('CD4')?.rate_small}, vỏ {r('CD5')?.rate_small}{r('CD6') ? `, đóng gói ${r('CD6')?.rate_small}` : ''} m/phút{r('CD0') ? `, trộn silicone ${r('CD0')?.rate_small} kg/giờ` : ''}{c.rates.some((x) => !x.confirmed) ? ' · còn số giả định chưa ban hành' : ''}</td></tr>
+            <tr><td><b>Tốc độ</b></td><td>{(c.speeds ?? []).length ? `Khai báo theo máy: ${[...new Set((c.speeds ?? []).map((x) => x.machine_code))].join(', ')}${(c.speeds ?? []).some((x) => x.status !== 'APPROVED') ? ' (có dòng chờ TP Kỹ thuật/QA duyệt)' : ''}. ` : 'Chưa máy nào khai báo tốc độ riêng. '}Mặc định theo công đoạn (cỡ &lt; {nf(flowOf(c).size_large_mm2, 2)} mm²): bện {r('CD1')?.rate_small}, bọc cách điện {r('CD2')?.rate_small}, xoắn {r('CD3')?.rate_small}, AL/PET {r('CD4')?.rate_small}, vỏ {r('CD5')?.rate_small}{r('CD6') ? `, đóng gói ${r('CD6')?.rate_small}` : ''} m/phút{r('CD0') ? `, trộn silicone ${r('CD0')?.rate_small} kg/giờ` : ''}{c.rates.some((x) => !x.confirmed) ? ' · còn số giả định chưa ban hành' : ''}</td></tr>
             <tr><td><b>Phút đổi máy</b></td><td>Màu sáng → tối {co('INS_UP')}′, tối → sáng {co('INS_DOWN')}′, đổi cỡ {co('INS_SIZE')}′, đổi màu vỏ {co('SH_COLOR')}′, đổi mã vỏ {co('SH_CODE')}′, bện đổi cỡ {co('BUN_SIZE')}′, xoắn đổi mã {co('TWS_CODE')}′, trộn đổi công thức {co('MIX_CODE')}′, đóng gói đổi mã {co('PK_CODE')}′</td></tr>
             <tr><td><b>Ca làm việc</b></td><td>{cal.shifts.map((s) => `Ca ${s.code} ${s.start_time}–${s.end_time}, nghỉ ${s.break_min}′`).join('; ')} · nghỉ Chủ nhật</td></tr>
             <tr><td><b>Người và tay nghề</b></td><td>{kh.operators.filter((w) => w.skills.length).map((w) => `${w.code}: ${w.skills.join(', ')}`).join(' · ')} · mỗi người đứng {c.machines_per_operator} máy cùng lúc</td></tr>
@@ -550,11 +554,13 @@ function Basis({ kh, view }: { kh: Kh; view: View | null }) {
               ? <>lô có hạn giao không muộn hơn lô hạn sớm nhất đang chờ cùng máy quá <b>{c.group_days} ngày</b> được chạy liền nếu ít phút đổi máy hơn: cùng cỡ ruột, cùng màu, cùng mã chạy liền nhau (không đổi máy) → đổi màu sáng sang tối → đổi lớn (tối sang sáng phải xả, đổi cỡ, thay khuôn). Đơn gấp không bị lô thường vượt.</>
               : <>đang tắt (khung gom 0 ngày): chạy đúng thứ tự hạn giao.</>}</li>
             <li>Màu <b>sáng chạy trước, tối sau</b>; lô đầu tiên của máy chọn màu sáng nhất.</li>
-            <li>Mỗi việc vào <b>máy cùng loại có người đủ tay nghề rảnh sớm nhất</b>, đã tính phút đổi máy. Tốc độ: máy chế độ <b>Nhập tay</b> dùng <b>bảng tốc độ tự nhập</b> của máy theo chủng loại × cỡ ruột (Quản lý máy → Tốc độ); máy chế độ <b>Tự động</b> dùng <b>tốc độ thực tế đo từ PLC</b> 30 ngày gần nhất (cần ít nhất 120 phút chạy cùng mã / cùng cỡ, chưa đủ thì dùng bảng tự nhập); chưa khai báo thì dùng tốc độ mặc định theo công đoạn.</li>
-            <li><b>Gối đầu công đoạn:</b> công đoạn sau bắt đầu khi công đoạn trước đã chạy ít nhất 1 ca và không xong trước công đoạn trước. Bọc cách điện silicone chờ cả bện và trộn silicone; bện không chờ trộn.</li>
+            <li>Mỗi việc vào <b>máy cùng loại có người đủ tay nghề rảnh sớm nhất</b>, đã tính phút đổi máy. Tốc độ: máy chế độ <b>Nhập tay</b> dùng <b>bảng tốc độ tự nhập</b> của máy theo chủng loại × cỡ ruột (Quản lý máy → Tốc độ); máy chế độ <b>Tự động</b> dùng <b>tốc độ thực tế đo từ PLC</b> 30 ngày gần nhất (cần ít nhất {nf(flowOf(c).plc_min_run)} phút chạy cùng mã / cùng cỡ, chưa đủ thì dùng bảng tự nhập); chưa khai báo thì dùng tốc độ mặc định theo công đoạn; không có tốc độ nào thì không xếp và báo thiếu thông số. Chọn máy <b>xong sớm nhất</b>.</li>
+            <li><b>Gối đầu theo bobin:</b> công đoạn sau bắt đầu khi <b>bobin đầu tiên</b> của công đoạn trước xong (mét một bobin ÷ tốc độ thật) <b>và QC xong</b> ({nf(flowOf(c).qc_min)} phút{kh.flowMeta.qc_learn ? ', MES tự học từ phiếu hoàn thành' : ''}), cộng đệm an toàn nếu có; không xong trước công đoạn trước.</li>
+            <li><b>Máy trộn silicone là nguồn cấp theo nhịp line:</b> line silicone chạy tới đâu lấy silicone tới đó, chỉ từ mẻ đã trộn xong và chưa quá <b>{nf(flowOf(c).pot_life_h, 1)} giờ</b>; máy trộn không kịp thì line chạy chậm (ghi phút chờ). Người trộn đứng riêng máy trộn trong lúc line silicone chạy. Bện không chờ trộn.</li>
+            <li><b>Tối ưu:</b> khi bấm Xếp lịch, MES thử nhiều thứ tự lô, giữ thứ tự ít trễ hạn nhất, xong sớm nhất, ít đổi máy nhất; tăng ca / trộn sớm chỉ dùng phần Giám đốc đã duyệt (thẻ Tối ưu &amp; tăng ca).</li>
             <li>Mỗi ca chỉ xếp <b>{c.fill_pct}%</b> thời gian chạy.</li>
             <li>Khi xếp lại: <b>phần đã chạy và vùng khóa {c.frozen_days} ngày giữ nguyên</b>. Chen vào vùng khóa phải qua đơn phát sinh mức C.</li>
-            <li>Ngày xong lệnh = công đoạn cuối xong <b>+ 1 ca kiểm tra, đóng gói</b> (NV3, NV4; NV3 giữ kho thành phẩm).</li>
+            <li>Ngày xong lệnh = ngày máy đóng gói xong; mã chưa có công đoạn đóng gói thì công đoạn cuối xong <b>+ 1 ca kiểm tra, đóng gói</b> (NV3, NV4; NV3 giữ kho thành phẩm).</li>
           </ol>
         </section>
       </div>

@@ -1,4 +1,5 @@
 // Kiểm thử bộ xếp lịch máy (không cần database): node --experimental-strip-types web/tests/kh-scheduler.test.ts
+import { validateSchedule } from '../lib/kh/validate.ts';
 import { schedule, makeCalendar, finishInfo, buildTasks, machineSpeed, rateOn, plcSpeed, predOps, type Order, type Config, type MachineInfo, type OperatorInfo, type SpeedCfg, type PlcSpeedCfg } from '../lib/kh/scheduler.ts';
 const cfg: Config = { fill_pct: 85, frozen_days: 3, cutoff_time: '16:00', downtime_reason_min: 5, plc_dev_pct: 0.5, auto_shifts: 10, plc_loss_min: 10, machines_per_operator: 1,
   shifts: [{ code: 'A', start_time: '06:00', end_time: '14:00', break_min: 30, active: true }, { code: 'B', start_time: '14:00', end_time: '22:00', break_min: 30, active: false }, { code: 'C', start_time: '22:00', end_time: '06:00', break_min: 30, active: false }],
@@ -32,7 +33,7 @@ const ctx = { cfg, cal, machines, operators };
 const r = schedule(orders, ctx);
 const fin = finishInfo(r, cal, orders);
 let errs = 0; const bad = (m: string) => { errs++; console.log('LỖI', m); };
-function check(sch: typeof r, ords: Order[], tag: string) {
+function check(sch: typeof r, ords: Order[], tag: string, c?: Config, k?: typeof cal, from?: number, w?: import('../lib/kh/scheduler.ts').Window[]) {
   // 1 trùng giờ trên máy
   for (const [m, sl] of sch.byMachine) for (let i = 1; i < sl.length; i++) if (sl[i].start < sl[i - 1].end - 1e-6) bad(`${tag} trùng giờ ${m} ${sl[i - 1].key} ${sl[i].key}`);
   // 2 người đứng 1 máy
@@ -40,12 +41,8 @@ function check(sch: typeof r, ords: Order[], tag: string) {
   // 3 bảo toàn mét
   const tasks = buildTasks(ords, cfg);
   for (const t of tasks) { const got = sch.slots.filter((s) => s.key === t.key).reduce((a, s) => a + s.meters, 0); if (Math.abs(got - t.full) > 2) bad(`${tag} mét ${t.key} ${got.toFixed(0)} ≠ ${t.full}`); }
-  // 4 gối đầu ≥ 1 ca
-  for (const o of ords) for (let k = 1; k < o.route.length; k++) {
-    const p = sch.opDone.get(o.id + '|' + o.route[k - 1])!, c = sch.opDone.get(o.id + '|' + o.route[k])!;
-    if (c.start < p.start + sch.S - 1e-6) bad(`${tag} gối đầu ${o.label} ${o.route[k]} bắt đầu ${c.start.toFixed(0)} < ${p.start.toFixed(0)}+S`);
-    if (c.end < p.end - 1e-6) bad(`${tag} ${o.label} ${o.route[k]} xong trước công đoạn trước`);
-  }
+  // 4 gối đầu theo bobin đầu tiên + QC, máy dừng, máy trộn (bộ kiểm tra chung validateSchedule)
+  for (const v of validateSchedule(sch, ords, { cfg: c ?? cfg, cal: k ?? cal }, { from: from ?? 0, windows: w })) if (!v.startsWith('mét') && !v.startsWith('người') && !v.startsWith('trùng')) bad(`${tag} ${v}`);
   // 5 CD2 HDPE trên line vỏ, SIL trên line silicone
   for (const s of sch.slots) if (s.op === 'CD2') { const o = ords.find((x) => x.id === s.lineId)!; if (o.sil !== s.machine.startsWith('EXT-SI')) bad(`${tag} CD2 sai máy ${o.label} ${s.machine}`); }
   if (sch.unplaced.length) bad(`${tag} chưa xếp ${sch.unplaced.length}`);
@@ -56,7 +53,7 @@ console.log('slots', r.slots.length, 'CTL CD2 máy', [...new Set(r.slots.filter(
 // Xếp lại: giữ phần trước mốc ngày 3 (vùng khóa)
 const B = 3 * cal.SPD * cal.S;
 const r2 = schedule(orders, ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: B });
-check(r2, orders, 'v2');
+check(r2, orders, 'v2', cfg, cal, B);
 const before = r.slots.filter((s) => s.start < B).map((s) => s.key + s.start.toFixed(2) + s.machine).sort().join();
 const after = r2.slots.filter((s) => s.start < B).map((s) => s.key + s.start.toFixed(2) + s.machine).sort().join();
 if (before !== after) bad('xếp lại làm đổi phần trước mốc');
@@ -64,13 +61,13 @@ if (before !== after) bad('xếp lại làm đổi phần trước mốc');
 const cfg2 = { ...cfg, shifts: cfg.shifts.map((s) => s.code === 'B' ? { ...s, active: true } : s) };
 const cal2 = makeCalendar(cfg2, '2026-11-02');
 const r3 = schedule(orders, { ...ctx, cfg: cfg2, cal: cal2 }, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: 3 * cal2.SPD * cal2.S });
-check(r3, orders, 'caB');
+check(r3, orders, 'caB', cfg2, cal2, 3 * cal2.SPD * cal2.S);
 const f3 = finishInfo(r3, cal2, orders);
 console.log('ca B: ', orders.map((o) => `${o.label} ${fin.get(o.id)!.finDate}→${f3.get(o.id)!.finDate}`).join(' | '));
 // Đơn gấp chen vùng khóa (tách)
 const urgent = { ...mk(8, 'CFR-2C-1P5', 'CFR', 1.5, ['Đỏ', 'Đen'], 'Đỏ', 10000, '2026-11-09'), prio: 0 };
 const r4 = schedule([...orders, urgent], ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: 2 * cal.SPD * cal.S, split: true });
-check(r4, [...orders, urgent], 'gấp');
+check(r4, [...orders, urgent], 'gấp', cfg, cal, 2 * cal.SPD * cal.S);
 const f4 = finishInfo(r4, cal, [...orders, urgent]);
 console.log('gấp xong', f4.get('L8')!.finDate, 'hạn 09/11; ảnh hưởng', orders.filter((o) => f4.get(o.id)!.finDate !== fin.get(o.id)!.finDate).map((o) => o.label).join(','));
 // Credit (thiếu 5000 m bện D01 ở ngày đã qua)
@@ -181,7 +178,7 @@ console.log('PLC lý do mẫu:', gp.slots.find((s) => s.machine === 'EXT-SI-01' 
 const lastLine = [...orders].sort((a, b) => (fin.get(b.id)!.end - fin.get(a.id)!.end))[0].id;
 const urgK = { ...mk(9, 'CFR-2C-1P5', 'CFR', 1.5, ['Đỏ', 'Đen'], 'Đỏ', 20000, '2026-11-10'), prio: 0 };
 const rk = schedule([...orders, urgK], ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: B, keep: new Set([lastLine]) });
-check(rk, [...orders, urgK], 'giữ chỗ');
+check(rk, [...orders, urgK], 'giữ chỗ', cfg, cal, B);
 const sig = (sl: typeof r.slots) => sl.filter((x) => x.lineId === lastLine && x.start >= B).map((x) => x.key + x.machine + x.start.toFixed(2)).sort().join();
 if (!sig(r.slots) || sig(r.slots) !== sig(rk.slots)) bad('lô giữ chỗ bị dời khi xếp lại');
 const rn = schedule([...orders, urgK], ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: B });
@@ -194,7 +191,7 @@ const D = (d: number) => d * cal.SPD * cal.S;
 const down = { machine: 'EXT-SI-02', from: D(1), to: D(4), kind: 'DOWN' as const, label: 'EXT-SI-02 hỏng' };
 const pm = { machine: 'EXT-SI-01', from: D(5), to: D(5) + cal.S / 2, kind: 'PM' as const, label: 'bảo dưỡng EXT-SI-01' };
 const rd = schedule(orders, ctx, { from: { S: r.S, SPD: r.SPD, slots: r.slots }, boundary: D(1), windows: [down, pm] });
-check(rd, orders, 'máy hỏng');
+check(rd, orders, 'máy hỏng', cfg, cal, D(1), [down, pm]);
 for (const s of rd.slots) for (const w of [down, pm]) if (s.machine === w.machine && s.end > w.from + 1e-6 && s.start < w.to - 1e-6) bad(`việc ${s.key} nằm trong khoảng ${w.label}`);
 const siBefore = (sch: typeof r) => sch.slots.filter((s) => s.machine === 'EXT-SI-01' && s.start >= D(1) && s.start < D(4)).length;
 if (siBefore(rd) < siBefore(r)) bad('máy hỏng: line silicone còn lại không nhận thêm việc');
@@ -219,13 +216,9 @@ if (off.slots.some((s) => s.machine === 'EXT-SI-02')) bad('máy ngừng dùng v�
   const gm = schedule(ordM, { cfg: cfgM, cal: calM, machines: mach2, operators: ops2 });
   if (gm.unplaced.length) bad(`trộn/đóng gói chưa xếp ${gm.unplaced.length}`);
   const sp = (o: Order, op: string) => gm.opDone.get(o.id + '|' + op)!;
-  for (const o of ordM) {
-    if (o === sifM && sp(o, 'CD1').start > 1e-6) bad('bện phải chạy ngay, không chờ trộn');
-    if (sp(o, 'CD2').start < sp(o, 'CD0').start + gm.S - 1e-6) bad(`${o.label} bọc trước khi trộn đủ 1 ca`);
-    if (sp(o, 'CD2').start < sp(o, 'CD1').start + gm.S - 1e-6) bad(`${o.label} bọc trước khi bện đủ 1 ca`);
-    const last = o.route[o.route.length - 2];
-    if (sp(o, 'CD6').start < sp(o, last).start + gm.S - 1e-6 || sp(o, 'CD6').end < sp(o, last).end - 1e-6) bad(`${o.label} đóng gói không theo sau ${last}`);
-  }
+  for (const v of validateSchedule(gm, ordM, { cfg: cfgM, cal: calM })) bad(`trộn/đóng gói: ${v}`);
+  if (sp(sifM, 'CD1').start > 1e-6) bad('bện phải chạy ngay, không chờ trộn');
+  if (predOps(['CD0', 'CD1', 'CD2', 'CD6'], 2, true).join() !== 'CD1') bad('máy trộn là nguồn cấp: bọc chỉ chờ bện');
   // Máy trộn: phút chạy = kg ÷ (kg/giờ) × 60 (SIF 20 km × 12 kg/km = 240 kg ÷ 30 kg/giờ = 480 phút)
   const mixRun = gm.slots.filter((s) => s.lineId === sifM.id && s.op === 'CD0').reduce((a, s) => a + (s.end - s.runStart), 0);
   if (Math.abs(mixRun - 480) > 1) bad(`phút trộn SIF ${mixRun.toFixed(1)} ≠ 480`);

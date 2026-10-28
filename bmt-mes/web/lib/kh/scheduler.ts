@@ -21,7 +21,7 @@ export type SpeedCfg = {
 };
 // Tốc độ thực tế từ PLC: tổng mét và phút chạy 30 ngày theo máy × công đoạn × mã SP/nhóm/mã lõi
 export type PlcSpeedCfg = { machine_code: string; op_code: string; product_id: string | null; group_code: string | null; core_code: string | null; meters: number; run_min: number; last_at?: string | null };
-export const PLC_MIN_RUN = 120; // phút chạy tối thiểu để tin tốc độ PLC
+export const PLC_MIN_RUN = 120; // mặc định phút chạy tối thiểu để tin tốc độ PLC (thông số flow.plc_min_run)
 export type Config = {
   fill_pct: number; frozen_days: number; cutoff_time: string; downtime_reason_min: number; plc_dev_pct: number;
   auto_shifts: number; plc_loss_min: number; machines_per_operator: number;
@@ -29,7 +29,40 @@ export type Config = {
   speeds?: SpeedCfg[];   // tốc độ theo máy (trống: dùng rates)
   plc_speeds?: PlcSpeedCfg[]; // tốc độ thực tế đo từ PLC (máy chế độ Tự động)
   group_days?: number;   // khung gom lô (ngày); 0 = không gom
+  flow?: FlowCfg;        // thông số dòng chảy (gối đầu theo bobin, máy trộn, hạn dùng silicone, tăng ca)
 };
+// Thông số dòng chảy: mọi con số của thuật toán đều lấy từ đây (không có số cố định trong code).
+export type FlowCfg = {
+  qc_min?: number;                              // phút chờ QC một bobin (trung vị thực tế; ban đầu 120)
+  unit_m?: Partial<Record<Op, number>>;         // mét một bobin (đơn vị chuyển sang công đoạn sau) theo công đoạn
+  safety_min?: Partial<Record<Op, number>>;     // đệm an toàn (phút) công đoạn này phải đi trước công đoạn sau (vd. tồn đệm ruột bện)
+  pot_life_h?: number;                          // hạn dùng silicone đã pha lưu hóa (giờ)
+  mix_batch_kg?: number;                        // kg một mẻ trộn
+  mix_early_h?: number;                         // giờ máy trộn chạy trước giờ vào ca (trộn sẵn đệm)
+  extra_min?: Record<string, number>;           // phút tăng ca mỗi ngày theo máy
+  ot_from?: string | null;                      // tăng ca / trộn sớm áp dụng từ ngày (trống: mọi ngày)
+  ot_until?: string | null;                     // … đến ngày (trống: mọi ngày)
+  size_large_mm2?: number;                      // tốc độ mặc định theo công đoạn: từ cỡ này trở lên dùng tốc độ "cỡ lớn"
+  plc_min_run?: number;                         // phút chạy tối thiểu để tin tốc độ đo từ PLC
+  pick_window_min?: number | null;              // việc bắt đầu cách nhau không quá số phút này coi như cùng lúc (để gom lô); trống = nửa ca
+};
+export const FLOW_DEFAULT = { qc_min: 120, safety_min: {} as Partial<Record<Op, number>>, pot_life_h: 8, mix_batch_kg: 25, mix_early_h: 0, extra_min: {} as Record<string, number> };
+export function flowOf(cfg: Pick<Config, 'flow'>) {
+  const f = cfg.flow ?? {};
+  return {
+    qc_min: Math.max(0, Number(f.qc_min ?? FLOW_DEFAULT.qc_min)),
+    unit_m: { ...BOBBIN, ...(f.unit_m ?? {}) } as Record<Op, number>,
+    safety_min: { ...(f.safety_min ?? {}) } as Partial<Record<Op, number>>,
+    pot_life_h: Math.max(0.25, Number(f.pot_life_h ?? FLOW_DEFAULT.pot_life_h)),
+    mix_batch_kg: Math.max(1, Number(f.mix_batch_kg ?? FLOW_DEFAULT.mix_batch_kg)),
+    mix_early_h: Math.max(0, Number(f.mix_early_h ?? 0)),
+    extra_min: { ...(f.extra_min ?? {}) } as Record<string, number>,
+    ot_from: f.ot_from ?? null, ot_until: f.ot_until ?? null,
+    size_large_mm2: Math.max(0.01, Number(f.size_large_mm2 ?? 2.5)),
+    plc_min_run: Math.max(1, Number(f.plc_min_run ?? PLC_MIN_RUN)),
+    pick_window_min: f.pick_window_min == null || Number.isNaN(Number(f.pick_window_min)) ? null : Math.max(0, Number(f.pick_window_min)),
+  };
+}
 export type MachineInfo = {
   id?: string; code: string; name: string; machine_type: string; data_mode: string; tag_count: number; operators: string[];
   status?: string; status_since?: string | null; status_eta?: string | null; status_note?: string | null;
@@ -58,6 +91,7 @@ export type Order = {
   product_id?: string | null; // để chọn tốc độ khai báo riêng theo mã sản phẩm
   core?: string | null;       // mã lõi của spec (tốc độ riêng theo lõi)
   mix?: number | null;        // kg hỗn hợp silicone cần trộn / km cáp (BOM công đoạn CD0)
+  seq?: number;               // thứ tự do bộ tối ưu chọn (sau mức gấp, trước hạn giao)
 };
 
 export type Task = {
@@ -74,6 +108,15 @@ export type OpSpan = { start: number; end: number; left: number };
 export type Schedule = {
   slots: Slot[]; byMachine: Map<string, Slot[]>; opDone: Map<string, OpSpan>; unplaced: Task[];
   S: number; SPD: number; RUN: number;
+  mix?: MixLog;   // máy trộn làm nguồn cấp: năng lực, phần đã dùng, từng lần cấp (để kiểm hạn dùng)
+  warnings?: string[]; // thiếu thông số (tốc độ, phút đổi máy, máy trộn…) cần khai báo
+};
+// Nhật ký máy trộn (giờ thật tính từ 01/01/1970, theo giờ trên lịch): mỗi khoảng trộn và từng lần cấp cho line
+export type MixLog = {
+  kgh: number; pot_life_h: number; batch_h: number;
+  buckets: { r0: number; r1: number; t0: number; t1: number; cap: number; used: number; early: boolean }[];
+  uses: { key: string; kg: number; mixR0: number; mixR1: number; useR: number }[];
+  wait_min: Record<string, number>;   // phút line silicone chạy chậm/chờ vì máy trộn không cấp kịp
 };
 
 // ---------------- Lịch làm việc ----------------
@@ -147,10 +190,11 @@ export const MACHINE_OPS: Record<string, Op[]> = { MIXER: ['CD0'], BUNCHER: ['CD
 // Kg hỗn hợp trộn (kg/giờ) → mét cáp/phút theo kg/km cáp của mã
 export const mixMpm = (kgh: number, o: Pick<Order, 'mix'>) => (Number(o.mix) > 0 ? (kgh / 60) / (Number(o.mix) / 1000) : 0);
 // Công đoạn phải chạy trước (gối đầu): bọc cách điện chờ bện và trộn; công đoạn khác chờ công đoạn liền trước (bỏ qua trộn)
-export function predOps(route: Op[], k: number): Op[] {
+// supply = true: máy trộn là nguồn cấp theo nhịp line (không phải công đoạn chạy trước), bọc chỉ chờ bện
+export function predOps(route: Op[], k: number, supply = false): Op[] {
   const op = route[k];
   if (op === 'CD0') return [];
-  if (op === 'CD2') return route.slice(0, k).filter((x) => x === 'CD1' || x === 'CD0');
+  if (op === 'CD2') return route.slice(0, k).filter((x) => x === 'CD1' || (x === 'CD0' && !supply));
   for (let j = k - 1; j >= 0; j--) if (route[j] !== 'CD0') return [route[j]];
   return [];
 }
@@ -159,12 +203,15 @@ export function canRun(machineType: string, t: Pick<Task, 'op' | 'order'>): bool
   return (MACHINE_OPS[machineType] ?? []).includes(t.op);
 }
 
-// Tốc độ mặc định theo công đoạn (Tham số xếp lịch): cỡ < 2,5 mm² và ≥ 2,5 mm²
-const defRate = (cfg: Pick<Config, 'rates'>, code: string, o: Pick<Order, 'size'>) => {
+// Tốc độ mặc định theo công đoạn (Tham số xếp lịch): cỡ nhỏ và cỡ lớn (ngưỡng flow.size_large_mm2).
+// Chưa khai báo tốc độ công đoạn → 0: không xếp, báo thiếu thông số (không đoán số)
+const defRate = (cfg: Pick<Config, 'rates' | 'flow'>, code: string, o: Pick<Order, 'size'>) => {
   const x = cfg.rates.find((y) => y.op_code === code);
-  return x ? Number(o.size >= 2.5 ? x.rate_large : x.rate_small) : 50;
+  if (!x) return 0;
+  const v = Number(o.size >= flowOf(cfg).size_large_mm2 ? x.rate_large : x.rate_small);
+  return v > 0 ? v : 0;
 };
-export function speedOf(cfg: Pick<Config, 'rates'>, op: Op, o: Pick<Order, 'size' | 'shield' | 'mix'>): number {
+export function speedOf(cfg: Pick<Config, 'rates' | 'flow'>, op: Op, o: Pick<Order, 'size' | 'shield' | 'mix'>): number {
   if (op === 'CD3' && o.shield) return Math.min(defRate(cfg, 'CD3', o), defRate(cfg, 'CD4', o));
   if (op === 'CD0') return mixMpm(defRate(cfg, 'CD0', o), o);
   return defRate(cfg, op, o);
@@ -189,7 +236,8 @@ export function machineSpeed(cfg: Pick<Config, 'speeds'>, machine: string, op: s
 }
 // Tốc độ thực tế PLC: cùng mã sản phẩm → cùng nhóm + mã lõi → cùng mã lõi (cỡ ruột); mỗi mức cần ≥ PLC_MIN_RUN phút chạy.
 // Xoắn + quấn AL/PET chạy cùng lượt nên PLC đo được tốc độ chung (lấy cả dòng ghi công đoạn CD3 và CD4).
-export function plcSpeed(cfg: Pick<Config, 'plc_speeds'>, machine: string, op: Op, o: Pick<Order, 'product_id' | 'group' | 'core'>): Speed | null {
+export function plcSpeed(cfg: Pick<Config, 'plc_speeds' | 'flow'>, machine: string, op: Op, o: Pick<Order, 'product_id' | 'group' | 'core'>): Speed | null {
+  const minRun = flowOf(cfg).plc_min_run;
   const ops = op === 'CD3' ? ['CD3', 'CD4'] : [op];
   const rows = (cfg.plc_speeds ?? []).filter((x) => x.machine_code === machine && ops.includes(x.op_code));
   const tiers: ((x: PlcSpeedCfg) => boolean)[] = [
@@ -200,13 +248,13 @@ export function plcSpeed(cfg: Pick<Config, 'plc_speeds'>, machine: string, op: O
   for (const f of tiers) {
     const sel = rows.filter(f);
     const m = sel.reduce((a, x) => a + Number(x.meters), 0), min = sel.reduce((a, x) => a + Number(x.run_min), 0);
-    if (min >= PLC_MIN_RUN && m > 0) return { v: m / min, src: 'PLC', pending: false, note: `${Math.round(min)} phút chạy` };
+    if (min >= minRun && m > 0) return { v: m / min, src: 'PLC', pending: false, note: `${Math.round(min)} phút chạy` };
   }
   return null;
 }
 // Tốc độ chạy một công đoạn trên một máy theo chế độ nhập dữ liệu của máy.
 // Bảng tự nhập: xoắn có quấn AL/PET liền dây lấy tốc độ chậm hơn của hai bước.
-export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds'>, machine: string, op: Op,
+export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds' | 'flow'>, machine: string, op: Op,
   o: Pick<Order, 'size' | 'shield' | 'product_id' | 'group' | 'core' | 'mix'>, mode = 'MANUAL'): Speed {
   if (op === 'CD0') {
     // Máy trộn: bảng tốc độ khai báo theo kg/giờ (không lấy PLC)
@@ -228,7 +276,13 @@ export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds'>, mac
   return r;
 }
 
-export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates'>): Task[] {
+// Năng lực một máy trộn (kg/giờ): bảng khai báo của máy (dòng chung, không riêng mã) → mặc định công đoạn CD0
+export function mixerKgh(cfg: Pick<Config, 'rates' | 'speeds' | 'flow'>, machine: string): number {
+  const s = machineSpeed(cfg, machine, 'CD0', { product_id: null, group: '', core: null });
+  return s ? s.v : defRate(cfg, 'CD0', { size: 0 });
+}
+
+export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates' | 'flow'>): Task[] {
   const tasks: Task[] = [];
   orders.forEach((o, oi) => {
     o.route.forEach((op, k) => {
@@ -246,7 +300,7 @@ export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates'>): Task[] 
   });
   tasks.forEach((t, i) => {
     t.id = i; t.key = `${t.order.id}|${t.op}|${t.color ?? ''}`; t.full = t.m;
-    t.rate = speedOf(cfg, t.op, t.order); t.run = t.m / t.rate;
+    t.rate = speedOf(cfg, t.op, t.order); t.run = t.rate > 0 ? t.m / t.rate : Infinity;
   });
   return tasks;
 }
@@ -254,7 +308,7 @@ export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates'>): Task[] 
 type Prev = { order: Order; op: Op; color: string | null } | null;
 function changeover(cfg: Pick<Config, 'changeovers'>, prev: Prev, t: { order: Order; op: Op; color: string | null }): [number, string] {
   if (!prev) return [0, ''];
-  const P = (code: string) => Number(cfg.changeovers.find((c) => c.code === code)?.minutes ?? 30);
+  const P = (code: string) => Number(cfg.changeovers.find((c) => c.code === code)?.minutes ?? 0); // chưa khai báo: 0 phút + cảnh báo (schedule.warnings)
   if (prev.op !== t.op) return [P('SH_CODE'), 'đổi công đoạn, thay khuôn'];
   if (t.op === 'CD2') {
     if (prev.order.size !== t.order.size || prev.order.sil !== t.order.sil) return [P('INS_SIZE'), 'đổi cỡ ruột, thay khuôn'];
@@ -298,7 +352,8 @@ export function schedule(
   opt: ScheduleOpts = {},
 ): Schedule {
   const { cfg, cal } = ctx;
-  const S = cal.S, SPD = cal.SPD;
+  const S = cal.S, SPD = cal.SPD, DAY = S * SPD;
+  const F = flowOf(cfg);
   const tasks = buildTasks(orders, cfg);
   const byKey = new Map(tasks.map((t) => [t.key, t]));
   const orderById = new Map(orders.map((o) => [o.id, o]));
@@ -310,6 +365,57 @@ export function schedule(
   const keep = opt.keep ?? new Set<string>();
   const wins = (opt.windows ?? []).filter((w) => w.to > w.from);
   const KEEP_LABEL = 'khối giữ chỗ của lô TP SX đã duyệt lịch';
+  const warnings = new Set<string>();
+  {
+    // Phút đổi máy dùng trong thuật toán: thiếu mã nào thì tính 0 phút và báo khai báo
+    const ops = new Set(orders.flatMap((o) => o.route));
+    const need: [string, Op][] = [['INS_UP', 'CD2'], ['INS_DOWN', 'CD2'], ['INS_SIZE', 'CD2'], ['SH_COLOR', 'CD5'], ['SH_CODE', 'CD5'], ['BUN_SIZE', 'CD1'], ['TWS_CODE', 'CD3'], ['MIX_CODE', 'CD0'], ['PK_CODE', 'CD6']];
+    for (const [code, op] of need) if (ops.has(op) && !cfg.changeovers.some((c) => c.code === code))
+      warnings.add(`Chưa khai báo phút đổi máy ${code} (${OP_NAME[op].toLowerCase()}): đang tính 0 phút`);
+  }
+  // Giờ thật → phút xếp lịch (QC, đệm an toàn là thời gian thật; phút xếp lịch = phút máy chạy)
+  const shLenMin = cal.shifts.map((s) => shiftRun(s) + Number(s.break_min));
+  const real2s = S / Math.max(1, shLenMin.reduce((a, x) => a + x, 0) / Math.max(1, shLenMin.length));
+  const QC = F.qc_min * real2s;
+  const SAFE = (op: Op) => Number(F.safety_min[op] ?? 0) * real2s;
+  const dayRun = Math.max(1, cal.RUN * SPD);
+  const PW = F.pick_window_min == null ? S / 2 : F.pick_window_min * real2s; // khung "bắt đầu gần như cùng lúc"
+  // Tăng ca / trộn sớm chỉ trong khoảng ngày được duyệt
+  const otOn = (di: number) => {
+    const d = cal.days[Math.min(Math.max(0, di), cal.days.length - 1)];
+    return (!F.ot_from || d >= F.ot_from) && (!F.ot_until || d <= F.ot_until);
+  };
+  const extraOf = (code: string, di: number) => (otOn(di) ? Math.max(0, Number(F.extra_min[code] ?? 0)) : 0);
+  const boost = (code: string, di: number) => 1 + extraOf(code, di) / dayRun;
+  const hasOt = (code: string) => Math.max(0, Number(F.extra_min[code] ?? 0)) > 0;
+  // Giờ xong khi chạy `meters` từ rs với tốc độ v (m/phút xếp lịch), ngày có tăng ca thì nhanh hơn theo tỷ lệ giờ chạy thêm
+  const advance = (code: string, rs: number, meters: number, v: number) => {
+    if (!hasOt(code)) return rs + meters / v;
+    let tau = rs, left = meters;
+    for (let g = 0; left > 1e-9 && g < 100000; g++) {
+      const di = Math.floor(tau / DAY), de = (di + 1) * DAY, vd = v * boost(code, di);
+      const need = left / vd;
+      if (tau + need <= de + 1e-9) return tau + need;
+      left -= (de - tau) * vd; tau = de;
+    }
+    return tau;
+  };
+
+  // Máy trộn = nguồn cấp silicone theo nhịp line bọc (không xếp như một công đoạn chạy trước)
+  const mixers = ctx.machines.filter((m) => m.machine_type === 'MIXER');
+  const supply = mixers.length > 0;
+  const isSup = (t: Pick<Task, 'op'>) => supply && t.op === 'CD0';
+  const usesMix = (t: Task) => supply && t.op === 'CD2' && t.order.route.includes('CD0') && Number(t.order.mix) > 0;
+  const kgPerM = (o: Order) => Number(o.mix) / 1000 / Math.max(1, o.cores.length); // kg silicone / m lõi
+  const preUse: { t: Task; from: number; to: number; rate: number; sl: Slot; who: { op: string | null; lane: number } }[] = [];
+  // Xếp lại: silicone đã dùng trước mốc (m cáp) theo từng lô, để khối trộn trước mốc đúng bằng lượng line đã dùng
+  const preCons = new Map<string, number>();
+  const keptMix: Slot[] = [];
+  const consBefore = (t: Task, rs: number, end: number, meters: number) => {
+    if (!usesMix(t) || end <= rs) return;
+    const part = Math.max(0, Math.min(end, B) - rs) / (end - rs);
+    preCons.set(t.order.id, (preCons.get(t.order.id) ?? 0) + (meters * part) / Math.max(1, t.order.cores.length));
+  };
 
   if (opt.from) {
     const k = (S * SPD) / (opt.from.S * opt.from.SPD); // giữ vị trí theo ngày khi đổi ca hoặc tỷ lệ xếp lịch
@@ -318,6 +424,15 @@ export function schedule(
       const m = machines.find((x) => x.code === sl.machine);
       if (!t || !m) continue;
       const start = sl.start * k, rs = sl.runStart * k, end = sl.end * k, rate = sl.rate / k;
+      if (supply && sl.op === 'CD0') {
+        // Trộn đã làm trước mốc giữ lại (cắt tại mốc); sau mốc trộn lại theo nhịp line
+        if (start < B) {
+          const e = Math.min(end, B), mm = end > start ? sl.meters * (e - start) / (end - start) : sl.meters;
+          const ns = { ...sl, start, runStart: Math.min(rs, e), end: e, rate, meters: mm, part: e < end - 1e-9 || sl.part };
+          m.slots.push(ns); keptMix.push(ns);
+        }
+        continue;
+      }
       // Máy hỏng / ngừng dùng / bảo dưỡng giữ chỗ: phần chưa chạy trước khi máy dừng xếp lại (sang máy cùng loại hoặc sau khi chạy lại)
       const hit = wins.find((w) => w.machine === sl.machine && end > w.from && start < w.to);
       if (hit) {
@@ -326,6 +441,8 @@ export function schedule(
         const ns = { ...sl, start, runStart: rs, end: hit.from, rate, meters: mm, part: true, reason: `Phần đã chạy trước khi ${hit.label}, phần còn lại xếp lại` };
         t.m -= mm;
         m.slots.push(ns);
+        consBefore(t, rs, ns.end, mm);
+        if (usesMix(t) && ns.end > B) preUse.push({ t, from: Math.max(B, rs), to: ns.end, rate, sl: ns, who: { op: null, lane: 0 } });
         const w = workers.find((x) => x.code === sl.operator);
         if (w) { const li = Math.min(sl.lane || 0, cap - 1); w.lanes[li] = Math.max(w.lanes[li], ns.end); ns.lane = li; }
         continue;
@@ -336,6 +453,7 @@ export function schedule(
         const ns = { ...sl, start, runStart: rs, end, rate, reason: sl.reason.startsWith('Giữ chỗ') ? sl.reason : `Giữ chỗ (TP SX đã duyệt lịch lô) · ${sl.reason}` };
         t.m -= sl.meters;
         m.slots.push(ns); m.blocks.push([start, end, KEEP_LABEL]);
+        if (usesMix(t)) preUse.push({ t, from: rs, to: end, rate, sl: ns, who: { op: null, lane: 0 } });
         const w = workers.find((x) => x.code === sl.operator);
         if (w) { const li = Math.min(sl.lane || 0, cap - 1); w.blocks[li].push([start, end, KEEP_LABEL]); ns.lane = li; }
         continue;
@@ -346,20 +464,38 @@ export function schedule(
         const mm = (B - rs) * rate;
         ns = { ...sl, start, runStart: rs, end: B, rate, meters: mm, part: true, reason: 'Phần đã chạy trước khi tách lệnh, phần còn lại xếp sau đơn gấp' };
         t.m -= mm;
+        consBefore(t, rs, B, mm);
       } else {
         ns = { ...sl, start, runStart: rs, end, rate };
         t.m -= sl.meters;
+        consBefore(t, rs, end, sl.meters);
+        if (usesMix(t) && end > B) preUse.push({ t, from: Math.max(B, rs), to: end, rate, sl: ns, who: { op: null, lane: 0 } });
       }
       m.slots.push(ns);
       const w = workers.find((x) => x.code === sl.operator);
       if (w) { const li = Math.min(sl.lane || 0, cap - 1); w.lanes[li] = Math.max(w.lanes[li], ns.end); ns.lane = li; }
     }
   }
-  if (opt.credit) for (const [key, mm] of opt.credit) { const t = byKey.get(key); if (t) t.m += mm; } // thiếu thì cộng, vượt thì trừ
+  // Khối trộn giữ lại trước mốc = lượng silicone line đã dùng trước mốc (không tính theo tỷ lệ thời gian)
+  if (supply) {
+    const byOrder = new Map<string, Slot[]>();
+    for (const sl of keptMix) byOrder.set(sl.lineId, [...(byOrder.get(sl.lineId) ?? []), sl]);
+    for (const [oid, list] of byOrder) {
+      const had = list.reduce((a, x) => a + x.meters, 0), want = preCons.get(oid) ?? 0;
+      if (had <= 1e-9) continue;
+      const f = want / had;
+      for (const x of list) { x.meters *= f; x.rate = x.meters / Math.max(1e-6, x.end - x.runStart); }
+    }
+  }
+  if (opt.credit) for (const [key, mm] of opt.credit) { const t = byKey.get(key); if (t && !isSup(t)) t.m += mm; } // thiếu thì cộng, vượt thì trừ
   for (const w of wins) machines.find((m) => m.code === w.machine)?.blocks.push([w.from, w.to, w.label]);
 
   const pending = new Set<number>();
-  for (const t of tasks) { if (t.m > 1) { t.run = t.m / t.rate; pending.add(t.id); } else t.m = 0; }
+  for (const t of tasks) {
+    if (isSup(t)) continue;
+    if (t.m > 1) { t.run = t.rate > 0 ? t.m / t.rate : Infinity; pending.add(t.id); } else t.m = 0;
+  }
+  const dead = new Set<number>(); // việc không thể chạy (vd. không có silicone): việc sau cũng không xếp
   for (const m of machines) {
     m.slots.sort((a, b) => a.start - b.start);
     const before = m.slots.filter((x) => x.start < B);
@@ -373,21 +509,47 @@ export function schedule(
   const opDone = new Map<string, OpSpan>();
   const key = (lineId: string, op: Op) => lineId + '|' + op;
   orders.forEach((o) => o.route.forEach((op) => opDone.set(key(o.id, op), { start: Infinity, end: 0, left: 0 })));
+  // Theo từng việc (từng màu lõi): giờ bắt đầu, xong, tốc độ lượt chạy đầu (để tính gối đầu theo bobin đầu tiên)
+  const tspan = new Map<number, { start: number; end: number; rate: number }>();
+  const markSpan = (t: Task, rs: number, end: number, rate: number) => {
+    const s = tspan.get(t.id);
+    if (!s) tspan.set(t.id, { start: rs, end, rate });
+    else { if (rs < s.start) { s.start = rs; s.rate = rate; } s.end = Math.max(s.end, end); }
+  };
   for (const m of machines) for (const sl of m.slots) {
     const d = opDone.get(key(sl.lineId, sl.op)); if (!d) continue;
     d.start = Math.min(d.start, sl.runStart); d.end = Math.max(d.end, sl.end);
+    const t = byKey.get(sl.key); if (t && !isSup(t)) markSpan(t, sl.runStart, sl.end, sl.rate);
   }
   for (const id of pending) opDone.get(key(tasks[id].order.id, tasks[id].op))!.left++;
+  const predOf = new Map(tasks.map((t) => {
+    const ops = predOps(t.order.route, t.k, supply);
+    return [t.id, tasks.filter((x) => x.oi === t.oi && ops.includes(x.op))] as const;
+  }));
 
-  // Công đoạn trước đã chạy ≥ 1 ca và công đoạn này không xong trước công đoạn trước (run: phút chạy trên máy đang xét)
-  const ready = (t: Task, run: number): number | null => {
-    let r = 0;
-    for (const prevOp of predOps(t.order.route, t.k)) {
-      const p = opDone.get(key(t.order.id, prevOp))!;
-      if (p.left > 0) return null;
-      if (p.end > 0) r = Math.max(r, p.start + S, p.end + S - run);
+  // Gối đầu theo bobin: công đoạn sau bắt đầu khi bobin đầu tiên của từng việc trước xong + QC (+ đệm an toàn),
+  // và xong sau việc trước ít nhất thời gian QC bobin cuối + chạy bobin cuối trên máy sau (run, v: trên máy đang xét)
+  const notBefore = new Map<number, number>(); // line silicone chưa có silicone: thử lại từ lúc này
+  const ready = (t: Task, run: number, v: number): number | null => {
+    let r = notBefore.get(t.id) ?? 0;
+    for (const p of predOf.get(t.id)!) {
+      if (pending.has(p.id) || dead.has(p.id)) return null;
+      const sp = tspan.get(p.id); if (!sp || sp.end <= 0) continue;
+      const g = QC + SAFE(p.op);
+      const lead = Math.min(F.unit_m[p.op] / Math.max(1e-6, sp.rate), Math.max(0, sp.end - sp.start)) + g;
+      const tail = g + Math.min(run, F.unit_m[t.op] / Math.max(1e-6, v));
+      r = Math.max(r, sp.start + lead, sp.end + tail - run);
     }
     return r;
+  };
+  // Xong không sớm hơn: việc trước xong + QC (+ đệm) + chạy bobin cuối trên máy này
+  const minEnd = (t: Task, run: number, v: number) => {
+    let e = 0;
+    for (const p of predOf.get(t.id)!) {
+      const sp = tspan.get(p.id); if (!sp || sp.end <= 0) continue;
+      e = Math.max(e, sp.end + QC + SAFE(p.op) + Math.min(run, F.unit_m[t.op] / Math.max(1e-6, v)));
+    }
+    return e;
   };
   const spMemo = new Map<string, Speed>();
   const modeOf = new Map(ctx.machines.map((m) => [m.code, m.data_mode]));
@@ -404,10 +566,10 @@ export function schedule(
     return best as { w: (typeof workers)[number]; li: number; f: number } | null;
   };
   const due = (o: Order) => o.commit ?? o.due ?? '9999-12-31';
-  const byPrio = (a: Order, b: Order) => a.prio - b.prio || due(a).localeCompare(due(b));
+  const byPrio = (a: Order, b: Order) => a.prio - b.prio || (a.seq ?? 0) - (b.seq ?? 0) || due(a).localeCompare(due(b));
   type Cand = { t: Task; r: number; sp: Speed; run: number };
   // Chọn việc cho một máy trong các việc bắt đầu được gần như cùng lúc:
-  // 1) lô dẫn đầu = đơn gấp → hạn giao sớm nhất → màu sáng; 2) các lô cùng mức gấp, hạn giao không muộn hơn lô dẫn đầu quá G ngày
+  // 1) lô dẫn đầu = đơn gấp → thứ tự tối ưu → hạn giao sớm nhất → màu sáng; 2) các lô cùng mức gấp, hạn giao không muộn hơn lô dẫn đầu quá G ngày
   // được chạy trước nếu ít phút đổi máy hơn (gom cùng cỡ ruột, cùng màu, cùng mã); 3) bằng nhau: màu sáng trước, hạn sớm trước.
   const pick = (pool: Cand[], last: Prev): { x: Cand; lead: Cand; su: number } => {
     const lead = [...pool].sort((a, b) => byPrio(a.t.order, b.t.order) || colorRank(a.t.color) - colorRank(b.t.color) || a.t.id - b.t.id)[0];
@@ -421,45 +583,234 @@ export function schedule(
   const what = (t: Task) => t.op === 'CD1' ? `cỡ ${t.order.size} mm²` : t.op === 'CD2' ? `cỡ ${t.order.size} mm², màu ${t.color}`
     : t.op === 'CD5' ? `mã ${t.order.product_code}, vỏ ${t.color}` : `mã ${t.order.product_code}`;
 
+  // ---------- Sổ máy trộn: năng lực theo từng giờ, cấp silicone đúng hạn dùng ----------
+  const kghOf = new Map(mixers.map((m) => [m.code, mixerKgh(cfg, m.code)]));
+  const fillF = Number(cfg.fill_pct) / 100;
+  const shStartH = cal.shifts.map((s) => toMin(s.start_time) / 60);
+  const shLenH = shLenMin.map((x) => x / 60);
+  const dayH = (di: number) => {
+    const n = cal.days.length;
+    return Date.parse(cal.days[Math.min(Math.max(di, 0), n - 1)] + 'T00:00:00Z') / 3600000 + (di >= n ? (di - n + 1) * 24 : 0);
+  };
+  const realAt = (t: number, isEnd = false) => {
+    const tt = isEnd ? t - 1e-7 : t;
+    const di = Math.max(0, Math.floor(tt / DAY)), w = tt - di * DAY;
+    const j = Math.min(SPD - 1, Math.max(0, Math.floor(w / S))), x = Math.max(0, w - j * S);
+    return dayH(di) + shStartH[j] + (x / S) * shLenH[j];
+  };
+  const mixDown = (code: string, t0: number, t1: number) => wins.some((w) => w.machine === code
+    && (t1 > t0 ? t1 > w.from + 1e-9 && t0 < w.to - 1e-9 : w.from <= t0 + 1e-9 && t0 < w.to - 1e-9));
+  type Alloc = { key: string; oid: string; kg: number; co: boolean; useR: number; op: string | null; lane: number };
+  type Bk = { t0: number; t1: number; r0: number; r1: number; cap: number; used: number; early: boolean; ot: boolean; alloc: Alloc[] };
+  const dayEndR = (di: number) => dayH(di) + shStartH[SPD - 1] + shLenH[SPD - 1];
+  const bdays = new Map<number, Bk[]>();
+  const daysB = (di: number): Bk[] => {
+    let b = bdays.get(di); if (b) return b;
+    b = [];
+    const d0 = di * DAY;
+    if (F.mix_early_h > 0 && otOn(di)) {
+      // Trộn sẵn trước giờ vào ca (người trộn ca sớm): từng giờ một, giờ càng sớm càng gần hết hạn dùng
+      const n = Math.ceil(F.mix_early_h - 1e-9);
+      for (let q = n; q >= 1; q--) {
+        const len = Math.min(1, F.mix_early_h - (q - 1)), r1 = dayH(di) + shStartH[0] - (q - 1), r0 = r1 - len;
+        const kgh = mixers.reduce((a, m) => a + (mixDown(m.code, d0, d0) ? 0 : kghOf.get(m.code)!), 0);
+        b.push({ t0: d0, t1: d0, r0, r1, cap: kgh * len * fillF, used: 0, early: true, ot: false, alloc: [] });
+      }
+    }
+    for (let j = 0; j < SPD; j++) {
+      const n = Math.max(1, Math.round(shLenH[j]));
+      for (let q = 0; q < n; q++) {
+        const t0 = d0 + j * S + (q * S) / n, t1 = d0 + j * S + ((q + 1) * S) / n;
+        const kgh = mixers.reduce((a, m) => a + (mixDown(m.code, t0, t1) ? 0 : kghOf.get(m.code)!), 0);
+        b.push({ t0, t1, r0: realAt(t0), r1: realAt(t1, true), cap: (kgh * (t1 - t0)) / 60, used: 0, early: false, ot: false, alloc: [] });
+      }
+    }
+    // Tăng ca máy trộn: trộn sau giờ tan ca (giờ thật), chỉ dùng được cho line chạy tăng ca trong hạn dùng (hoặc sáng hôm sau nếu hạn dùng đủ dài)
+    const maxE = Math.max(0, ...mixers.map((m) => extraOf(m.code, di))) / 60;
+    for (let q = 0; q < Math.ceil(maxE - 1e-9); q++) {
+      const len = Math.min(1, maxE - q), r0 = dayEndR(di) + q;
+      const kg = mixers.reduce((a, m) => a + (mixDown(m.code, d0 + DAY, d0 + DAY) ? 0
+        : kghOf.get(m.code)! * Math.min(1, Math.max(0, extraOf(m.code, di) / 60 - q))), 0) * fillF;
+      b.push({ t0: d0 + DAY, t1: d0 + DAY, r0, r1: r0 + len, cap: kg, used: 0, early: false, ot: true, alloc: [] });
+    }
+    bdays.set(di, b);
+    return b;
+  };
+  // Lấy silicone cho lượng dùng lúc useR (giờ thật): chỉ từ khoảng trộn đã xong trước lúc dùng và chưa quá hạn dùng.
+  // Lấy khoảng trộn gần lúc dùng nhất trước (trộn vừa kịp): giữ phần trộn sớm cho các lần dùng sớm hơn của line khác
+  // Một mẻ phải trộn xong trước khi dùng: khoảng trộn phải xong trước lúc dùng ít nhất thời gian trộn một mẻ (mix_batch_kg ÷ kg/giờ)
+  const batchH = F.mix_batch_kg / Math.max(1e-6, mixers.reduce((a, m) => a + (kghOf.get(m.code) ?? 0), 0));
+  type Rec = { bk: Bk; a: number };
+  const allocate = (t: Task, kg: number, co: boolean, useR: number, di: number, who: { op: string | null; lane: number }, recs?: Rec[]) => {
+    let got = 0;
+    const back = Math.ceil(F.pot_life_h / 24) + 1;
+    for (let d = di; d >= Math.max(0, di - back) && got < kg - 1e-9; d--) for (const bk of [...daysB(d)].reverse()) {
+      if (got >= kg - 1e-9) break;
+      // mẻ đầu của khoảng phải xong trước lúc dùng; lượng dùng được = phần đã trộn tới lúc dùng; chưa quá hạn dùng
+      if (bk.r0 + Math.min(batchH, bk.r1 - bk.r0) > useR + 1e-9 || bk.r0 < useR - F.pot_life_h - 1e-9) continue;
+      const frac = bk.r1 > bk.r0 ? Math.min(1, (useR - bk.r0) / (bk.r1 - bk.r0)) : 1;
+      const a = Math.min(bk.cap * frac - bk.used, kg - got);
+      if (a <= 1e-9) continue;
+      bk.used += a; got += a;
+      bk.alloc.push({ key: t.key, oid: t.order.id, kg: a, co, useR, op: who.op, lane: who.lane });
+      recs?.push({ bk, a });
+    }
+    return got;
+  };
+  const coKg = () => (Number(cfg.changeovers.find((c) => c.code === 'MIX_CODE')?.minutes ?? 0) / 60)
+    * mixers.reduce((a, m) => a + kghOf.get(m.code)!, 0);
+  const bucketAt = (tau: number) => daysB(Math.floor(tau / DAY)).find((b) => !b.early && !b.ot && b.t1 > tau + 1e-9);
+  const undo = (recs: Rec[]) => { for (const r of recs.reverse()) { r.bk.used -= r.a; r.bk.alloc.pop(); } };
+  // Line bọc chạy từ rs với tốc độ v; mỗi khoảng chỉ chạy được phần có silicone (thiếu thì line chạy chậm).
+  // Chưa có silicone thì chưa chạy (không giữ máy, người); đang chạy mà hết silicone thì dừng tại đó, phần còn lại xếp tiếp.
+  // Ngày tăng ca: line chạy nhanh hơn theo tỷ lệ giờ thêm, phần thêm dùng silicone sau giờ tan ca (giờ thật).
+  const runMix = (t: Task, mcode: string, rs: number, v: number, meters: number, limit: number, who: { op: string | null; lane: number }, co: boolean) => {
+    const k = kgPerM(t.order);
+    let tau = rs, left = meters, wait = 0, coLeft = co ? coKg() : 0, start: number | null = null;
+    const hard = Math.min(limit, cal.days.length * DAY);
+    for (let g = 0; left > 1e-6 && tau < hard - 1e-9 && g < 200000; g++) {
+      const bk = bucketAt(tau);
+      const di = Math.floor(tau / DAY), vd = v * boost(mcode, di);
+      const ce = Math.min(bk ? bk.t1 : (di + 1) * DAY, hard, tau + left / vd);
+      const len = ce - tau;
+      if (len <= 1e-9) { tau = bk ? bk.t1 : ce + 1e-6; continue; }
+      const useR = realAt(ce, true), recs: Rec[] = [];
+      const coGot = coLeft > 0 ? allocate(t, coLeft, true, useR, di, who, recs) : 0;
+      let got = 0;
+      if (coLeft - coGot <= 1e-9) {
+        const lb = boost(mcode, di), q = vd * len * k, qOt = lb > 1 ? (q * (lb - 1)) / lb : 0;
+        got = allocate(t, q - qOt, false, useR, di, who, recs);
+        if (qOt > 0) got += allocate(t, qOt, false, dayEndR(di) + extraOf(mcode, di) / 60, di, who, recs);
+      }
+      const mm = Math.min(left, got / k);
+      if (mm <= 1e-6) {
+        undo(recs);
+        if (start !== null) break;   // đang chạy mà hết silicone: dừng tại đây
+        tau = ce; continue;          // chưa có silicone: chờ (không giữ máy)
+      }
+      coLeft -= coGot;
+      if (start === null) start = tau;
+      left -= mm; wait += len - mm / vd; tau = ce;
+    }
+    return { start, end: tau, meters: meters - left, wait, next: tau, horizon: tau >= cal.days.length * DAY - 1e-6 };
+  };
+  // Việc giữ lại chạy qua mốc: lấy silicone theo nhịp cũ; khoảng nào thiếu (lịch cũ chạy chậm lúc chờ trộn) thì dồn sang khoảng sau,
+  // đến cuối khối vẫn thiếu thì bớt mét của khối, phần mét đó xếp lại sau mốc (giữ đủ mét, không dùng silicone chưa trộn)
+  for (const u of preUse) {
+    const k = kgPerM(u.t.order);
+    // người trộn của lịch cũ cho lô này (khối trộn gần mốc nhất)
+    const kk = opt.from ? (S * SPD) / (opt.from.S * opt.from.SPD) : 1;
+    const old = (opt.from?.slots ?? []).filter((x) => x.op === 'CD0' && x.lineId === u.t.order.id && x.operator)
+      .sort((a, b) => Math.abs(a.end * kk - u.from) - Math.abs(b.end * kk - u.from))[0];
+    u.who = old ? { op: old.operator, lane: old.lane || 0 } : { op: null, lane: 0 };
+    let carry = 0;
+    for (let tau = u.from, g = 0; tau < u.to - 1e-9 && g < 100000; g++) {
+      const bk = bucketAt(tau);
+      const ce = Math.min(bk ? bk.t1 : (Math.floor(tau / DAY) + 1) * DAY, u.to);
+      if (ce - tau > 1e-9) {
+        const q = u.rate * (ce - tau) * k + carry;
+        carry = q - allocate(u.t, q, false, realAt(ce, true), Math.floor(tau / DAY), u.who);
+      }
+      tau = Math.max(ce, tau + 1e-6);
+    }
+    if (carry > 1e-6) {
+      const mm = Math.min(carry / k, u.sl.meters);
+      u.sl.meters -= mm; u.sl.part = true;
+      u.sl.rate = u.sl.meters / Math.max(1e-6, u.sl.end - u.sl.runStart);
+      u.t.m += mm;
+      if (u.t.m > 1 && !pending.has(u.t.id)) {
+        u.t.run = u.t.rate > 0 ? u.t.m / u.t.rate : Infinity;
+        pending.add(u.t.id);
+        opDone.get(key(u.t.order.id, u.t.op))!.left++;
+      } else if (pending.has(u.t.id)) u.t.run = u.t.rate > 0 ? u.t.m / u.t.rate : Infinity;
+    }
+  }
+  // Người trộn: cần một làn người có tay nghề máy trộn (khác làn đang đứng line) trong suốt lúc line silicone chạy
+  const mixSkilled = workers.filter((w) => mixers.some((mx) => w.skills.includes(mx.code)));
+  const mixRes = new Map<string, { from: number; until: number }>(); // làn người trộn: giữ cho máy trộn từ … đến …
+  // Xếp lại: line silicone giữ lại chạy qua mốc vẫn cần người trộn của lịch cũ đến hết khối (không giao người đó việc khác)
+  for (const u of preUse) {
+    const w = u.who.op ? workers.find((x) => x.code === u.who.op) : undefined;
+    if (!w) continue;
+    const li = Math.min(u.who.lane, cap - 1), k = w.code + '|' + li, r0 = mixRes.get(k);
+    if (r0) r0.until = Math.max(r0.until, u.to); else mixRes.set(k, { from: u.from, until: u.to });
+    w.lanes[li] = Math.max(w.lanes[li], u.to);
+  }
+  const mixGate = (ln: { w: (typeof workers)[number]; li: number }) => {
+    if (!mixSkilled.length) return { w: null as (typeof workers)[number] | null, li: 0, at: 0 };
+    let best: { w: (typeof workers)[number] | null; li: number; at: number; res: boolean } | null = null;
+    for (const w of mixSkilled) w.lanes.forEach((f, li) => {
+      if (w === ln.w && li === ln.li) return;
+      const res = mixRes.get(w.code + '|' + li);
+      const at = res !== undefined && f <= res.until + 1e-9 ? res.from : f;
+      if (!best || at < best.at || (at === best.at && res !== undefined && !best.res)) best = { w, li, at, res: res !== undefined };
+    });
+    return best as { w: (typeof workers)[number] | null; li: number; at: number } | null;
+  };
+  // Line silicone: chọn cùng lúc làn người đứng line và làn người trộn (khác nhau) sao cho cả hai rảnh sớm nhất
+  const pairFor = (code: string) => {
+    let best: { ln: { w: (typeof workers)[number]; li: number; f: number }; gate: NonNullable<ReturnType<typeof mixGate>>; at: number } | null = null;
+    for (const w of workers) if (w.skills.includes(code)) w.lanes.forEach((f, li) => {
+      const gate = mixGate({ w, li });
+      if (!gate) return;
+      const at = Math.max(f, gate.at);
+      if (!best || at < best.at) best = { ln: { w, li, f }, gate, at };
+    });
+    return best as { ln: { w: (typeof workers)[number]; li: number; f: number }; gate: NonNullable<ReturnType<typeof mixGate>>; at: number } | null;
+  };
+  const mixWait = new Map<string, number>();
+
   let guard = 0;
   while (pending.size && guard++ < 50000) {
-    const opts: { m: (typeof machines)[number]; t: Task; r: number; st: number; raw: number; hit: string | null; rs: number; sp: Speed; run: number; lead: Task; ln: NonNullable<ReturnType<typeof laneFor>> }[] = [];
+    type Ln = NonNullable<ReturnType<typeof laneFor>>;
+    type Gate = ReturnType<typeof mixGate>;
+    type Opt = { m: (typeof machines)[number]; t: Task; r: number; st: number; raw: number; hit: string | null; rs: number; sp: Speed; run: number; lead: Task;
+      ln: Ln; gate: Gate; bl: Block[] };
+    const opts: Opt[] = [];
     for (const m of machines) {
-      const ln = laneFor(m.code); if (!ln) continue;
-      const bl = [...m.blocks, ...ln.w.blocks[ln.li]];
-      const cands: Cand[] = [];
+      const ln0 = laneFor(m.code); if (!ln0) continue;
+      let pair: ReturnType<typeof pairFor> | undefined;
+      const cands: (Cand & { ln: Ln; gate: Gate; bl: Block[] })[] = [];
       for (const id of pending) {
         const t = tasks[id];
         if (!canRun(m.machine_type, t)) continue;
-        const sp = spOf(m.code, t), run = t.m / sp.v;
-        const r = ready(t, run); if (r !== null) cands.push({ t, r, sp, run });
+        let ln: Ln = ln0, gate: Gate = null;
+        if (usesMix(t)) { if (pair === undefined) pair = pairFor(m.code); if (!pair) continue; ln = pair.ln; gate = pair.gate; }
+        const sp = spOf(m.code, t);
+        if (!(sp.v > 0)) { warnings.add(`Chưa có tốc độ ${OP_NAME[t.op].toLowerCase()} cho máy ${m.code} (Hồ sơ máy → Tốc độ hoặc Tham số xếp lịch): không xếp việc này lên máy`); continue; }
+        const run = t.m / sp.v;
+        const r = ready(t, run, sp.v);
+        if (r !== null) cands.push({ t, r, sp, run, ln, gate, bl: [...m.blocks, ...ln.w.blocks[ln.li]] });
       }
       if (!cands.length) continue;
       // Bắt đầu sớm nhất trên máy này, đã tránh khối máy hỏng / bảo dưỡng / giữ chỗ (máy hỏng thì máy cùng loại thắng)
-      const rawOf = (x: { r: number }) => Math.max(m.free, x.r, ln.f);
-      const startOf = (x: Cand) => fit(rawOf(x), x.run, bl).s;
+      const rawOf = (x: (typeof cands)[number]) => Math.max(m.free, x.r, x.ln.f, x.gate ? x.gate.at : 0);
+      const startOf = (x: (typeof cands)[number]) => fit(rawOf(x), x.run, x.bl).s;
       const ok = cands.filter((x) => Number.isFinite(startOf(x)));
       if (!ok.length) continue;
       const minStart = Math.min(...ok.map(startOf));
-      const pool = ok.filter((x) => startOf(x) <= minStart + S / 2);
-      const { x, lead, su } = pick(pool, m.last);
-      const f = fit(rawOf(x), su + x.run, bl);
+      const pool = ok.filter((x) => startOf(x) <= minStart + PW);
+      const { x: xc, lead, su } = pick(pool, m.last);
+      const x = xc as (typeof cands)[number];
+      const f = fit(rawOf(x), su + x.run, x.bl);
       if (!Number.isFinite(f.s)) continue;
-      opts.push({ m, t: x.t, r: x.r, st: f.s, raw: rawOf(x), hit: f.s > rawOf(x) ? f.hit : null, rs: f.s + su, sp: x.sp, run: x.run, lead: lead.t, ln });
+      opts.push({ m, t: x.t, r: x.r, st: f.s, raw: rawOf(x), hit: f.s > rawOf(x) ? f.hit : null, rs: f.s + su, sp: x.sp, run: x.run, lead: lead.t, ln: x.ln, gate: x.gate, bl: x.bl });
     }
     if (!opts.length) break;
-    // máy dùng chung người: trong nửa ca đầu, ưu tiên đơn gấp và hạn giao sớm
+    // Trong nửa ca đầu: đơn gấp, thứ tự tối ưu, hạn giao sớm; rồi máy xong sớm nhất (máy nhanh hơn thắng)
     const minRs = Math.min(...opts.map((o) => o.rs));
-    const best = opts.filter((o) => o.rs <= minRs + S / 2)
-      .sort((a, b) => byPrio(a.t.order, b.t.order) || a.rs - b.rs)[0];
+    const best = opts.filter((o) => o.rs <= minRs + PW)
+      .sort((a, b) => byPrio(a.t.order, b.t.order) || (a.rs + a.run) - (b.rs + b.run) || a.rs - b.rs)[0];
     const { m, t, ln, sp, run, lead } = best;
     const [su, why] = changeover(cfg, m.last, t);
-    const preds = predOps(t.order.route, t.k);
+    const preds = predOps(t.order.route, t.k, supply);
     const prevOp = preds.length ? preds.reduce((a, b) => (opDone.get(key(t.order.id, b))!.end > opDone.get(key(t.order.id, a))!.end ? b : a)) : null;
-    const st0 = best.st;
+    let st0 = best.st;
     let reason: string;
-    if (prevOp && st0 === best.r && best.r > m.free && best.r >= ln.f) reason = `Chờ ${OP_NAME[prevOp].toLowerCase()} của lệnh này chạy trước ít nhất 1 ca (gối đầu)`;
+    const qcTxt = `bobin đầu tiên + QC ${Math.round(F.qc_min)} phút${SAFE(prevOp ?? 'CD0') > 0 ? ` + đệm ${Math.round(Number(F.safety_min[prevOp!]))} phút` : ''}`;
+    if (prevOp && st0 === best.r && best.r > m.free && best.r >= ln.f) reason = `Chờ ${OP_NAME[prevOp].toLowerCase()} của lệnh này làm xong ${qcTxt} (gối đầu)`;
     else if (st0 === ln.f && ln.f > m.free) reason = `Chờ người: ${ln.w.code} đang đứng máy khác, xong việc mới sang máy này`;
+    else if (best.gate && st0 === best.gate.at && best.gate.at > m.free) reason = `Chờ người trộn silicone (${best.gate.w?.code}) rảnh`;
     else reason = m.last ? 'Máy làm xong việc trước thì chạy tiếp' : 'Máy và người đều sẵn, chạy ngay';
     const dmy = (d: string | null) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'chưa có';
     if (best.hit) reason += ` · Dời sau ${best.hit}`;
@@ -469,18 +820,115 @@ export function schedule(
     if (sp.src === 'PLC') reason += ` · Tốc độ ${v1} m/phút thực tế PLC 30 ngày (${sp.note})`;
     else if (sp.src === 'MAY') reason += ` · Tốc độ ${v1} m/phút theo bảng tự nhập của máy${sp.pending ? ' (chưa duyệt)' : ''}${sp.note ? ', ' + sp.note : ''}`;
     else if (sp.note) reason += ` · Tốc độ ${v1} m/phút mặc định theo công đoạn, ${sp.note}`;
-    const end = st0 + su + run;
+    let end = hasOt(m.code) ? advance(m.code, st0 + su, t.m, sp.v) : st0 + su + run, meters = t.m, part = false;
+    if (hasOt(m.code)) {
+      // ngày tăng ca chạy nhanh hơn: vẫn không được xong trước việc trước + QC + bobin cuối
+      const need = minEnd(t, run, sp.v);
+      for (let g = 0; g < 5 && end < need - 1e-6; g++) { st0 += need - end; end = advance(m.code, st0 + su, t.m, sp.v); }
+    }
+    let rate = t.m / Math.max(1e-6, end - st0 - su);
+    if (hasOt(m.code) && end < st0 + su + run - 1e-6) reason += ` · Ngày tăng ca ${F.ot_from ? `${dmy(F.ot_from)}–${dmy(F.ot_until ?? null)}` : ''}: +${Math.round(Number(F.extra_min[m.code]))} phút/ngày`;
+    if (usesMix(t)) {
+      // Line silicone: chạy theo lượng silicone máy trộn cấp được (đúng hạn dùng); gặp khối máy dừng thì tạm dừng, phần còn lại xếp sau
+      const nb = best.bl.filter((b) => b[1] > st0 + su + 1e-9).reduce((a, b) => Math.min(a, Math.max(b[0], st0 + su)), Infinity);
+      const who = { op: best.gate?.w?.code ?? null, lane: best.gate?.li ?? 0 };
+      const prevSil = m.last && m.last.op === 'CD2' && m.last.order.product_code === t.order.product_code && m.last.color === t.color;
+      const res = runMix(t, m.code, st0 + su, sp.v, t.m, nb, who, !prevSil);
+      if (res.start === null || res.meters <= 1e-6) {
+        // Chưa có silicone đến hết khoảng xét: thử lại sau; cả kế hoạch không có silicone thì báo không xếp được
+        if (res.horizon) { pending.delete(t.id); dead.add(t.id); opDone.get(key(t.order.id, t.op))!.left--; }
+        else notBefore.set(t.id, Math.max(res.next, (notBefore.get(t.id) ?? 0) + 1e-3));
+        continue;
+      }
+      const delay = res.start - (st0 + su);
+      if (delay > 1e-6) { st0 += delay; reason += ` · Chờ máy trộn có silicone ${Math.round(delay / real2s)} phút`; }
+      end = res.end; meters = res.meters; rate = meters / Math.max(1e-6, end - st0 - su); part = meters < t.m - 1;
+      reason += ` · Máy trộn cấp silicone theo nhịp line (hạn dùng ${F.pot_life_h} giờ)`;
+      if (res.wait > S / 16) {
+        reason += ` · Chờ silicone ${Math.round(res.wait / real2s)} phút: máy trộn không cấp kịp, bình quân ${Math.round(rate * 10) / 10} m/phút`;
+        mixWait.set(m.code, (mixWait.get(m.code) ?? 0) + res.wait / real2s);
+      }
+      if (part) reason += ' · Tạm dừng, phần còn lại xếp tiếp';
+      if (best.gate?.w) {
+        const g = best.gate.w, li = best.gate.li, k = g.code + '|' + li, f = g.lanes[li], r0 = mixRes.get(k);
+        if (r0 && f <= r0.until + 1e-9) r0.until = Math.max(r0.until, end);
+        else mixRes.set(k, { from: f, until: Math.max(f, end) });
+        g.lanes[li] = Math.max(f, end);
+      }
+    }
     m.slots.push({
       key: t.key, lineId: t.order.id, op: t.op, color: t.color, machine: m.code, operator: ln.w.code, lane: ln.li,
-      start: st0, runStart: st0 + su, end, setup: su, meters: t.m, rate: sp.v, speed: sp.v, reason, why, part: false,
+      start: st0, runStart: st0 + su, end, setup: su, meters, rate, speed: sp.v, reason, why, part,
     });
     m.free = end; m.last = { order: t.order, op: t.op, color: t.color }; ln.w.lanes[ln.li] = end;
+    markSpan(t, st0 + su, end, rate);
     const d = opDone.get(key(t.order.id, t.op))!;
-    d.start = Math.min(d.start, st0 + su); d.end = Math.max(d.end, end); d.left--;
+    d.start = Math.min(d.start, st0 + su); d.end = Math.max(d.end, end);
+    if (part) { t.m -= meters; t.run = t.m / t.rate; continue; }
+    d.left--;
     pending.delete(t.id);
   }
+
+  // ---------- Lịch máy trộn: từ sổ cấp silicone ra các khối trộn trên máy trộn ----------
+  let mixLog: MixLog | undefined;
+  if (supply) {
+    const mixSlots: Slot[] = [];
+    const uses: MixLog['uses'] = [];
+    for (const [, bks] of [...bdays.entries()].sort((a, b) => a[0] - b[0])) {
+      const early = bks.filter((b) => b.early);
+      const ots = bks.filter((b) => b.ot);
+      const inShift = bks.filter((b) => !b.early && !b.ot);
+      for (const b of bks) for (const a of b.alloc) uses.push({ key: a.key, kg: a.kg, mixR0: b.r0, mixR1: b.r1, useR: a.useR });
+      inShift.forEach((b, i) => {
+        const last = i === inShift.length - 1;
+        const allocs = [...(i === 0 ? early.flatMap((e) => e.alloc) : []), ...b.alloc, ...(last ? ots.flatMap((e) => e.alloc) : [])];
+        if (!allocs.length) return;
+        const agg = new Map<string, { oid: string; kgM: number; kgC: number; op: string | null; lane: number }>();
+        for (const a of allocs) {
+          const g = agg.get(a.oid) ?? { oid: a.oid, kgM: 0, kgC: 0, op: a.op, lane: a.lane };
+          if (a.co) g.kgC += a.kg; else g.kgM += a.kg;
+          agg.set(a.oid, g);
+        }
+        const capB = b.cap + (i === 0 ? early.reduce((s, e) => s + e.cap, 0) : 0) + (last ? ots.reduce((s, e) => s + e.cap, 0) : 0);
+        const tot = [...agg.values()].reduce((s, g) => s + g.kgM + g.kgC, 0);
+        const avail = mixers.filter((mx) => !mixDown(mx.code, b.t0, b.t1));
+        const useM = avail.length ? avail : mixers.slice(0, 1);
+        const totK = useM.reduce((s, mx) => s + kghOf.get(mx.code)!, 0) || 1;
+        for (const mx of useM) {
+          const share = kghOf.get(mx.code)! / totK;
+          let x = b.t0;
+          for (const g of agg.values()) {
+            const o = orderById.get(g.oid)!;
+            const len = ((b.t1 - b.t0) * (g.kgM + g.kgC)) / Math.max(tot, capB);
+            const su = len * (g.kgC / Math.max(1e-9, g.kgM + g.kgC));
+            const meters = ((g.kgM * share) / Number(o.mix)) * 1000;
+            // mỗi khoảng trộn (theo giờ) một khối: lượng trong khối đều theo thời gian, cắt tại mốc xếp lại đúng lượng
+            mixSlots.push({
+              key: `${g.oid}|CD0|`, lineId: g.oid, op: 'CD0', color: null, machine: mx.code, operator: g.op, lane: g.lane,
+              start: x, runStart: x + su, end: x + len, setup: su, meters, rate: meters / Math.max(1e-6, len - su), speed: kghOf.get(mx.code)!,
+              reason: `Trộn theo nhịp line silicone, chỉ trộn lượng line dùng hết trong ${F.pot_life_h} giờ (${Math.round(kghOf.get(mx.code)! * 10) / 10} kg/giờ${F.mix_early_h > 0 ? `, trộn sẵn trước ca ${F.mix_early_h} giờ` : ''})`,
+              why: su > 0 ? 'đổi công thức trộn, vệ sinh trục cán' : '', part: false,
+            });
+            x += len;
+          }
+        }
+      });
+    }
+    for (const s of mixSlots) {
+      const m = machines.find((x) => x.code === s.machine)!;
+      m.slots.push(s);
+      const d = opDone.get(key(s.lineId, 'CD0'));
+      if (d) { d.start = Math.min(d.start, s.runStart); d.end = Math.max(d.end, s.end); }
+    }
+    const buckets = [...bdays.values()].flat().map((b) => ({ r0: b.r0, r1: b.r1, t0: b.t0, t1: b.t1, cap: b.cap, used: b.used, early: b.early }));
+    mixLog = { kgh: mixers.reduce((a, m) => a + kghOf.get(m.code)!, 0), pot_life_h: F.pot_life_h, batch_h: batchH, buckets, uses, wait_min: Object.fromEntries(mixWait) };
+  }
   const byMachine = new Map(machines.map((m) => [m.code, m.slots.sort((a, b) => a.start - b.start)]));
-  return { slots: machines.flatMap((m) => m.slots), byMachine, opDone, unplaced: [...pending].map((id) => tasks[id]), S, SPD, RUN: cal.RUN };
+  return {
+    slots: machines.flatMap((m) => m.slots), byMachine, opDone, unplaced: [...pending, ...dead].map((id) => tasks[id]), S, SPD, RUN: cal.RUN, mix: mixLog,
+    warnings: [...warnings, ...(supply && mixers.every((m) => !(kghOf.get(m.code)! > 0)) ? ['Máy trộn chưa có năng lực (kg/giờ): line silicone không chạy được'] : []),
+      ...[...dead].map((id) => `Không có silicone cho ${tasks[id].order.label} ${tasks[id].order.product_code} màu ${tasks[id].color ?? ''}: máy trộn ngừng hoặc thiếu người trộn`)],
+  };
 }
 
 // ---------------- Ngày xong, tình trạng ----------------
