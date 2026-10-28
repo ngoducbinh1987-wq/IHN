@@ -50,9 +50,24 @@ export function validateSchedule(
   // 6. Máy trộn: không vượt năng lực từng giờ; silicone dùng trong hạn; đủ lượng cho line
   if (sch.mix) {
     for (const b of sch.mix.buckets) if (b.used > b.cap + 1e-6) bad.push(`máy trộn vượt năng lực (${b.used.toFixed(1)} > ${b.cap.toFixed(1)} kg)`);
+    const bh = sch.mix.batch_h;
+    const perBucket = new Map<string, typeof sch.mix.uses>();
     for (const u of sch.mix.uses) {
-      if (u.mixR1 > u.useR + 1e-6) bad.push(`${u.key}: dùng silicone trước khi trộn xong`);
+      // mẻ đầu của khoảng trộn phải xong trước lúc dùng; không quá hạn dùng
+      if (u.mixR0 + Math.min(bh, u.mixR1 - u.mixR0) > u.useR + 1e-6) bad.push(`${u.key}: dùng silicone trước khi trộn xong mẻ đầu`);
       if (u.mixR0 < u.useR - sch.mix.pot_life_h - 1e-6) bad.push(`${u.key}: silicone quá hạn dùng (${(u.useR - u.mixR0).toFixed(2)} giờ > ${sch.mix.pot_life_h})`);
+      const k = u.mixR0 + '|' + u.mixR1;
+      perBucket.set(k, [...(perBucket.get(k) ?? []), u]);
+    }
+    // tới lúc dùng, lượng đã lấy từ một khoảng trộn không vượt phần đã trộn được tới lúc đó
+    for (const b of sch.mix.buckets) {
+      const list = (perBucket.get(b.r0 + '|' + b.r1) ?? []).sort((x, y) => x.useR - y.useR);
+      let cum = 0;
+      for (const u of list) {
+        cum += u.kg;
+        const frac = b.r1 > b.r0 ? Math.min(1, (u.useR - b.r0) / (b.r1 - b.r0)) : 1;
+        if (cum > b.cap * frac + 1e-6) { bad.push(`${u.key}: dùng nhiều hơn lượng đã trộn tới lúc đó`); break; }
+      }
     }
     for (const o of orders) if (o.route.includes('CD0') && Number(o.mix) > 0) {
       const need = sch.slots.filter((s) => s.lineId === o.id && s.op === 'CD2' && s.start >= from - eps).reduce((a, s) => a + s.meters, 0) * Number(o.mix) / 1000 / Math.max(1, o.cores.length);

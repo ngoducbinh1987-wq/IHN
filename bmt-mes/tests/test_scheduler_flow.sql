@@ -41,12 +41,12 @@ set client_min_messages = notice;
 
 -- Tạm ngưng tài khoản thật trong giao dịch; dùng người thử F_*
 update core.profiles set status = 'INACTIVE' where employee_code not like 'F\_%' and status = 'ACTIVE';
-with u(code) as (values ('F_BGD'), ('F_SXTP'), ('F_KTTP'), ('F_SXKH')),
+with u(code) as (values ('F_BGD'), ('F_SXTP'), ('F_KTTP'), ('F_SXKH'), ('F_ADM')),
 ins as (insert into auth.users (id, email) select gen_random_uuid(), lower(code) || '@bmt.test' from u returning id, email)
 insert into core.profiles (id, employee_code, full_name, status)
 select id, upper(split_part(email, '@', 1)), 'Test ' || split_part(email, '@', 1), 'ACTIVE' from ins;
 insert into core.user_roles (user_id, role_code)
-select p.id, u.role from core.profiles p join (values ('F_BGD','BGD'),('F_SXTP','SX_TP'),('F_KTTP','KT_TP'),('F_SXKH','SX_KH')) u(code, role) on u.code = p.employee_code;
+select p.id, u.role from core.profiles p join (values ('F_BGD','BGD'),('F_SXTP','SX_TP'),('F_KTTP','KT_TP'),('F_SXKH','SX_KH'),('F_ADM','ADMIN')) u(code, role) on u.code = p.employee_code;
 -- Đưa thông số về mặc định trong giao dịch (dữ liệu thật có thể đã sửa)
 update master.planning_config set qc_min = 120, qc_learn = true, pot_life_h = 8, mix_batch_kg = 25, mix_early_max_h = 4, ot_max_min = 240, ot_month_h = 40,
   size_large_mm2 = 2.5, plc_min_run = 120, pick_window_min = null, extra_min = '{}', mix_early_h = 0, ot_from = null, ot_until = null, ot_request_id = null,
@@ -146,7 +146,8 @@ select pg_temp.as_user('F_SXTP');
 select pg_temp.blocked($q$select app.kh_ot_end((select id from ot2), ' ')$q$, 'lý do', 'Kết thúc phải có lý do');
 select pg_temp.ok(pg_temp.api_val($q$select app.kh_ot_end((select id from ot2), 'Máy trộn đủ năng lực')::text$q$) = '', 'TP SX kết thúc trộn sớm');
 select pg_temp.ok((select extra_min = '{}' and mix_early_h = 0 and ot_request_id is null and ot_from is null from master.planning_config where id = 1)
-  and (select status = 'ENDED' from plan.overtime_requests where id = (select id from ot2)), 'Kết thúc: tham số về không tăng ca');
+  and (select status = 'ENDED' and ended_on = (select d from today) from plan.overtime_requests where id = (select id from ot2)), 'Kết thúc: tham số về không tăng ca, ghi ngày cuối có hiệu lực');
+select pg_temp.ok((select ended_on = date_from - 1 from plan.overtime_requests where id = (select id from ot1)), 'Đề xuất bị thay từ ngày đầu: không còn ngày nào tính giờ tháng');
 -- Đề xuất mới thay đề xuất đang chờ
 select pg_temp.ok(pg_temp.api_val($q$select (app.kh_ot_propose(null, jsonb_build_object('mix_early_h', 1, 'date_from', (select d from today), 'date_to', (select d + 1 from today), 'reason', 'A')) is not null)::text$q$) = 'true', 'Đề xuất A');
 select pg_temp.ok(pg_temp.api_val($q$select (app.kh_ot_propose(null, jsonb_build_object('mix_early_h', 2, 'date_from', (select d from today), 'date_to', (select d + 1 from today), 'reason', 'B')) is not null)::text$q$) = 'true', 'Đề xuất B');
@@ -156,6 +157,36 @@ select pg_temp.ok(pg_temp.api_val($q$select count(*)::text from app.v_kh_overtim
 select pg_temp.as_user('F_BGD');
 select pg_temp.ok(pg_temp.api_val($q$select app.kh_ot_review((select id from plan.overtime_requests where reason = 'B'), false, 'Chưa cần')::text$q$) = '', 'Giám đốc trả lại đề xuất B');
 select pg_temp.ok((select status = 'RETURNED' and review_note = 'Chưa cần' from plan.overtime_requests where reason = 'B'), 'Đề xuất B bị trả lại có ý kiến');
+-- Đề xuất của người khác bị thay thì người đó nhận thông báo
+select pg_temp.as_user('F_SXKH');
+select pg_temp.ok(pg_temp.api_val($q$select (app.kh_ot_propose(null, jsonb_build_object('mix_early_h', 1, 'date_from', (select d from today), 'date_to', (select d + 1 from today), 'reason', 'C')) is not null)::text$q$) = 'true', 'Kế hoạch SX đề xuất C');
+select pg_temp.as_user('F_SXTP');
+select pg_temp.ok(pg_temp.api_val($q$select (app.kh_ot_propose(null, jsonb_build_object('mix_early_h', 1, 'date_from', (select d from today), 'date_to', (select d + 1 from today), 'reason', 'D')) is not null)::text$q$) = 'true', 'TP SX đề xuất D thay C');
+select pg_temp.ok(exists (select 1 from wf.notifications n join core.profiles p on p.id = n.user_id where p.employee_code = 'F_SXKH' and n.title like 'Đề xuất tăng ca % được thay bằng %'),
+  'Người lập C nhận thông báo đề xuất bị thay');
+-- Quản trị đề xuất: không tự áp, chờ Giám đốc duyệt
+select pg_temp.as_user('F_ADM');
+select pg_temp.ok(pg_temp.api_val($q$select (app.kh_ot_propose(null, jsonb_build_object('mix_early_h', 1, 'date_from', (select d from today), 'date_to', (select d + 1 from today), 'reason', 'E')) is not null)::text$q$) = 'true', 'Quản trị đề xuất E');
+select pg_temp.ok((select status = 'PROPOSED' from plan.overtime_requests where reason = 'E') and (select mix_early_h = 0 and ot_request_id is null from master.planning_config where id = 1),
+  'Đề xuất của Quản trị chờ Giám đốc duyệt, chưa áp');
+select pg_temp.as_user('F_BGD');
+select pg_temp.ok(pg_temp.api_val($q$select app.kh_ot_review((select id from plan.overtime_requests where reason = 'E'), false, 'Không cần')::text$q$) = '', 'Giám đốc trả lại E');
+
+-- ================================================================ 4b. Giới hạn ngày (tăng ca + trộn sớm) và giới hạn tháng cộng dồn
+select pg_temp.blocked($q$select app.kh_ot_propose(null, jsonb_build_object('extra_min', '{"SIL-MIX": 150}'::jsonb, 'mix_early_h', 1, 'date_from', (select d + 1 from today), 'date_to', (select d + 2 from today), 'reason', 'thử'))$q$,
+  'tăng ca + trộn sớm', 'Người trộn: tăng ca 150 phút + trộn sớm 1 giờ > 180 phút/ngày bị chặn');
+create temp table mo as select (date_trunc('month', (select d from today)) + interval '2 month')::date as m;
+grant select on mo to authenticated;
+select pg_temp.ok(pg_temp.api_val($q$select (app.kh_ot_propose(null, jsonb_build_object('extra_min', '{"BUN-01": 150}'::jsonb, 'date_from', (select m from mo), 'date_to', (select m + 11 from mo), 'reason', 'X')) is not null)::text$q$) = 'true',
+  'Giám đốc duyệt ngay tăng ca X: bện 150 phút/ngày, 12 ngày đầu tháng');
+select pg_temp.blocked($q$select app.kh_ot_propose(null, jsonb_build_object('extra_min', '{"BUN-01": 150}'::jsonb, 'date_from', (select m + 12 from mo), 'date_to', (select m + 23 from mo), 'reason', 'Y'))$q$,
+  'đã duyệt trước', 'Tăng ca Y nửa sau tháng: cộng dồn với X vượt 40 giờ/tháng bị chặn');
+select pg_temp.ok(pg_temp.api_val($q$select (app.kh_ot_propose(null, jsonb_build_object('extra_min', '{"BUN-01": 30}'::jsonb, 'date_from', (select m + 12 from mo), 'date_to', (select m + 23 from mo), 'reason', 'Y2')) is not null)::text$q$) = 'true',
+  'Tăng ca Y2 30 phút/ngày nửa sau tháng: cộng dồn vẫn trong 40 giờ');
+select pg_temp.ok((select status = 'ENDED' and ended_on = (select m + 11 from mo) from plan.overtime_requests where reason = 'X'),
+  'X kết thúc khi Y2 bắt đầu: tính đủ 12 ngày đã áp');
+select pg_temp.blocked($q$select app.kh_ot_propose(null, jsonb_build_object('extra_min', '{"BUN-01": 150}'::jsonb, 'date_from', (select m + 24 from mo), 'date_to', (select (m + interval '1 month - 1 day')::date from mo), 'reason', 'Z'))$q$,
+  'đã duyệt trước', 'Cuối tháng thêm 150 phút/ngày: X + phần trước của Y2 đã gần đủ giờ tháng → bị chặn');
 
 -- ================================================================ 5. Quyền: người ngoài không gọi được hàm nội bộ
 select pg_temp.blocked($q$select plan.ot_apply((select id from ot1))$q$, 'permission denied', 'Người dùng không gọi thẳng hàm áp tăng ca');

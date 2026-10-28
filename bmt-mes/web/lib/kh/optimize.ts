@@ -24,7 +24,8 @@ export type Levers = {
   min_step_gain_day?: number;   // fastest: mỗi bước thêm giờ phải rút ngắn ít nhất số ngày này, mặc định 0,1
   max_evals?: number;           // giới hạn số lần chạy bộ xếp lịch, mặc định 600
   reorder?: boolean;            // thử đổi thứ tự lô, mặc định true
-  time_ms?: number;             // giới hạn thời gian tìm (ms), mặc định 4000 (trang web không chờ lâu)
+  time_ms?: number;             // chặn an toàn thời gian tìm (ms), mặc định 15000; kết quả phụ thuộc số lần thử, không phụ thuộc tốc độ máy chủ
+  reorder_evals?: number;       // số lần thử đổi thứ tự lô, mặc định 200 (Xếp lịch và thẻ Tối ưu dùng cùng số → cùng kết quả)
   levers?: boolean;             // thử thêm giờ (tăng ca / trộn sớm), mặc định true
 };
 export type Score = { unplaced: number; late: number; lateLots: number; makespan: number; setup: number; flow: number };
@@ -34,7 +35,7 @@ export type WhatIf = { label: string; days: number; gain: number };
 export type OptResult = {
   orders: Order[]; flow: FlowCfg; sch: Schedule; score: Score;
   base: { sch: Schedule; score: Score };       // lịch theo cách xếp thường (không đổi thứ tự, không thêm giờ)
-  ordered: { sch: Schedule; score: Score };    // sau khi tối ưu thứ tự lô (chưa thêm giờ)
+  ordered: { sch: Schedule; score: Score; ords: Order[] };    // sau khi tối ưu thứ tự lô (chưa thêm giờ)
   bottleneck: GroupLoad[]; proposals: Proposal[]; early_h: number; whatIf: WhatIf[]; evals: number; log: string[];
 };
 
@@ -89,12 +90,12 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   const mpo = Math.max(1, Number(ctx.cfg.machines_per_operator) || 1);
   const F0 = flowOf(ctx.cfg);
   let evals = 0;
-  const t0 = Date.now(), timeMs = lv.time_ms ?? 4000;
+  const t0 = Date.now(), timeMs = lv.time_ms ?? 15000;
   const over = (budget = maxEvals) => evals >= budget || Date.now() - t0 > timeMs;
   const run = (ords: Order[], flow: FlowCfg) => {
     evals++;
     const sch = schedule(ords, { ...ctx, cfg: { ...ctx.cfg, flow } }, opt);
-    return { sch, score: scoreOf(sch, ctx.cal, ords) };
+    return { sch, score: scoreOf(sch, ctx.cal, ords), ords };
   };
   const baseFlow: FlowCfg = { ...(ctx.cfg.flow ?? {}), extra_min: { ...F0.extra_min }, mix_early_h: F0.mix_early_h };
   const base = run(orders, baseFlow);
@@ -107,7 +108,7 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
     return orders.map((o) => ({ ...o, seq: pos.get(o.id)! }));
   };
   let cur = run(withSeq(seqd), baseFlow);
-  if (cmpScore(base.score, cur.score) < 0) { cur = base; seqd = [...orders]; }
+  if (cmpScore(base.score, cur.score) < 0) cur = base; // giữ thứ tự (và seq) đã có
   const reorder = (flow: FlowCfg, budget: number) => {
     if (lv.reorder === false) return;
     for (let pass = 0, improved = true; improved && pass < 3; pass++) {
@@ -122,7 +123,7 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
       }
     }
   };
-  reorder(baseFlow, Math.floor(maxEvals * 0.4));
+  reorder(baseFlow, Math.min(maxEvals, 1 + (lv.reorder_evals ?? 200)));
   const ordered = cur;
 
   // 2. Máy cổ chai và "nếu thêm giờ thì sao"
@@ -134,7 +135,8 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   type Lever = { kind: 'ot'; group: string } | { kind: 'early' };
   const levers: Lever[] = [...groups.map((g) => ({ kind: 'ot' as const, group: g })), ...(hasMixer && earlyMax > 0 ? [{ kind: 'early' as const }] : [])];
   const apply = (flow: FlowCfg, ls: Lever[]): FlowCfg | null => {
-    const f: FlowCfg = { ...flow, extra_min: { ...(flow.extra_min ?? {}) } };
+    // đề xuất mới thay tăng ca đang áp dụng: tính cho mọi ngày của kế hoạch (khoảng ngày chọn khi đề xuất)
+    const f: FlowCfg = { ...flow, extra_min: { ...(flow.extra_min ?? {}) }, ot_from: null, ot_until: null };
     for (const l of ls) {
       if (l.kind === 'early') { const e = Number(f.mix_early_h ?? 0) + earlyStep; if (e > earlyMax + 1e-9) return null; f.mix_early_h = e; }
       else for (const m of machinesOf(l.group)) { const e = Number(f.extra_min![m] ?? 0) + otStep; if (e > otMax + 1e-9) return null; f.extra_min![m] = e; }
@@ -145,7 +147,7 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
   const whatIf: WhatIf[] = [];
   for (const l of levers) {
     const f = apply(baseFlow, [l]); if (!f || over()) continue;
-    const r = run(withSeq(seqd), f);
+    const r = run(cur.ords, f);
     whatIf.push({ label: l.kind === 'early' ? `Trộn sớm ${earlyStep} giờ trước ca` : `${groupName(l.group)} thêm ${otStep / 60} giờ/ngày`, days: r.score.makespan, gain: cur.score.makespan - r.score.makespan });
   }
 
@@ -166,7 +168,7 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
     for (const ls of combos) {
       if (over()) break;
       const f = apply(flow, ls); if (!f) continue;
-      const r = run(withSeq(seqd), f);
+      const r = run(cur.ords, f);
       if (cmpScore(r.score, cur.score) >= 0) continue;
       const c = Math.max(1e-9, cost(ls, r.score.makespan));
       const gainLate = cur.score.late - r.score.late + (cur.score.unplaced - r.score.unplaced) * 1000;
@@ -195,7 +197,7 @@ export function optimize(orders: Order[], ctx: Ctx, opt: ScheduleOpts = {}, lv: 
     proposals.push({ group: g, machines: ms, extra_min: ex, persons, days, hours, overMonth: (ex / 60) * days > monthH + 1e-9 });
   }
   return {
-    orders: withSeq(seqd), flow, sch: cur.sch, score: cur.score, base, ordered, bottleneck: groupLoads(ordered.sch, ctx.machines),
+    orders: cur.ords, flow, sch: cur.sch, score: cur.score, base, ordered, bottleneck: groupLoads(ordered.sch, ctx.machines),
     proposals, early_h: Number(flow.mix_early_h ?? 0), whatIf, evals, log,
   };
 }

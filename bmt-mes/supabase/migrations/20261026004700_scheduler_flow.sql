@@ -180,6 +180,7 @@ create table if not exists plan.overtime_requests (
   reviewed_by uuid,
   reviewed_at timestamptz,
   review_note text,
+  ended_on date,                                -- ngày cuối thực có hiệu lực khi kết thúc sớm / bị thay (tính giờ tháng)
   check (date_to >= date_from), check (jsonb_typeof(extra_min) = 'object'), check (mix_early_h between 0 and 8)
 );
 alter table plan.overtime_requests enable row level security;
@@ -193,10 +194,26 @@ select o.*, app.user_name(o.proposed_by) as proposed_by_name, app.user_name(o.re
 from plan.overtime_requests o;
 grant select on app.v_kh_overtime to authenticated;
 
--- Kiểm tra đề xuất: máy có thật, giờ mỗi ngày ≤ tối đa, giờ mỗi tháng (theo ngày làm việc) ≤ giới hạn tháng, trộn sớm ≤ tối đa
-create or replace function plan.ot_check(p_extra jsonb, p_early numeric, p_from date, p_to date) returns void
+-- Kiểm tra đề xuất: máy có thật; mỗi ngày tăng ca + trộn sớm (người trộn) ≤ tối đa;
+-- mỗi tháng (ngày làm việc) cộng dồn với các đề xuất đã duyệt / đã kết thúc ≤ giới hạn tháng; trộn sớm ≤ tối đa.
+-- Đề xuất đang áp dụng sẽ bị thay từ ngày bắt đầu của đề xuất mới nên chỉ tính phần trước ngày đó.
+create or replace function plan.ot_day_min(p_extra jsonb, p_early numeric) returns jsonb
+language sql stable security definer set search_path = pg_catalog, public as $$
+  -- phút làm thêm mỗi ngày theo máy: tăng ca + (máy trộn) giờ trộn sớm
+  select coalesce(jsonb_object_agg(k, v), '{}') from (
+    select k, sum(v) as v from (
+      select key as k, value::numeric as v from jsonb_each(coalesce(p_extra, '{}'))
+      union all
+      select m.code, coalesce(p_early, 0) * 60 from master.machines m
+      where m.machine_type = 'MIXER' and m.active and coalesce(p_early, 0) > 0
+    ) x group by k having sum(v) > 0
+  ) y
+$$;
+revoke all on function plan.ot_day_min(jsonb, numeric) from public, anon, authenticated;
+
+create or replace function plan.ot_check(p_extra jsonb, p_early numeric, p_from date, p_to date, p_req uuid default null) returns void
 language plpgsql stable security definer set search_path = pg_catalog, public as $$
-declare c master.planning_config; e record; wd int[]; mo record; days int; v numeric;
+declare c master.planning_config; e record; wd int[]; mo record; v numeric; prev numeric; v_day jsonb;
 begin
   select * into c from master.planning_config where id = 1;
   if p_from is null or p_to is null or p_to < p_from then raise exception 'Chọn khoảng ngày tăng ca (đến ngày không trước từ ngày)'; end if;
@@ -204,21 +221,38 @@ begin
   if coalesce(p_early, 0) < 0 or coalesce(p_early, 0) > c.mix_early_max_h then
     raise exception 'Trộn sớm trước ca tối đa % giờ', c.mix_early_max_h;
   end if;
-  wd := array(select x::int from jsonb_array_elements_text(coalesce(mfg.machine_setting('shift') -> 'workdays', '[1,2,3,4,5,6]')) x);
   for e in select key, value from jsonb_each(coalesce(p_extra, '{}')) loop
     if jsonb_typeof(e.value) <> 'number' then raise exception 'Giờ tăng ca máy % không hợp lệ', e.key; end if;
-    v := e.value::numeric;
-    if v < 0 or v > c.ot_max_min then raise exception 'Tăng ca máy % tối đa % phút mỗi ngày', e.key, c.ot_max_min; end if;
+    if e.value::numeric < 0 then raise exception 'Giờ tăng ca máy % không hợp lệ', e.key; end if;
     if not exists (select 1 from master.machines m where m.code = e.key and m.active) then raise exception 'Không có máy %', e.key; end if;
+  end loop;
+  wd := array(select x::int from jsonb_array_elements_text(coalesce(mfg.machine_setting('shift') -> 'workdays', '[1,2,3,4,5,6]')) x);
+  v_day := plan.ot_day_min(p_extra, p_early);
+  for e in select key, value from jsonb_each(v_day) loop
+    v := e.value::numeric;
+    if v > c.ot_max_min then
+      raise exception 'Máy % làm thêm % phút mỗi ngày (tăng ca + trộn sớm), tối đa % phút', e.key, round(v), c.ot_max_min;
+    end if;
     for mo in select date_trunc('month', d)::date as m, count(*) filter (where extract(isodow from d)::int = any(wd)) as n
               from generate_series(p_from, p_to, interval '1 day') d group by 1 loop
-      if v / 60 * mo.n > c.ot_month_h then
-        raise exception 'Tăng ca máy % tháng %: % giờ mỗi người, vượt % giờ/tháng', e.key, to_char(mo.m, 'MM/YYYY'), round(v / 60 * mo.n, 1), c.ot_month_h;
+      -- giờ đã dùng trong tháng của các đề xuất trước (đã duyệt / đã kết thúc), trong phần ngày thật có hiệu lực
+      select coalesce(sum(coalesce((plan.ot_day_min(o.extra_min, o.mix_early_h) ->> e.key)::numeric, 0) / 60 * (
+               select count(*) from generate_series(greatest(o.date_from, mo.m),
+                 least(o.date_to, coalesce(o.ended_on, o.date_to), (mo.m + interval '1 month - 1 day')::date,
+                       case when o.status = 'APPROVED' then p_from - 1 end), interval '1 day') d
+               where extract(isodow from d)::int = any(wd))), 0)
+        into prev
+      from plan.overtime_requests o
+      where o.status in ('APPROVED', 'ENDED') and o.id is distinct from p_req
+        and o.date_from <= (mo.m + interval '1 month - 1 day')::date and o.date_to >= mo.m;
+      if v / 60 * mo.n + prev > c.ot_month_h + 1e-9 then
+        raise exception 'Máy % tháng %: % giờ làm thêm mỗi người (đã duyệt trước % giờ), vượt % giờ/tháng',
+          e.key, to_char(mo.m, 'MM/YYYY'), round(v / 60 * mo.n + prev, 1), round(prev, 1), c.ot_month_h;
       end if;
     end loop;
   end loop;
 end $$;
-revoke all on function plan.ot_check(jsonb, numeric, date, date) from public, anon, authenticated;
+revoke all on function plan.ot_check(jsonb, numeric, date, date, uuid) from public, anon, authenticated;
 
 -- Áp đề xuất đã duyệt vào tham số xếp lịch (thay đề xuất đang áp dụng trước đó)
 create or replace function plan.ot_apply(p_req uuid) returns void
@@ -227,7 +261,8 @@ declare o plan.overtime_requests; c master.planning_config;
 begin
   select * into o from plan.overtime_requests where id = p_req;
   select * into c from master.planning_config where id = 1 for update;
-  update plan.overtime_requests set status = 'ENDED', review_note = coalesce(review_note || ' · ', '') || 'Thay bằng ' || o.req_no
+  update plan.overtime_requests set status = 'ENDED', review_note = coalesce(review_note || ' · ', '') || 'Thay bằng ' || o.req_no,
+    ended_on = least(date_to, greatest(date_from - 1, o.date_from - 1))
   where status = 'APPROVED' and id <> p_req;
   update plan.overtime_requests set status = 'APPROVED', reviewed_by = auth.uid(), reviewed_at = now() where id = p_req;
   update master.planning_config set extra_min = o.extra_min, mix_early_h = o.mix_early_h, ot_from = o.date_from, ot_until = o.date_to,
@@ -244,6 +279,7 @@ revoke all on function plan.ot_apply(uuid) from public, anon, authenticated;
 create or replace function app.kh_ot_propose(p_plan uuid, p jsonb) returns uuid
 language plpgsql security definer set search_path = pg_catalog, public as $$
 declare v_id uuid; v_no text; v_extra jsonb; v_early numeric; v_from date; v_to date; v_gd boolean := plan.is_gd();
+  v_direct boolean := auth.uid() = any(plan.gd_ids()); v_old record;
 begin
   if not (core.has_role('SX_TP') or core.has_role('SX_KH') or v_gd) then raise exception 'Chỉ TP SX, Kế hoạch SX hoặc Giám đốc đề xuất tăng ca'; end if;
   if coalesce(trim(p ->> 'reason'), '') = '' then raise exception 'Nhập lý do tăng ca'; end if;
@@ -257,12 +293,21 @@ begin
   v_from := (p ->> 'date_from')::date; v_to := (p ->> 'date_to')::date;
   if v_extra = '{}'::jsonb and v_early = 0 then raise exception 'Chưa có giờ tăng ca hoặc trộn sớm nào'; end if;
   perform plan.ot_check(v_extra, v_early, v_from, v_to);
-  update plan.overtime_requests set status = 'CANCELLED', review_note = 'Thay bằng đề xuất mới' where status = 'PROPOSED';
   v_no := core.next_no('TC', 3);
+  -- đề xuất còn chờ duyệt bị thay: báo người lập
+  for v_old in select id, req_no, proposed_by from plan.overtime_requests where status = 'PROPOSED' for update loop
+    update plan.overtime_requests set status = 'CANCELLED', review_note = 'Thay bằng ' || v_no, reviewed_by = auth.uid(), reviewed_at = now()
+    where id = v_old.id;
+    if v_old.proposed_by is not null and v_old.proposed_by is distinct from auth.uid() then
+      perform wf.notify_users(array[v_old.proposed_by], 'Đề xuất tăng ca ' || v_old.req_no || ' được thay bằng ' || v_no,
+        trim(p ->> 'reason'), '/lich-may?tab=toiuu');
+    end if;
+  end loop;
   insert into plan.overtime_requests (req_no, plan_id, extra_min, mix_early_h, date_from, date_to, summary, reason)
   values (v_no, p_plan, v_extra, v_early, v_from, v_to, coalesce(p -> 'summary', '{}'), trim(p ->> 'reason'))
   returning id into v_id;
-  if v_gd then
+  -- Giám đốc tự đề xuất thì áp dụng ngay; Quản trị hay người khác lập thì chờ Giám đốc duyệt
+  if v_direct then
     perform plan.ot_apply(v_id);
   else
     perform wf.notify_users(array_remove(plan.gd_ids(), auth.uid()), 'Đề xuất tăng ca chờ duyệt: ' || v_no,
@@ -285,7 +330,7 @@ begin
   if o.status <> 'PROPOSED' then raise exception 'Đề xuất % không còn chờ duyệt', o.req_no; end if;
   if o.proposed_by = auth.uid() then raise exception 'Không tự duyệt đề xuất tăng ca mình lập'; end if;
   if p_approve then
-    perform plan.ot_check(o.extra_min, o.mix_early_h, o.date_from, o.date_to);
+    perform plan.ot_check(o.extra_min, o.mix_early_h, o.date_from, o.date_to, o.id);
     update plan.overtime_requests set review_note = nullif(trim(p_note), '') where id = p_req;
     perform plan.ot_apply(p_req);
   else
@@ -314,7 +359,8 @@ begin
     return;
   end if;
   if o.status <> 'APPROVED' then raise exception 'Đề xuất % không còn hiệu lực', o.req_no; end if;
-  update plan.overtime_requests set status = 'ENDED', review_note = coalesce(review_note || ' · ', '') || 'Kết thúc: ' || trim(p_note) where id = p_req;
+  update plan.overtime_requests set status = 'ENDED', review_note = coalesce(review_note || ' · ', '') || 'Kết thúc: ' || trim(p_note),
+    ended_on = least(date_to, greatest(date_from - 1, (now() at time zone 'Asia/Ho_Chi_Minh')::date)) where id = p_req;
   update master.planning_config set extra_min = '{}', mix_early_h = 0, ot_from = null, ot_until = null, ot_request_id = null,
     updated_at = now(), updated_by = auth.uid() where id = 1 and ot_request_id = p_req;
   perform app.kh_log('Tăng ca', 'Tăng ca / trộn sớm đang áp dụng', o.req_no, 'không', trim(p_note));

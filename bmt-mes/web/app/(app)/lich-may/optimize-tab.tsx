@@ -102,8 +102,10 @@ export function OptimizeTab({ kh, sp, roles, userId, ots }: { kh: Kh; sp: Record
         <div className="card-h"><h2>Tăng ca / trộn sớm</h2>
           <span className="text-[12.5px] text-muted">giới hạn {meta.levers.ot_max_min} phút/ngày, {meta.levers.ot_month_h} giờ/tháng mỗi người; trộn sớm tối đa {h1(meta.levers.early_max_h)} giờ</span></div>
         <div className="px-4 py-3 text-[14px]">
-          {meta.ot.active
-            ? <div>Đang áp dụng {dd(meta.ot.from)}–{dd(meta.ot.until)}: {Object.entries(F.extra_min).filter(([, v]) => v > 0).map(([k, v]) => `${k} +${v} phút/ngày`).join(', ') || 'không tăng ca'}{F.mix_early_h > 0 ? `; máy trộn chạy trước ca ${h1(F.mix_early_h)} giờ` : ''}.</div>
+          {meta.ot.planned && !meta.ot.active && meta.ot.until && meta.ot.until < today
+            ? <div>Tăng ca đã duyệt đã hết hạn ({dd(meta.ot.from)}–{dd(meta.ot.until)}): từ nay lịch tính theo giờ ca thường.</div>
+            : meta.ot.planned
+            ? <div>{meta.ot.active ? 'Đang áp dụng' : 'Đã duyệt, áp dụng'} {dd(meta.ot.from)}–{dd(meta.ot.until)}: {Object.entries(F.extra_min).filter(([, v]) => v > 0).map(([k, v]) => `${k} +${v} phút/ngày`).join(', ') || 'không tăng ca'}{F.mix_early_h > 0 ? `; máy trộn chạy trước ca ${h1(F.mix_early_h)} giờ` : ''}.</div>
             : <div>Chưa có tăng ca nào đang áp dụng.</div>}
           {mode === 'due' && !late.length && !best.proposals.length && best.early_h <= Number(meta.ot.mix_early_h) && (
             <div className="mt-1 text-ok">Mọi lô kịp ngày chốt / hạn giao với giờ hiện tại: không cần tăng ca. Muốn xong sớm hơn thì chọn mục tiêu “Xong sớm nhất có thể”.</div>
@@ -120,7 +122,7 @@ export function OptimizeTab({ kh, sp, roles, userId, ots }: { kh: Kh; sp: Record
                   <td>{p.overMonth ? <Pill tone="bad">vượt {meta.levers.ot_month_h} giờ/tháng</Pill> : null}</td></tr>
               ))}
               {best.early_h > 0 && <tr><td><b>Máy trộn chạy trước ca</b></td><td className="text-[12.5px]">{mixers.map((m) => `${m.code} (${h1(mixerKgh(kh.cfg, m.code))} kg/giờ)`).join(', ')}</td>
-                <td className="text-right">{nf(best.early_h * 60)}</td><td className="text-right">1</td><td colSpan={3} className="text-[12.5px]">người trộn ca sớm, không phải tăng ca</td></tr>}
+                <td className="text-right">{nf(best.early_h * 60)}</td><td className="text-right">1</td><td colSpan={3} className="text-[12.5px]">tính vào giờ làm thêm của người trộn (≤ {meta.levers.ot_max_min} phút/ngày, {meta.levers.ot_month_h} giờ/tháng)</td></tr>}
             </tbody>
           </table></div>
         )}
@@ -160,7 +162,9 @@ export function OptimizeTab({ kh, sp, roles, userId, ots }: { kh: Kh; sp: Record
                   <div className="text-muted">{o.reason}</div>{o.review_note && <div className="text-muted">Ý kiến: {o.review_note}</div>}</td>
                 <td className="whitespace-nowrap">{dd(o.date_from)}–{dd(o.date_to)}</td>
                 <td className="text-[12.5px]">{o.proposed_by_name}{o.reviewed_by_name ? <div className="text-muted">Duyệt/xử lý: {o.reviewed_by_name}</div> : null}</td>
-                <td><Pill tone={OT_STATUS[o.status]?.[1] ?? 'mute'}>{OT_STATUS[o.status]?.[0] ?? o.status}</Pill></td>
+                <td>{o.status === 'APPROVED' && o.date_to < today ? <Pill tone="mute">Hết hạn</Pill>
+                  : o.status === 'APPROVED' && o.date_from > today ? <Pill tone="ok">Đã duyệt, từ {dd(o.date_from)}</Pill>
+                  : <Pill tone={OT_STATUS[o.status]?.[1] ?? 'mute'}>{OT_STATUS[o.status]?.[0] ?? o.status}</Pill>}</td>
                 <td className="min-w-[260px]">
                   {o.status === 'PROPOSED' && isGd && o.proposed_by !== userId && (
                     <form action={reviewOvertime} className="flex flex-wrap gap-1">

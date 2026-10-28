@@ -91,25 +91,30 @@ export async function loadConfig(db: Db) {
     })) as Config['speeds'],
     plc_speeds: ((c.plc_speeds ?? []) as Record<string, unknown>[]).map((x) => ({ ...x, meters: Number(x.meters), run_min: Number(x.run_min) })) as Config['plc_speeds'],
   } as Config;
-  // Thông số dòng chảy (migration 4700): QC dùng số tự học khi bật và đủ mẫu; tăng ca / trộn sớm chỉ lấy phần có hiệu lực hôm nay
+  // Thông số dòng chảy (migration 4700): QC dùng số tự học (làm tròn 10 phút) khi bật và đủ mẫu;
+  // tăng ca / trộn sớm đã duyệt chỉ tính trong khoảng ngày áp dụng (bộ xếp lịch kiểm theo từng ngày)
   const learned = (c.qc_learned ?? {}) as { median_min?: number | null; n?: number };
   const qcSet = c.qc_min == null ? undefined : Number(c.qc_min);
   const useLearned = c.qc_learn !== false && Number(learned.n ?? 0) >= QC_LEARN_MIN_SAMPLES && Number(learned.median_min) > 0;
   const num = (v: unknown) => (v == null || v === '' ? undefined : Number(v));
   cfg.flow = {
-    qc_min: useLearned ? Number(learned.median_min) : qcSet,
+    qc_min: useLearned ? Math.max(10, Math.round(Number(learned.median_min) / 10) * 10) : qcSet,
     unit_m: (c.unit_m ?? undefined) as FlowCfg['unit_m'],
     safety_min: (c.safety_min ?? undefined) as FlowCfg['safety_min'],
     pot_life_h: num(c.pot_life_h), mix_batch_kg: num(c.mix_batch_kg),
-    mix_early_h: num(c.mix_early_h_now) ?? 0,
-    extra_min: Object.fromEntries(Object.entries((c.extra_min_now ?? {}) as Record<string, unknown>).map(([k, v]) => [k, Number(v)])),
+    mix_early_h: num(c.mix_early_h) ?? 0,
+    extra_min: Object.fromEntries(Object.entries((c.extra_min ?? {}) as Record<string, unknown>).map(([k, v]) => [k, Number(v)]).filter(([, v]) => Number(v) > 0)),
+    ot_from: (c.ot_from as string | null) ?? null, ot_until: (c.ot_until as string | null) ?? null,
     size_large_mm2: num(c.size_large_mm2), plc_min_run: num(c.plc_min_run), pick_window_min: c.pick_window_min == null ? null : Number(c.pick_window_min),
   };
   const flowMeta = {
     qc_set: qcSet ?? 120, qc_learn: c.qc_learn !== false, qc_learned: { median: learned.median_min == null ? null : Number(learned.median_min), n: Number(learned.n ?? 0) }, qc_used: flowOf(cfg).qc_min,
     levers: { ot_max_min: num(c.ot_max_min) ?? 240, ot_month_h: num(c.ot_month_h) ?? 40, early_max_h: num(c.mix_early_max_h) ?? 0 } as Required<Pick<Levers, 'ot_max_min' | 'ot_month_h' | 'early_max_h'>>,
     ot: { extra_min: (c.extra_min ?? {}) as Record<string, number>, mix_early_h: Number(c.mix_early_h ?? 0), from: (c.ot_from as string | null) ?? null, until: (c.ot_until as string | null) ?? null,
-      request_id: (c.ot_request_id as string | null) ?? null, active: Object.keys(cfg.flow.extra_min ?? {}).length > 0 || Number(cfg.flow.mix_early_h) > 0 },
+      request_id: (c.ot_request_id as string | null) ?? null,
+      // đang có hiệu lực hôm nay (view tính theo giờ VN)
+      active: Object.keys((c.extra_min_now ?? {}) as object).length > 0 || Number(c.mix_early_h_now ?? 0) > 0,
+      planned: Object.keys(cfg.flow.extra_min ?? {}).length > 0 || Number(cfg.flow.mix_early_h) > 0 },
   };
   const ORDER = ['SIL-MIX', 'BUN-01', 'EXT-SI-01', 'EXT-SI-02', 'TWS-01', 'EXT-TP-01', 'EXT-TP-02', 'PACK-01'];
   const machines = ((m ?? []) as MachineInfo[]).map((x) => ({ ...x, tag_count: Number(x.tag_count) }))

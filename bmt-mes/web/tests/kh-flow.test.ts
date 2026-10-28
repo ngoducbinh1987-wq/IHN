@@ -82,6 +82,8 @@ if (!(e4.score.makespan < k30.score.makespan - 1)) bad('trộn sớm 4 giờ ph�
 const mixDown = run('máy trộn hỏng ngày 2', { win: (D) => [{ machine: 'SIL-MIX', from: D(1), to: D(2), kind: 'DOWN', label: 'SIL-MIX hỏng' }] });
 if (mixDown.sch.mix!.buckets.some((b) => b.used > 1e-6 && b.t0 >= mixDown.c.D(1) && b.t1 <= mixDown.c.D(2) && b.t1 > b.t0)) bad('máy trộn hỏng vẫn có trộn');
 if (mixDown.score.makespan < k30.score.makespan - 0.05) bad('máy trộn hỏng không được nhanh hơn');
+// máy trộn hỏng thì máy khác (bện) vẫn làm việc của mình, không đứng chờ theo
+if (!mixDown.sch.slots.some((s) => s.machine === 'BUN-01' && s.start < mixDown.c.D(2) && s.end > mixDown.c.D(1))) bad('máy trộn hỏng: máy bện không được dừng theo');
 run('máy bện hỏng ngày 1', { win: (D) => [{ machine: 'BUN-01', from: D(0), to: D(1), kind: 'DOWN', label: 'BUN-01 hỏng' }] });
 const off = run('line silicone 2 ngừng dùng', { kgh: 200, win: () => [{ machine: 'EXT-SI-02', from: 0, to: Infinity, kind: 'OFF', label: 'EXT-SI-02 ngừng dùng' }] });
 if (off.sch.slots.some((s) => s.machine === 'EXT-SI-02')) bad('line ngừng dùng vẫn có việc');
@@ -108,11 +110,46 @@ run('mã không cần trộn', { orders: [...ORD, L(5, 'HFR-2C-1P5', 1.5, ['Đ�
   const Bd = c.D(3);
   const urgent = { ...L(6, 'PFR-2C-1', 1, ['Đỏ', 'Đen'], 10000, 'M1', 10.5, '2026-11-02'), prio: 0 };
   const s2 = schedule([...c.orders, urgent], c, { from: { S: s1.S, SPD: s1.SPD, slots: s1.slots }, boundary: Bd, split: true });
-  const v = validateSchedule(s2, [...c.orders, urgent], c, { from: Bd }).filter((x) => !x.startsWith('mét'));
+  const v = validateSchedule(s2, [...c.orders, urgent], c, { from: Bd });
   if (v.length) bad(`xếp lại có đơn gấp: ${v.slice(0, 3).join('; ')}`);
   const keepSig = (s: typeof s1) => s.slots.filter((x) => x.start < Bd && x.op !== 'CD0').map((x) => x.key + x.machine + x.start.toFixed(1)).sort().join();
   if (keepSig(s1) !== keepSig(s2)) bad('xếp lại làm đổi phần trước mốc');
   console.log('xếp lại có đơn gấp: đơn gấp xong', finishInfo(s2, c.cal, [...c.orders, urgent]).get('L6')?.finDate);
+}
+// 9b. Xếp lại từ nhiều mốc (không thêm đơn): đủ mét từng công đoạn, phần trước mốc giữ nguyên, silicone đủ và đúng hạn
+for (const kgh of [30, 50]) for (const day of [2, 3, 5]) {
+  const c = ctxOf({ kgh });
+  const s1 = schedule(c.orders, c);
+  const Bd = c.D(day);
+  const s2 = schedule(c.orders, c, { from: { S: s1.S, SPD: s1.SPD, slots: s1.slots }, boundary: Bd });
+  const v = validateSchedule(s2, c.orders, c, { from: Bd });
+  if (v.length) bad(`xếp lại từ ngày ${day + 1} (trộn ${kgh} kg/giờ): ${v.slice(0, 3).join('; ')}`);
+  const d1 = scoreOf(s1, c.cal, c.orders).makespan, d2 = scoreOf(s2, c.cal, c.orders).makespan;
+  if (d2 > d1 + 0.5) bad(`xếp lại từ ngày ${day + 1} (trộn ${kgh} kg/giờ) không được chậm hơn nhiều: ${d1.toFixed(2)} → ${d2.toFixed(2)}`);
+}
+// 9b'. Xếp lại mỗi ngày liên tiếp (như TP SX bấm Xếp lại hằng ngày): lịch vẫn hợp lệ, không chậm dần
+for (const kgh of [30, 50]) {
+  const c = ctxOf({ kgh });
+  let s = schedule(c.orders, c);
+  const d0 = scoreOf(s, c.cal, c.orders).makespan;
+  for (let day = 1; day <= 8; day++) {
+    s = schedule(c.orders, c, { from: { S: s.S, SPD: s.SPD, slots: s.slots }, boundary: c.D(day) });
+    const v = validateSchedule(s, c.orders, c, { from: c.D(day) });
+    if (v.length) { bad(`xếp lại hằng ngày (trộn ${kgh} kg/giờ) ngày ${day + 1}: ${v.slice(0, 2).join('; ')}`); break; }
+  }
+  const d1 = scoreOf(s, c.cal, c.orders).makespan;
+  console.log(`xếp lại hằng ngày 8 lần (trộn ${kgh} kg/giờ): ${d0.toFixed(2)} → ${d1.toFixed(2)} ngày`);
+  if (d1 > d0 + 0.5) bad(`xếp lại hằng ngày (trộn ${kgh} kg/giờ) chậm dần: ${d0.toFixed(2)} → ${d1.toFixed(2)}`);
+}
+// 9c. Tăng ca theo khoảng ngày: chỉ tính trong khoảng → ngày xong nằm giữa "không tăng ca" và "tăng ca mọi ngày"
+{
+  const ex = { 'SIL-MIX': 120, 'EXT-SI-01': 120, 'EXT-SI-02': 120 };
+  const all = run('tăng ca mọi ngày', { flow: { extra_min: ex } });
+  const part = run('tăng ca 29–31/10', { flow: { extra_min: ex, ot_from: '2026-10-29', ot_until: '2026-10-31' } });
+  const none = run('tăng ca đã hết hạn', { flow: { extra_min: ex, ot_from: '2026-10-01', ot_until: '2026-10-27' } });
+  if (Math.abs(none.score.makespan - k30.score.makespan) > 0.01) bad('tăng ca hết hạn vẫn được tính');
+  if (!(part.score.makespan <= none.score.makespan + 0.01 && part.score.makespan >= all.score.makespan - 0.01)) bad('tăng ca theo khoảng ngày phải nằm giữa không tăng ca và tăng ca mọi ngày');
+  if (!(part.score.makespan < none.score.makespan - 0.05)) bad('tăng ca 3 ngày phải rút ngắn lịch');
 }
 // 10. Bộ tối ưu: kịp ngày chốt bằng ít giờ công nhất, không vượt 4 giờ/ngày; máy trộn 200 kg/giờ → đề xuất dồn vào máy xoắn
 {
@@ -134,6 +171,12 @@ run('mã không cần trộn', { orders: [...ORD, L(5, 'HFR-2C-1P5', 1.5, ['Đ�
   // Không có ngày chốt, chế độ kịp hạn: không đề xuất tăng ca
   const r3 = optimize(c.orders.map((o) => ({ ...o, commit: null })), c, {}, { mode: 'due' });
   if (r3.proposals.length) bad('không trễ hạn thì không đề xuất tăng ca');
+  // Thứ tự lô trả về phải đúng với lịch trả về (kể cả khi giữ thứ tự cũ)
+  const again = schedule(r.orders, { ...c, cfg: { ...c.cfg, flow: r.flow } }, { windows: [] });
+  if (Math.abs(scoreOf(again, c.cal, r.orders).makespan - r.score.makespan) > 1e-6) bad('thứ tự lô bộ tối ưu trả về không cho ra đúng lịch');
+  // Kết quả không phụ thuộc tốc độ máy chủ: chạy lại cho cùng kết quả
+  const r4 = optimize(tight, c, { windows: [] }, { mode: 'due', early_max_h: 4 });
+  if (Math.abs(r4.score.makespan - r.score.makespan) > 1e-9 || r4.evals !== r.evals) bad('bộ tối ưu chạy lại cho kết quả khác');
 }
 
 // 11. Thiếu thông số: không đoán số, báo rõ
