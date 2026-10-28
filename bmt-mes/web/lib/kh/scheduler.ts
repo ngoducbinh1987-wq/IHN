@@ -222,7 +222,7 @@ export type Slot = {
   attend?: Attend[];   // các đoạn người có mặt (khởi động, thay bobin, đứng liên tục, trộn)
   crew?: number;       // máy đóng gói: số người của khối
 };
-export type PrevSchedule = { S: number; SPD: number; slots: Slot[] };
+export type PrevSchedule = { S: number; SPD: number; slots: Slot[]; codes?: string[] }; // codes: mã ca của lịch cũ theo thứ tự (A, B, C)
 export type OpSpan = { start: number; end: number; left: number };
 export type Schedule = {
   slots: Slot[]; byMachine: Map<string, Slot[]>; opDone: Map<string, OpSpan>; unplaced: Task[];
@@ -581,11 +581,13 @@ export function schedule(
     for (const x of P.ledger) if (x.date >= hFrom && x.date < bDate) { const w = wByCode.get(x.code); if (w && !virt.includes(w)) w.mins += Number(x.min) * real2s; }
   }
   const BAL = P.balance_pct / 100;
-  // Mức giờ cộng dồn so với bình quân người thật: 0 = ít hơn quá BAL, 1 = trong khoảng, 2 = nhiều hơn quá BAL (người giả định: 1)
+  // Mức giờ cộng dồn so với trung vị người thật (một người nhiều giờ bất thường không kéo lệch mốc so của người khác):
+  // 0 = ít hơn quá BAL, 1 = trong khoảng, 2 = nhiều hơn quá BAL (người giả định: 1)
   const tierOf = (w: Wk) => {
     if (virt.includes(w) || realW.length < 2) return 1;
-    const avg = realW.reduce((a, x) => a + x.mins, 0) / realW.length;
-    return w.mins > avg * (1 + BAL) + 1e-6 ? 2 : w.mins < avg * (1 - BAL) - 1e-6 ? 0 : 1;
+    const v = realW.map((x) => x.mins).sort((a, b) => a - b), k = v.length >> 1;
+    const mid = v.length % 2 ? v[k] : (v[k - 1] + v[k]) / 2;
+    return w.mins > mid * (1 + BAL) + 1e-6 ? 2 : w.mins < mid * (1 - BAL) - 1e-6 ? 0 : 1;
   };
   // Người trộn trong ngày (máy trộn → ngày → người): người này đứng máy trộn suốt ngày, việc khởi động / thay bobin / đóng gói ưu tiên người khác
   const mixDay = new Map<string, Map<number, string>>();
@@ -802,7 +804,8 @@ export function schedule(
     for (const w of staffOf.get(m) ?? []) {
       const at = earliestFor(w, m, t, len);
       if (!Number.isFinite(at)) continue;
-      const key = [at, isDayMixer(w.code, dayOf(at)) ? 1 : 0, virt.includes(w) ? 0 : Math.round(w.mins / 30), w.code === prefer ? 0 : 1, w.cont ? 1 : 0, w.skills.includes(m) ? 0 : 1, w.mins];
+      // người đang đứng máy trộn hôm đó chỉ được gọi khi người khác phải chờ quá 30 phút (giữ một người trộn suốt ngày)
+      const key = [at + (isDayMixer(w.code, dayOf(at)) ? 30 * real2s : 0), virt.includes(w) ? 0 : Math.round(w.mins / 30), w.code === prefer ? 0 : 1, w.cont ? 1 : 0, w.skills.includes(m) ? 0 : 1, w.mins];
       if (!best || lexLess(key, bk)) { best = { w, at, cover: !w.skills.includes(m) }; bk = key; }
     }
     return best;
@@ -820,8 +823,8 @@ export function schedule(
     return [{ f: sl.start, t: Math.min(Math.max(sl.end, sl.start + 1e-6), sl.runStart + START), p: sl.operator, k: 'START' }];
   };
   // Khối giữ lại khi xếp lại: giữ đoạn có mặt (trước giờ máy dừng), đăng ký người bận phần sau mốc
-  const keepAttend = (ns: Slot, src: Slot, k: number) => {
-    const base = src.attend?.length ? src.attend.map((a) => ({ ...a, f: a.f * k, t: a.t * k })) : legacyAttend(ns);
+  const keepAttend = (ns: Slot, src: Slot, cv: (t: number, isEnd?: boolean) => number) => {
+    const base = src.attend?.length ? src.attend.map((a) => ({ ...a, f: cv(a.f), t: cv(a.t, true) })) : legacyAttend(ns);
     ns.attend = base.filter((a) => a.f < ns.end - 1e-9);
     for (const a of ns.attend) {
       if (a.t <= B + 1e-9) continue;
@@ -851,18 +854,82 @@ export function schedule(
   };
 
   if (opt.from) {
-    const k = (S * SPD) / (opt.from.S * opt.from.SPD); // giữ vị trí theo ngày khi đổi ca hoặc tỷ lệ xếp lịch
-    for (const sl of opt.from.slots) {
+    // Đổi lịch cũ sang lịch mới: giữ đúng ngày và đúng ca (ca 1 vẫn là ca 1 khi lịch thêm ca 2, ca 3), trong ca co giãn theo tỷ lệ xếp lịch
+    const S0 = opt.from.S, SPD0 = opt.from.SPD, DAY0 = S0 * SPD0, k = S / S0;
+    const codes0 = opt.from.codes?.length === SPD0 ? opt.from.codes
+      : SPD0 === SPD ? cal.shifts.map((x) => x.code) : SPD0 === 1 ? [cal.shifts[0]?.code ?? 'A'] : ['A', 'B', 'C'].slice(0, SPD0);
+    const segNew = codes0.map((c) => cal.shifts.findIndex((x) => x.code === c));
+    const cv = (t: number, isEnd = false) => {
+      const tt = isEnd ? t - 1e-7 : t;
+      const di = Math.floor(tt / DAY0), r = tt - di * DAY0;
+      const j = Math.min(SPD0 - 1, Math.max(0, Math.floor(r / S0))), x = r - j * S0;
+      if (segNew[j] >= 0) return di * DAY + segNew[j] * S + x * k + (isEnd ? 1e-7 * k : 0);
+      // ca của lịch cũ không còn trong lịch mới: dồn về cuối ca liền trước còn có
+      let p = j - 1; while (p >= 0 && segNew[p] < 0) p--;
+      return di * DAY + (p >= 0 ? (segNew[p] + 1) * S : 0);
+    };
+    // Ngược lại: một lúc trên lịch mới → lịch cũ (ca mới không có trong lịch cũ: cuối ca cũ liền trước); mét đã chạy đến lúc đó tính theo giờ cũ
+    const inv = (t: number) => {
+      const di = Math.floor(t / DAY), r = t - di * DAY;
+      const jn = Math.min(SPD - 1, Math.max(0, Math.floor(r / S))), x = r - jn * S;
+      const j = segNew.indexOf(jn);
+      if (j >= 0) return di * DAY0 + j * S0 + x / k;
+      let q = -1; for (let i = 0; i < segNew.length; i++) if (segNew[i] >= 0 && segNew[i] < jn && (q < 0 || segNew[i] > segNew[q])) q = i;
+      return di * DAY0 + (q >= 0 ? (q + 1) * S0 : 0);
+    };
+    const ranTo = (sl: Slot, t: number) => Math.max(0, Math.min(sl.meters, (inv(t) - sl.runStart) * sl.rate));
+    // Lịch cũ khác ca với lịch mới (thêm / bớt ca 2, ca 3): tách khối cũ theo từng ca của lịch cũ để mỗi phần nằm gọn trong một ca của lịch mới
+    // (khối ca 1 hôm trước sang ca 1 hôm sau không trùm lên giờ ca 2, ca 3 máy không chạy); mét chia theo giờ chạy
+    const same = SPD0 === SPD && segNew.every((x, i) => x === i);
+    const splitOld = (sl: Slot): Slot[] => {
+      const cuts: number[] = [];
+      for (let b = (Math.floor(sl.runStart / S0) + 1) * S0, g = 0; b < sl.end - 1e-6 && g < 2000; b += S0, g++) cuts.push(b);
+      if (!cuts.length || !(sl.end > sl.runStart)) return [sl];
+      const run = sl.end - sl.runStart, pts = [sl.runStart, ...cuts, sl.end];
+      const out: Slot[] = [];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = i === 0 ? sl.start : pts[i], b = pts[i + 1];
+        const att = (sl.attend ?? []).map((x) => ({ ...x, f: Math.max(x.f, a), t: Math.min(x.t, b) })).filter((x) => x.t > x.f + 1e-9);
+        out.push({ ...sl, start: a, runStart: pts[i], end: b, setup: i === 0 ? sl.setup : 0, meters: sl.meters * (b - pts[i]) / run, part: true,
+          ...(sl.attend ? { attend: att } : {}) });
+      }
+      return out;
+    };
+    const fromSlots = same ? opt.from.slots : opt.from.slots.flatMap(splitOld);
+    // Việc đang chạy qua mốc mà công đoạn trước còn phần xếp lại sau mốc: không giữ nguyên cả khối (công đoạn trước có thể xong muộn hơn),
+    // giữ phần đã chạy trước mốc, phần còn lại xếp lại sau công đoạn trước (lan sang công đoạn sau nữa)
+    const cutKeys = new Set<string>();
+    {
+      const re = new Set<string>(), cross = new Set<string>();
+      for (const sl of fromSlots) {
+        const t = byKey.get(sl.key); if (!t || (supply && sl.op === 'CD0')) continue;
+        const start = cv(sl.start), end = cv(sl.end, true);
+        if (wins.some((w) => w.machine === sl.machine && end > w.from && start < w.to)) re.add(sl.key);
+        else if (start < B && end > B && closedNext(sl.machine, B) < end - 1e-9) re.add(sl.key);
+        else if (start >= B && !keep.has(sl.lineId)) re.add(sl.key);
+        else if (start < B && end > B) cross.add(sl.key);
+      }
+      for (let changed = true, g = 0; changed && g < 20; g++) {
+        changed = false;
+        for (const key of cross) {
+          if (cutKeys.has(key)) continue;
+          const t = byKey.get(key)!;
+          const preds = predOps(t.order.route, t.k, supply);
+          if (tasks.some((x) => x.oi === t.oi && preds.includes(x.op) && (re.has(x.key) || cutKeys.has(x.key)))) { cutKeys.add(key); changed = true; }
+        }
+      }
+    }
+    for (const sl of fromSlots) {
       const t = byKey.get(sl.key);
       const m = machines.find((x) => x.code === sl.machine);
       if (!t || !m) continue;
-      const start = sl.start * k, rs = sl.runStart * k, end = sl.end * k, rate = sl.rate / k;
+      const start = cv(sl.start), rs = cv(sl.runStart), end = cv(sl.end, true), rate = sl.rate / k;
       if (supply && sl.op === 'CD0') {
         // Trộn đã làm trước mốc giữ lại (cắt tại mốc); sau mốc trộn lại theo nhịp line
         if (start < B) {
           const e = Math.min(end, B), mm = end > start ? sl.meters * (e - start) / (end - start) : sl.meters;
           const ns = { ...sl, start, runStart: Math.min(rs, e), end: e, rate, meters: mm, part: e < end - 1e-9 || sl.part };
-          ns.attend = (sl.attend ?? []).map((a) => ({ ...a, f: a.f * k, t: Math.min(a.t * k, e) })).filter((a) => a.t > a.f);
+          ns.attend = (sl.attend ?? []).map((a) => ({ ...a, f: cv(a.f), t: Math.min(cv(a.t, true), e) })).filter((a) => a.t > a.f);
           m.slots.push(ns); keptMix.push(ns);
         }
         continue;
@@ -872,11 +939,11 @@ export function schedule(
       if (hit) {
         // chưa chạy (sau mốc) hoặc chưa bắt đầu chạy trước giờ máy dừng: xếp lại toàn bộ
         if (start >= B || rs >= hit.from) continue;
-        const mm = (hit.from - rs) * rate;
+        const mm = ranTo(sl, hit.from);
         const ns = { ...sl, start, runStart: rs, end: hit.from, rate, meters: mm, part: true, reason: `Phần đã chạy trước khi ${hit.label}, phần còn lại xếp lại` };
         t.m -= mm;
         m.slots.push(ns);
-        keepAttend(ns, sl, k);
+        keepAttend(ns, sl, cv);
         consBefore(t, rs, ns.end, mm);
         if (usesMix(t) && ns.end > B) preUse.push({ t, from: Math.max(B, rs), to: ns.end, rate, sl: ns });
         continue;
@@ -885,11 +952,11 @@ export function schedule(
       const cs = closedNext(sl.machine, Math.max(B, start));
       if (start < B && end > B && cs < end - 1e-9) {
         if (rs >= cs) continue;
-        const mm = (cs - rs) * rate;
+        const mm = ranTo(sl, cs);
         const ns = { ...sl, start, runStart: rs, end: cs, rate, meters: mm, part: true, reason: `Phần chạy trước giờ máy không chạy (${shiftsTxt(sl.machine, cs)}), phần còn lại xếp lại` };
         t.m -= mm;
         m.slots.push(ns);
-        keepAttend(ns, sl, k);
+        keepAttend(ns, sl, cv);
         consBefore(t, rs, ns.end, mm);
         if (usesMix(t) && ns.end > B) preUse.push({ t, from: Math.max(B, rs), to: ns.end, rate, sl: ns });
         continue;
@@ -901,15 +968,16 @@ export function schedule(
         const ns = { ...sl, start, runStart: rs, end, rate, reason: sl.reason.startsWith('Giữ chỗ') ? sl.reason : `Giữ chỗ (TP SX đã duyệt lịch lô) · ${sl.reason}` };
         t.m -= sl.meters;
         m.slots.push(ns); m.blocks.push([start, end, KEEP_LABEL]);
-        keepAttend(ns, sl, k);
+        keepAttend(ns, sl, cv);
         if (usesMix(t)) preUse.push({ t, from: rs, to: end, rate, sl: ns });
         continue;
       }
       let ns: Slot;
-      if (opt.split && end > B) {
+      if ((opt.split || cutKeys.has(sl.key)) && end > B) {
         if (rs >= B) continue;
-        const mm = (B - rs) * rate;
-        ns = { ...sl, start, runStart: rs, end: B, rate, meters: mm, part: true, reason: 'Phần đã chạy trước khi tách lệnh, phần còn lại xếp sau đơn gấp' };
+        const mm = ranTo(sl, B);
+        ns = { ...sl, start, runStart: rs, end: B, rate, meters: mm, part: true,
+          reason: opt.split ? 'Phần đã chạy trước khi tách lệnh, phần còn lại xếp sau đơn gấp' : 'Phần đã chạy trước mốc xếp lại, phần còn lại xếp sau công đoạn trước' };
         t.m -= mm;
         consBefore(t, rs, B, mm);
       } else {
@@ -919,7 +987,7 @@ export function schedule(
         if (usesMix(t) && end > B) preUse.push({ t, from: Math.max(B, rs), to: end, rate, sl: ns });
       }
       m.slots.push(ns);
-      keepAttend(ns, sl, k);
+      keepAttend(ns, sl, cv);
     }
   }
   // Khối trộn giữ lại trước mốc = lượng silicone line đã dùng trước mốc (không tính theo tỷ lệ thời gian)
@@ -1654,7 +1722,9 @@ export function schedule(
     for (const [code, mo] of Object.entries(otUsed)) for (const [mon, h] of Object.entries(mo)) if (h >= P.ot_month_h - 1e-9)
       warnings.add(`${code} làm ca dài đã dùng hết ${P.ot_month_h} giờ làm thêm tháng ${mon.slice(5, 7)}/${mon.slice(0, 4)}: những ngày sau máy thiếu người không chạy ca thêm`);
   }
-  // ---------- Sổ giờ đứng máy theo lịch: phút thật mỗi người mỗi ngày (gồm giờ làm đêm 22:00–06:00), ca của người ----------
+  // ---------- Sổ giờ đứng máy theo lịch: phút làm việc mỗi người mỗi ngày (gồm giờ làm đêm 22:00–06:00), ca của người ----------
+  // giờ thật trải đều cả ca kể cả giờ nghỉ → nhân tỷ lệ giờ làm / độ dài ca để không tính giờ nghỉ là giờ đứng máy
+  const runFrac = cal.shifts.map((s, j) => Math.min(1, shiftRun(s) / Math.max(1, shLenMin[j] ?? 480)));
   const hrs = new Map<string, HoursRow>();
   for (const m of machines) for (const sl of m.slots) for (const a of sl.attend ?? []) {
     const w = wByCode.get(a.p);
@@ -1665,9 +1735,10 @@ export function schedule(
       const di = dayOf(x), d = dateAt(di);
       if (d) {
         const r0 = realAt(x), r1 = Math.max(r0, realAt(y, true));
+        const j = Math.min(SPD - 1, Math.max(0, Math.floor((x - di * DAY) / S + 1e-9))), f = runFrac[j] ?? 1;
         const k = d + '|' + a.p;
         const row = hrs.get(k) ?? { d, p: a.p, m: 0, n: 0, s: wShift(a.p, di) };
-        row.m += (r1 - r0) * 60; row.n += nightHours(r0, r1) * 60;
+        row.m += (r1 - r0) * 60 * f; row.n += nightHours(r0, r1) * 60 * f;
         hrs.set(k, row);
       }
       x = y;

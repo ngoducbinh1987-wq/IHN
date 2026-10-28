@@ -214,9 +214,16 @@ drop trigger if exists schedule_versions_ledger on plan.schedule_versions;
 create trigger schedule_versions_ledger after insert or update of is_current on plan.schedule_versions
   for each row execute function plan.trg_ledger();
 
+-- Mỗi người mỗi ngày một dòng: hai kế hoạch cùng có lịch trên một ngày thì lấy lịch ghi sau cùng (không cộng hai lần); bỏ kế hoạch đã hủy
+create or replace view plan.v_op_day with (security_invoker = true) as
+select distinct on (h.operator_code, h.work_date) h.operator_code, h.work_date, h.attend_min, h.night_min, h.shift_no, h.plan_id
+from plan.operator_day_hours h join plan.production_plans p on p.id = h.plan_id
+where p.status <> 'CANCELLED'
+order by h.operator_code, h.work_date, h.updated_at desc;
+grant select on plan.v_op_day to authenticated;
+
 create or replace view app.v_kh_op_hours with (security_invoker = true) as
-select h.operator_code, h.work_date, sum(h.attend_min) as attend_min, sum(h.night_min) as night_min, max(h.shift_no) as shift_no
-from plan.operator_day_hours h group by h.operator_code, h.work_date;
+select h.operator_code, h.work_date, h.attend_min, h.night_min, h.shift_no from plan.v_op_day h;
 grant select on app.v_kh_op_hours to authenticated;
 
 -- ===========================================================================
@@ -289,7 +296,7 @@ begin
   for x in select (a ->> 'date')::date as d, max(case when mm.machine_type = 'EXTRUDER_SI' then (a ->> 'shifts')::int end) as line_n,
                   max(case when mm.machine_type = 'MIXER' then (a ->> 'shifts')::int end) as mix_n
            from jsonb_array_elements(p_machines) a join master.machines mm on mm.code = a ->> 'machine' group by 1 loop
-    if x.line_n is not null and exists (select 1 from master.machines z where z.machine_type = 'MIXER' and z.active and z.inline_with is null
+    if x.line_n is not null and exists (select 1 from master.machines z where z.machine_type = 'MIXER' and z.active and z.status <> 'OFF' and z.inline_with is null
          and coalesce((select (b ->> 'shifts')::int from jsonb_array_elements(p_machines) b where b ->> 'machine' = z.code and (b ->> 'date')::date = x.d), 1) < x.line_n) then
       raise exception 'Ngày %: line silicone chạy % ca thì máy trộn cũng chạy % ca (silicone đã pha chỉ dùng trong hạn)', to_char(x.d, 'DD/MM'), x.line_n, x.line_n;
     end if;
@@ -418,7 +425,8 @@ declare r plan.week_rosters; v_from date; v_to date; v_req uuid; s plan.machine_
   v_txt text; a jsonb; v_wk text; v_no int; v_lead text; v_qc text;
 begin
   select * into r from plan.week_rosters where id = p_id for update;
-  v_from := greatest(r.week_start, plan.vn_today()); v_to := r.week_start + 6;
+  -- áp từ ngày mai (hôm nay đã chạy theo ca cũ: không đổi ca giữa ngày)
+  v_from := greatest(r.week_start, plan.vn_today() + 1); v_to := r.week_start + 6;
   if v_to < v_from then raise exception 'Tuần % đã qua', to_char(r.week_start, 'DD/MM'); end if;
   v_wk := to_char(r.week_start, 'DD/MM') || '–' || to_char(v_to, 'DD/MM');
   update plan.week_rosters set status = 'REPLACED', updated_at = now() where week_start = r.week_start and status = 'APPROVED' and id <> r.id;
@@ -434,7 +442,7 @@ begin
   values (core.next_no('CA', 3), r.plan_id, v_items, jsonb_build_object('roster', r.roster_no), 'Bảng ca tuần ' || r.roster_no || ' (' || v_wk || ')',
           'APPROVED', r.submitted_by, coalesce(r.submitted_at, now()), auth.uid(), now(), nullif(trim(coalesce(p_note, '')), ''))
   returning id into v_req;
-  -- bảng ca thay mọi ca máy cũ trong tuần (từ hôm nay); phần sau tuần giữ lại
+  -- bảng ca thay mọi ca máy cũ trong tuần (từ ngày mai); phần sau tuần giữ lại
   for s in select * from plan.machine_shifts m where m.date_from <= v_to and least(m.date_to, coalesce(m.ended_on, m.date_to)) >= v_from
              and least(m.date_to, coalesce(m.ended_on, m.date_to)) >= m.date_from loop
     if least(s.date_to, coalesce(s.ended_on, s.date_to)) > v_to then
@@ -549,13 +557,13 @@ begin
     if coalesce(r.status, '') not in ('PROPOSED', 'APPROVED')
        and not exists (select 1 from inv.alert_log where kind = 'ROSTER' and ref_id = v_key and period_key = ws || ':FRI') then
       insert into inv.alert_log (kind, ref_id, period_key) values ('ROSTER', v_key, ws || ':FRI');
-      perform app.kh_notify_role('SX_TP', 'Lập bảng ca tuần ' || v_wk, 'MES đã đề xuất ở Nhân sự xưởng → Bảng ca tuần. TP SX sửa rồi gửi Giám đốc duyệt trước 12:00 thứ 7 '
+      perform app.kh_notify_role('SX_TP', 'Lập bảng ca tuần ' || v_wk, 'Vào Nhân sự xưởng → Bảng ca tuần, bấm "MES lập bảng ca", sửa rồi gửi Giám đốc duyệt trước 12:00 thứ 7 '
         || to_char(ws - 2, 'DD/MM') || ' để MES gửi lịch ca cho công nhân.', '/nhan-su-xuong?tab=ca&w=' || ws);
-      perform app.kh_notify_role('SX_KH', 'Lập bảng ca tuần ' || v_wk, 'Hạn gửi Giám đốc: 12:00 thứ 7 ' || to_char(ws - 2, 'DD/MM') || '.', '/nhan-su-xuong?tab=ca&w=' || ws);
+      perform app.kh_notify_role('SX_KH', 'Lập bảng ca tuần ' || v_wk, 'Bấm "MES lập bảng ca" ở Nhân sự xưởng → Bảng ca tuần để TP SX xem, gửi Giám đốc trước 12:00 thứ 7 ' || to_char(ws - 2, 'DD/MM') || '.', '/nhan-su-xuong?tab=ca&w=' || ws);
     end if;
     -- giờ đứng máy 4 tuần qua lệch quá ngưỡng (một lần mỗi tuần)
     select * into c from master.planning_config where id = 1;
-    with t as (select o.code, coalesce((select sum(h2.attend_min) from plan.operator_day_hours h2 where h2.operator_code = o.code
+    with t as (select o.code, coalesce((select sum(h2.attend_min) from plan.v_op_day h2 where h2.operator_code = o.code
                                          and h2.work_date between n::date - 27 and n::date), 0) as m
                from master.operators o where o.active)
     select avg(m), string_agg(code || ' ' || round(m / 60) || ' giờ (' || case when m > avg_m then '+' else '−' end || round(abs(m - avg_m) / nullif(avg_m, 0) * 100) || ' %)', ', ' order by code)
@@ -645,12 +653,39 @@ select c.id, c.fill_pct, c.frozen_days, c.cutoff_time, c.downtime_reason_min, c.
   -- 5400: luân phiên đứng máy, ca 2 có người đo mẫu QC
   c.balance_pct,
   coalesce((select jsonb_agg(jsonb_build_object('code', h.operator_code, 'date', h.work_date, 'min', h.m) order by h.work_date, h.operator_code)
-            from (select operator_code, work_date, sum(attend_min) as m from plan.operator_day_hours
-                  where work_date between (now() at time zone 'Asia/Ho_Chi_Minh')::date - 45 and (now() at time zone 'Asia/Ho_Chi_Minh')::date + 30
-                  group by operator_code, work_date) h), '[]') as op_hours,
+            from (select operator_code, work_date, attend_min as m from plan.v_op_day
+                  where work_date between (now() at time zone 'Asia/Ho_Chi_Minh')::date - 45 and (now() at time zone 'Asia/Ho_Chi_Minh')::date + 30) h), '[]') as op_hours,
   coalesce((select jsonb_agg(jsonb_build_object('from', w.week_start, 'to', w.week_start + 6, 'mode', w.qc ->> 'mode') order by w.week_start)
             from plan.week_rosters w where w.status = 'APPROVED' and w.qc ->> 'mode' in ('QC', 'LEAD')
               and w.week_start + 6 >= (now() at time zone 'Asia/Ho_Chi_Minh')::date - 62), '[]') as qc_cover
 from master.planning_config c
 where c.id = 1;
 grant select on app.v_kh_config to authenticated;
+
+-- ===========================================================================
+-- Ca máy theo bảng ca tuần Giám đốc đã duyệt: không kết thúc riêng ở Tối ưu (đổi bằng bảng ca mới, Giám đốc duyệt)
+-- ===========================================================================
+create or replace function app.kh_shift_end(p_req uuid, p_note text) returns void
+language plpgsql security definer set search_path = pg_catalog, public as $$
+declare o plan.shift_requests;
+begin
+  if not (plan.is_gd() or core.has_role('SX_TP')) then raise exception 'Chỉ Giám đốc hoặc TP SX kết thúc thêm ca'; end if;
+  if coalesce(trim(p_note), '') = '' then raise exception 'Nhập lý do'; end if;
+  select * into o from plan.shift_requests where id = p_req for update;
+  if not found then raise exception 'Không tìm thấy đề xuất thêm ca'; end if;
+  if o.summary ? 'roster' then
+    raise exception 'Ca máy % theo bảng ca tuần %: muốn đổi thì lập bảng ca mới ở Nhân sự xưởng → Bảng ca tuần (Giám đốc duyệt)', o.req_no, o.summary ->> 'roster';
+  end if;
+  if o.status = 'PROPOSED' then
+    update plan.shift_requests set status = 'CANCELLED', review_note = trim(p_note), reviewed_by = auth.uid(), reviewed_at = now() where id = p_req;
+    return;
+  end if;
+  if o.status <> 'APPROVED' then raise exception 'Đề xuất % không còn hiệu lực', o.req_no; end if;
+  update plan.shift_requests set status = 'ENDED', review_note = coalesce(review_note || ' · ', '') || 'Kết thúc: ' || trim(p_note) where id = p_req;
+  update plan.machine_shifts set ended_on = greatest(date_from - 1, plan.vn_today())
+   where request_id = p_req and least(date_to, coalesce(ended_on, date_to)) > plan.vn_today();
+  perform app.kh_log('Ca máy', 'Máy chạy nhiều ca: ' || o.req_no, 'đang áp dụng', 'kết thúc từ ngày mai', trim(p_note));
+  perform app.kh_notify_role('SX_TP', 'Kết thúc thêm ca: ' || o.req_no, trim(p_note) || '. Bấm Xếp lại lịch.', '/lich-may?tab=toiuu');
+end $$;
+revoke all on function app.kh_shift_end(uuid, text) from public, anon;
+grant execute on function app.kh_shift_end(uuid, text) to authenticated;

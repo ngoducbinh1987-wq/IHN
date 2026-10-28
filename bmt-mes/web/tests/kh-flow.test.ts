@@ -389,6 +389,18 @@ for (const kgh of [30, 50]) {
   // Xếp lại: lịch cũ 1 ca, từ ngày thứ 3 máy trộn + line silicone chạy 2 ca → phần trước mốc giữ, đủ mét, hợp lệ
   const rb = go('xếp lại từ ngày 3 sang 2 ca', rng(SIL, 2, '2026-10-31'), { assume: true, prev: { sch: one.sch, B: 3 } });
   if (!(rb.sc.makespan < one.sc.makespan - 0.5)) bad('xếp lại sang 2 ca từ ngày 3 phải xong sớm hơn');
+  // phần giữ lại trước mốc (lịch cũ 1 ca) vẫn nằm trong ca 1 của lịch mới, không trùm sang giờ ca 2, ca 3
+  {
+    const S3 = rb.cal.S, B3 = 3 * S3 * rb.cal.SPD;
+    const out = rb.sch.slots.filter((x) => x.start < B3 - 1e-6 && x.op !== 'CD0').filter((x) => {
+      const seg = (t: number) => Math.floor((t + 1e-6) / S3) % rb.cal.SPD, segE = (t: number) => Math.floor((t - 1e-6) / S3) % rb.cal.SPD;
+      return seg(x.runStart) !== 0 || segE(x.end) !== 0 || Math.floor((x.runStart + 1e-6) / S3) !== Math.floor((x.end - 1e-6) / S3);
+    });
+    if (out.length) bad(`lịch cũ 1 ca giữ lại trước mốc phải nằm trong ca 1: ${out.slice(0, 2).map((x) => x.key + ' ' + x.machine).join(', ')}`);
+    const m0 = one.sch.slots.filter((x) => x.start < 3 * one.cal.S && x.op !== 'CD0').reduce((a, x) => a + Math.min(x.meters, Math.max(0, (3 * one.cal.S - x.runStart) * x.rate)), 0);
+    const m1 = rb.sch.slots.filter((x) => x.start < B3 - 1e-6 && x.op !== 'CD0').reduce((a, x) => a + x.meters, 0);
+    if (Math.abs(m0 - m1) > 1) bad(`mét chạy trước mốc phải giữ nguyên khi đổi số ca: ${m0.toFixed(0)} → ${m1.toFixed(0)}`);
+  }
 }
 // 14. Luân phiên đứng máy, ca 2 xoay theo tuần (anh Bình duyệt 28/10/2026, bản 2): mọi người đứng mọi máy; người ít giờ cộng dồn xếp trước;
 //     máy trộn / đóng gói đổi người đầu ngày khi lệch quá 15 %; sổ giờ đứng máy; QC ca 2; máy dừng thì việc chạy dở chuyển máy khác

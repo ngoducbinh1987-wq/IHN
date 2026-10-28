@@ -45,7 +45,8 @@ export function RosterTab({ kh, rosters, sp, roles, userId, ops, opShifts, canEd
   const thisMon = mondayOf(today), nextMon = addDays(thisMon, 7);
   const week = /^\d{4}-\d{2}-\d{2}$/.test(sp.w ?? '') ? mondayOf(sp.w!) : nextMon;
   const days = weekDays(week, kh.cal.wd);
-  const from = week < today ? today : week;
+  const tomorrow = addDays(today, 1);
+  const from = week < tomorrow ? tomorrow : week; // bảng ca áp từ ngày mai
   const r = rosters.find((x) => x.week_start === week && ['DRAFT', 'PROPOSED', 'RETURNED'].includes(x.status))
     ?? rosters.find((x) => x.week_start === week && x.status === 'APPROVED') ?? null;
   const isTp = roles.includes('SX_TP') || roles.includes('ADMIN');
@@ -194,7 +195,8 @@ export function RosterTab({ kh, rosters, sp, roles, userId, ops, opShifts, canEd
                       <option value="1">1 ca</option><option value="2">2 ca</option><option value="3">3 ca</option></select></td>
                     {days.map((d) => (
                       <td key={d} className="text-center"><input type="checkbox" name={`md_${m.code}`} value={d} disabled={d < from}
-                        defaultChecked={d >= from && (hasEntries(m.code) ? nOf(m.code, d) > 1 : true)} aria-label={`${m.code} chạy thêm ca ${d}`} /></td>
+                        defaultChecked={d < from ? nOf(m.code, d) > 1 : (hasEntries(m.code) ? nOf(m.code, d) > 1 : true)} aria-label={`${m.code} chạy thêm ca ${d}`} />
+                        {d < from && nOf(m.code, d) > 1 && <input type="hidden" name={`mp_${m.code}`} value={`${d}:${nOf(m.code, d)}`} />}</td>
                     ))}
                   </tr>
                 );

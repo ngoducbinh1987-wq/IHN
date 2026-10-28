@@ -18,7 +18,7 @@ export type OtRow = {
 };
 export type ShiftReqRow = {
   id: string; req_no: string; plan_no: string | null; items: { machines: string[]; shifts: number; from: string; to: string; group?: string }[];
-  summary: { gain?: string; persons?: string; short?: string[] } | null; reason: string; status: string; proposed_by: string | null; proposed_by_name: string | null;
+  summary: { gain?: string; persons?: string; short?: string[]; roster?: string } | null; reason: string; status: string; proposed_by: string | null; proposed_by_name: string | null;
   proposed_at: string; reviewed_by_name: string | null; reviewed_at: string | null; review_note: string | null;
 };
 const ST: Record<string, [string, 'warn' | 'ok' | 'bad' | 'mute']> = {
@@ -174,7 +174,8 @@ export function OptimizeTab({ kh, sp, roles, userId, ots, reqs }: { kh: Kh; sp: 
                         <SubmitButton className="btn btn-sm btn-bad-o" formAction={async (f: FormData) => { 'use server'; f.set('approve', '0'); await reviewShifts(f); }}>Trả lại</SubmitButton>
                       </form>
                     )}
-                    {((o.status === 'APPROVED' && to >= today) || o.status === 'PROPOSED') && (isGd || roles.includes('SX_TP')) && (
+                    {o.summary?.roster ? <div className="mt-1 text-[12px] text-muted">Theo bảng ca tuần {o.summary.roster}: đổi bằng bảng ca mới (<Link className="link" href="/nhan-su-xuong?tab=ca">Bảng ca tuần</Link>)</div> : null}
+                    {!o.summary?.roster && ((o.status === 'APPROVED' && to >= today) || o.status === 'PROPOSED') && (isGd || roles.includes('SX_TP')) && (
                       <form action={endShifts} className="mt-1 flex flex-wrap gap-1">
                         <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="id" value={o.id} />
                         <input className="inp min-w-[140px] flex-1 py-1" name="note" placeholder="Lý do" required aria-label={`Lý do kết thúc ${o.req_no}`} />

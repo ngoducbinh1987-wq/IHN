@@ -307,6 +307,51 @@ select pg_temp.as_user('KHONG_AI');
 select plan.roster_reminders((pg_temp.mon(12) + time '08:00')::timestamp);
 select pg_temp.ok(pg_temp.nt('G_BGD', 'Duyệt bảng ca tuần%trước 12:00 hôm nay') = 1, 'Thứ 7 08:00 bảng ca chờ duyệt: nhắc Giám đốc');
 
+-- ================================================================ 9. Rà soát độc lập: ca máy bảng ca không kết thúc riêng; bảng ca tuần này áp từ ngày mai;
+--    sổ giờ không cộng hai kế hoạch, bỏ kế hoạch hủy; máy trộn ngừng dùng không bắt cùng ca
+select pg_temp.as_user('G_SXTP');
+select pg_temp.api_fails(format($q$select app.kh_shift_end(%L, 'thử')$q$, (select request_id from plan.week_rosters where id = (select v from t where k = 'w2'))),
+  'bảng ca tuần', 'TP SX không kết thúc riêng ca máy của bảng ca Giám đốc đã duyệt');
+select pg_temp.as_user('G_BGD');
+select pg_temp.api_fails(format($q$select app.kh_shift_end(%L, 'thử')$q$, (select request_id from plan.week_rosters where id = (select v from t where k = 'w2'))),
+  'bảng ca tuần', 'Giám đốc cũng đổi ca máy bằng bảng ca mới');
+do $$
+declare ws date := pg_temp.today() - (extract(isodow from pg_temp.today())::int - 1); v uuid; ds int[];
+begin
+  if extract(isodow from pg_temp.today()) > 5 then perform pg_temp.ok(true, 'Bảng ca tuần này áp từ ngày mai (bỏ qua: hôm nay thứ 7 / Chủ nhật)'); return; end if;
+  ds := array(select g from generate_series(0, 5) g);   -- cả hôm nay và ngày đã qua trong tuần (bản in giữ đúng)
+  perform pg_temp.as_user('G_SXTP');
+  v := pg_temp.api_val(format($q$select app.roster_save(%L)::text$q$,
+         jsonb_build_object('week_start', ws, 'machines', (select jsonb_agg(jsonb_build_object('machine', 'BUN-01', 'date', ws + d, 'shifts', 2)) from unnest(ds) d),
+           'people', pg_temp.pp('{NV1,NV2}', 'NV1'), 'qc', '{"mode":"LEAD"}'::jsonb, 'summary', '{}'::jsonb)))::uuid;
+  perform pg_temp.api_val(format($q$select app.roster_submit(%L)::text$q$, v));
+  perform pg_temp.as_user('G_BGD');
+  perform pg_temp.api_val(format($q$select app.roster_review(%L, true)::text$q$, v));
+  perform pg_temp.ok(plan.op_shift_on('NV1', pg_temp.today()) = 1 and plan.op_shift_on('NV1', pg_temp.today() + 1) = 2
+    and not exists (select 1 from plan.machine_shifts s join plan.week_rosters w on w.request_id = s.request_id where w.id = v and s.date_from <= pg_temp.today())
+    and exists (select 1 from plan.machine_shifts s join plan.week_rosters w on w.request_id = s.request_id where w.id = v and s.date_from = pg_temp.today() + 1),
+    'Bảng ca tuần này duyệt giữa tuần: áp từ ngày mai (hôm nay giữ ca cũ, không làm hai ca trong một ngày)');
+  perform pg_temp.ok((select jsonb_array_length(machines) from plan.week_rosters where id = v) = 6, 'Bảng ca giữ ca máy các ngày đã qua (bản in đúng)');
+end $$;
+with p as (insert into plan.production_plans (plan_no, period_label) values ('KH-TEST-PCA2', 'Thử bảng ca 2') returning id) insert into t select 'plan2', id from p;
+insert into plan.operator_day_hours (plan_id, work_date, operator_code, attend_min, updated_at)
+values ((select v from t where k = 'plan'), pg_temp.today() + 20, 'NV4', 300, now() - interval '1 hour'),
+       ((select v from t where k = 'plan2'), pg_temp.today() + 20, 'NV4', 100, now());
+select pg_temp.as_user('G_SXTP');
+select pg_temp.ok(pg_temp.api_val(format($q$select string_agg(attend_min::text, ',') from app.v_kh_op_hours where operator_code = 'NV4' and work_date = %L$q$, pg_temp.today() + 20)) = '100',
+  'Sổ giờ: hai kế hoạch cùng ngày lấy lịch ghi sau cùng, không cộng hai lần');
+update plan.production_plans set status = 'CANCELLED' where id = (select v from t where k = 'plan2');
+select pg_temp.ok(pg_temp.api_val(format($q$select string_agg(attend_min::text, ',') from app.v_kh_op_hours where operator_code = 'NV4' and work_date = %L$q$, pg_temp.today() + 20)) = '300',
+  'Sổ giờ bỏ kế hoạch đã hủy');
+update master.machines set status = 'OFF' where code = 'SIL-MIX';
+insert into master.machines (code, name, machine_type, status, active)
+  select 'SIL-MIX-T', 'Máy trộn thử', 'MIXER', 'IDLE', true where not exists (select 1 from master.machines where code = 'SIL-MIX-T');
+select pg_temp.as_user('G_SXTP');
+select pg_temp.api_fails(format($q$select app.roster_save(%L)$q$, pg_temp.rp(pg_temp.mon(21), pg_temp.ms('{EXT-SI-01}', 2, '{21}'), pg_temp.pp('{NV3,NV4}', 'NV3'))),
+  'máy trộn cũng chạy', 'Máy trộn đang dùng phải chạy cùng ca line silicone');
+select pg_temp.ok(pg_temp.api_val(format($q$select app.roster_save(%L)::text$q$, pg_temp.rp(pg_temp.mon(21), pg_temp.ms('{EXT-SI-01,SIL-MIX-T}', 2, '{21}'), pg_temp.pp('{NV3,NV4}', 'NV3')))) is not null,
+  'Máy trộn ngừng dùng (OFF) không bắt chạy cùng ca');
+
 do $$ declare v_n int; v_s text; begin
   select count(*), string_agg(r.n || '. ' || r.msg, E'\n' order by r.n) into v_n, v_s from r;
   raise exception 'KET_QUA_OK % kiểm tra đạt:%', v_n, E'\n' || v_s;

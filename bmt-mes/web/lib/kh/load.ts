@@ -429,7 +429,8 @@ export function rebuild(kh: Kh, orders: Order[], opt: { split?: boolean; credit?
     && (kh.sch?.slots ?? []).some((x) => x.machine === w.machine && x.end > Math.max(w.from, kh.nowT) + 1e-6 && x.start < Math.min(w.to, oldFrozen) - 1e-6));
   let boundaryDay = opt.split || early ? Math.max(0, todayIdx + 1) : Math.max(0, todayIdx + kh.cfg.frozen_days);
   if (opt.fromDate) boundaryDay = Math.min(boundaryDay, Math.max(0, todayIdx + 1, dayIndex(cal, opt.fromDate)));
-  const prev: PrevSchedule | null = kh.sch && kh.version ? { S: kh.version.params.S, SPD: kh.version.params.SPD, slots: kh.sch.slots } : null;
+  const prev: PrevSchedule | null = kh.sch && kh.version
+    ? { S: kh.version.params.S, SPD: kh.version.params.SPD, slots: kh.sch.slots, codes: (kh.version.params.shifts ?? []).map((x) => x.code) } : null;
   // Lô TP SX đã duyệt lịch: giữ chỗ trên lịch máy khi xếp lại
   const keep = new Set(kh.lines.filter((l) => l.lot_approved_at).map((l) => l.id));
   const sopt = { from: prev, boundary: prev ? boundaryDay * cal.SPD * cal.S : 0, split: opt.split, credit: opt.credit, keep, windows };

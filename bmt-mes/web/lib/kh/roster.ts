@@ -53,7 +53,8 @@ export function history(kh: Kh, week: string) {
 
 // Chạy bộ xếp lịch với bảng ca tuần này (thay ca máy, ca người trong tuần; từ hôm nay); xếp lại từ đầu tuần (không sớm hơn ngày mai)
 export function evalRoster(kh: Kh, r: RosterIn) {
-  const today = kh.now.date, end = addDays(r.week, 6), from = r.week < today ? today : r.week;
+  // bảng ca áp từ ngày mai (hôm nay đã chạy theo ca cũ)
+  const tomorrow = addDays(kh.now.date, 1), end = addDays(r.week, 6), from = r.week < tomorrow ? tomorrow : r.week;
   const P = peopleOf(kh.cfg);
   const extra = r.machines.some((m) => m.date >= from && m.shifts >= 2);
   const ms: MachineShift[] = [...cut(kh.cfg.machine_shifts ?? [], from, end),
@@ -132,7 +133,7 @@ export function summarize(kh: Kh, r: RosterIn, ev: RosterEval, base: RosterEval,
 export function suggestRoster(kh: Kh, week: string): { roster: RosterIn; summary: RosterSummary } {
   const P = peopleOf(kh.cfg);
   const h = history(kh, week);
-  const today = kh.now.date, from = week < today ? today : week;
+  const tomorrow = addDays(kh.now.date, 1), from = week < tomorrow ? tomorrow : week;
   const days = weekDays(week, kh.cal.wd).filter((d) => d >= from);
   const allCa1: RPerson[] = kh.operators.map((o) => ({ code: o.code, shift: 1 }));
   const qc: RQc = { mode: 'LEAD', who: null };

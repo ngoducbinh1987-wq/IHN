@@ -6,6 +6,7 @@ import { type Kh, ROLE, carryOver, hasRole, loadKh, rebuild, schedulePayload } f
 import { type RMachine, type RPerson, type RosterIn, evalRoster, suggestRoster, summarize, weekDays } from '@/lib/kh/roster';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { addDays } from '@/lib/kh/scheduler';
 
 // Nhân sự xưởng: TP SX / Kế hoạch SX ghi qua hàm database (database kiểm quyền, ghi nhật ký, làm lịch máy cần xếp lại)
 const txt = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
@@ -162,11 +163,18 @@ async function khFor(planId?: string | null) {
 function readRoster(f: FormData, week: string, kh: Kh): RosterIn {
   const days = weekDays(week, kh.cal.wd);
   const machines: RMachine[] = [];
+  // ngày đã qua / hôm nay (không sửa được): giữ đúng ca máy đã có trong bảng ca để bản in, lịch sử không mất
+  const tomorrow = addDays(kh.now.date, 1);
   for (const m of kh.machines) {
+    const past = new Set<string>();
+    for (const v of f.getAll(`mp_${m.code}`).map(String)) {
+      const [d, k] = v.split(':'); const n = Number(k);
+      if (days.includes(d) && d < tomorrow && (n === 2 || n === 3)) { machines.push({ machine: m.code, date: d, shifts: n }); past.add(d); }
+    }
     const n = Number(txt(f, `ms_${m.code}`) || 1);
     if (n < 2) continue;
     const on = new Set(f.getAll(`md_${m.code}`).map(String));
-    for (const d of days) if (on.has(d)) machines.push({ machine: m.code, date: d, shifts: n });
+    for (const d of days) if (d >= tomorrow && !past.has(d) && on.has(d)) machines.push({ machine: m.code, date: d, shifts: n });
   }
   const lead2 = txt(f, 'lead2'), lead3 = txt(f, 'lead3');
   const people: RPerson[] = kh.operators.map((o) => {
