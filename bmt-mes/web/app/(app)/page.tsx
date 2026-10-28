@@ -85,7 +85,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const pl = sh?.plan;
   const planPct = pl && Number(pl.total_m) > 0 ? Math.round((Number(pl.done_m) / Number(pl.total_m)) * 100) : null;
   const ms = sh?.machines.by_status ?? {};
-  const stopped = (ms.DOWN ?? 0) + (ms.MAINT ?? 0);
+  const stopped = (ms.DOWN ?? 0) + (ms.STOP ?? 0) + (ms.MAINT ?? 0);
   const d = dash ?? ({} as Partial<Dash>);
   const tasks = o?.tasks.items ?? [];
   const taskN = tasks.reduce((s, t) => s + Number(t.n), 0);
@@ -178,7 +178,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                     <li key={m.code}><b>{m.code}</b> {M_STATUS[m.status]?.[0].toLowerCase()}{m.eta ? ` · dự kiến chạy lại ${df(m.eta, true)}` : ''}{m.note ? ` · ${m.note}` : ''}</li>
                   ))}
                 </ul>
-              ) : sh.machines.total > 0 && <div className="mt-2 text-[13px] text-brand">Không có máy hỏng hay đang bảo dưỡng.</div>}
+              ) : sh.machines.total > 0 && <div className="mt-2 text-[13px] text-brand">Không có máy dừng, hỏng hay đang bảo dưỡng.</div>}
             </div>
             <div className="card p-4">
               <div className="flex items-baseline justify-between gap-2"><h2 className="text-[15px] font-medium">Bảo dưỡng 7 ngày tới</h2>

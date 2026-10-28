@@ -33,16 +33,16 @@ const ctx = { cfg, cal, machines, operators };
 const r = schedule(orders, ctx);
 const fin = finishInfo(r, cal, orders);
 let errs = 0; const bad = (m: string) => { errs++; console.log('LỖI', m); };
-function check(sch: typeof r, ords: Order[], tag: string, c?: Config, k?: typeof cal, from?: number, w?: import('../lib/kh/scheduler.ts').Window[]) {
+function check(sch: typeof r, ords: Order[], tag: string, c?: Config, k?: typeof cal, from?: number, w?: import('../lib/kh/scheduler.ts').Window[], ops?: OperatorInfo[], mach?: MachineInfo[]) {
   // 1 trùng giờ trên máy
   for (const [m, sl] of sch.byMachine) for (let i = 1; i < sl.length; i++) if (sl[i].start < sl[i - 1].end - 1e-6) bad(`${tag} trùng giờ ${m} ${sl[i - 1].key} ${sl[i].key}`);
-  // 2 người đứng 1 máy
-  for (const w of ['NV1', 'NV2', 'NV5']) { const sl = sch.slots.filter((s) => s.operator === w).sort((a, b) => a.start - b.start); for (let i = 1; i < sl.length; i++) if (sl[i].start < sl[i - 1].end - 1e-6) bad(`${tag} ${w} đứng 2 máy ${sl[i - 1].machine}/${sl[i].machine} @${sl[i].start.toFixed(0)}`); }
+  // 2 người: không có mặt hai nơi cùng lúc, chỉ đứng máy được phép (kiểm ở validateSchedule bên dưới); máy tự chạy chỉ cần người lúc khởi động, thay bobin
+  for (const s of sch.slots) if (s.op !== 'CD0' && s.start >= (from ?? 0) - 1e-6 && s.meters > 1 && !(s.attend ?? []).length) bad(`${tag} khối ${s.key} trên ${s.machine} không có người có mặt`);
   // 3 bảo toàn mét
   const tasks = buildTasks(ords, cfg);
   for (const t of tasks) { const got = sch.slots.filter((s) => s.key === t.key).reduce((a, s) => a + s.meters, 0); if (Math.abs(got - t.full) > 2) bad(`${tag} mét ${t.key} ${got.toFixed(0)} ≠ ${t.full}`); }
   // 4 gối đầu theo bobin đầu tiên + QC, máy dừng, máy trộn (bộ kiểm tra chung validateSchedule)
-  for (const v of validateSchedule(sch, ords, { cfg: c ?? cfg, cal: k ?? cal }, { from: from ?? 0, windows: w })) if (!v.startsWith('mét') && !v.startsWith('người') && !v.startsWith('trùng')) bad(`${tag} ${v}`);
+  for (const v of validateSchedule(sch, ords, { cfg: c ?? cfg, cal: k ?? cal, operators: ops ?? operators, machines: mach ?? machines }, { from: from ?? 0, windows: w })) if (!v.startsWith('mét') && !v.startsWith('trùng')) bad(`${tag} ${v}`);
   // 5 CD2 HDPE trên line vỏ, SIL trên line silicone
   for (const s of sch.slots) if (s.op === 'CD2') { const o = ords.find((x) => x.id === s.lineId)!; if (o.sil !== s.machine.startsWith('EXT-SI')) bad(`${tag} CD2 sai máy ${o.label} ${s.machine}`); }
   if (sch.unplaced.length) bad(`${tag} chưa xếp ${sch.unplaced.length}`);

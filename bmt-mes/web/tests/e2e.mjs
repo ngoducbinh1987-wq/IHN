@@ -736,7 +736,7 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
   await login(page, 'sx.tp@bmt.test');
   await page.goto(`${BASE}/lich-may?tab=toiuu&mode=fastest`);
   const ob = await page.innerText('main');
-  for (const t of ['Máy cổ chai', 'Nếu thêm giờ thì sao', 'Thứ tự lô và ngày xong', 'Tăng ca / trộn sớm', 'Thông số đang dùng']) if (!ob.includes(t)) fail(`Thẻ Tối ưu & tăng ca thiếu "${t}"`);
+  for (const t of ['Máy cổ chai', 'Nếu thêm giờ', 'Thứ tự lô và ngày xong', 'Tăng ca / trộn sớm', 'Thông số đang dùng']) if (!ob.includes(t)) fail(`Thẻ Tối ưu & tăng ca thiếu "${t}"`);
   if (!ob.includes('hạn dùng silicone 6 giờ') || !ob.includes('90 phút')) fail('Thẻ Tối ưu không hiện thông số mới (hạn dùng 6 giờ, QC 90 phút)');
   await page.screenshot({ path: `${SHOTS}/20-toi-uu-tang-ca.png`, fullPage: true });
   ok('Thẻ Tối ưu & tăng ca: máy cổ chai, nếu thêm giờ, thứ tự lô, thông số đang dùng');
@@ -838,6 +838,98 @@ await ctx.close();
   if ((await p2.locator('#gia-tri-ton').count()) || (await p2.locator('#gia-thanh').count())) fail('TP SX không được xem giá: không có khối giá trị tồn kho, giá thành');
   await c2.close();
   ok('Tổng quan theo phân quyền: Giám đốc đủ 9 khối; TP SX có sản lượng, hiệu suất máy, không có giá; vận hành không thấy giá, dự phòng, QC');
+}
+
+// 14. Người đứng máy, máy dừng (quyết định 28/10/2026): Nhân sự xưởng, máy Dừng bắt buộc giờ chạy lại, thông số người đứng máy
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'vh@bmt.test');
+  await p.goto(`${BASE}/nhan-su-xuong`);
+  if (!(await flash(p)).includes('không thuộc bộ phận')) fail('Vận hành không được vào Nhân sự xưởng');
+  await c.close();
+}
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'kt.tp@bmt.test');
+  await p.goto(`${BASE}/may`);
+  const tp2 = await p.locator('a[href^="/may/"]', { hasText: 'EXT-TP-02' }).first().getAttribute('href');
+  await p.goto(`${BASE}${tp2}`);
+  await p.locator('summary', { hasText: 'Báo hỏng' }).click();
+  await p.selectOption('select[name=status]', 'STOP');
+  await p.selectOption('select[name=reason]', 'DT_MATERIAL').catch(() => {});
+  await p.fill('input[name=note]', 'E2E: chờ hạt nhựa');
+  await Promise.all([p.waitForURL(/err=|ok=/), p.locator('details form button', { hasText: 'Cập nhật' }).first().click()]);
+  if (!(await flash(p)).includes('dự kiến chạy lại')) fail('Báo máy Dừng không có giờ chạy lại phải bị chặn');
+  await p.goto(`${BASE}/tham-so?sua=people`);
+  const sec = p.locator('#nguoi-dung-may');
+  await sec.locator('input[name=start_min]').fill('25');
+  await sec.locator('textarea[name=reason]').fill('E2E: bấm giờ khởi động thực tế');
+  await clickNav(p, '#nguoi-dung-may button:has-text("Lưu thay đổi")');
+  await expectOk(p, 'TP KT/QA sửa phút khởi động máy tự chạy');
+  if (!/khởi động, cộng phút đổi máy\s*25/.test(await p.innerText('#nguoi-dung-may'))) fail('Phút khởi động chưa lưu 25');
+  if (await p.locator('#ty-le-rieng a', { hasText: 'Sửa' }).count()) fail('TP KT/QA không được sửa tỷ lệ xếp lịch riêng');
+  await c.close();
+  ok('Máy Dừng bắt buộc giờ chạy lại; TP KT/QA sửa thông số người đứng máy, không sửa tỷ lệ riêng');
+}
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'sx.tp@bmt.test');
+  if (!(await p.textContent('nav')).includes('Nhân sự xưởng')) fail('TP SX phải thấy mục Nhân sự xưởng');
+  await p.goto(`${BASE}/nhan-su-xuong`);
+  const nb = await p.innerText('main');
+  for (const t of ['Người', 'Người × máy', 'Lịch vắng', 'Kiêm nhiệm tạm', 'Tổ đóng gói', 'Cảnh báo & gợi ý']) if (!nb.includes(t)) fail(`Nhân sự xưởng thiếu thẻ ${t}`);
+  // Thêm người
+  const add = p.locator('#them-nguoi');
+  await add.locator('input[name=name]').fill('Người thử E2E');
+  await add.locator('input[name=job]').fill('Đóng gói');
+  await clickNav(p, '#them-nguoi button:has-text("Thêm người")');
+  await expectOk(p, 'TP SX thêm người đứng máy');
+  if (!(await p.innerText('main')).includes('Người thử E2E')) fail('Người mới không hiện trong danh sách');
+  // Lịch vắng NV5 ngày mai
+  const tom = new Date(Date.now() + 7 * 3600000 + 86400000).toISOString().slice(0, 10);
+  await p.goto(`${BASE}/nhan-su-xuong?tab=vang`);
+  const fa = p.locator('form:has(select[name=part])');
+  await fa.locator('select[name=operator]').selectOption('NV5');
+  await fa.locator('input[name=from]').fill(tom);
+  await clickNav(p, 'form:has(select[name=part]) button:has-text("Lưu lịch vắng")');
+  await expectOk(p, 'TP SX nhập lịch vắng NV5');
+  // Kiêm nhiệm tạm NV3 đứng EXT-SI-01 ngày mai
+  await p.goto(`${BASE}/nhan-su-xuong?tab=kiem-nhiem`);
+  const fc = p.locator('form:has(button:has-text("Phân công"))');
+  await fc.locator('select[name=operator]').selectOption('NV3');
+  await fc.locator('select[name=machine]').selectOption('EXT-SI-01');
+  await fc.locator('input[name=from]').fill(tom);
+  await fc.locator('input[name=reason]').fill('E2E: NV5 nghỉ phép');
+  await clickNav(p, 'form:has(button:has-text("Phân công")) button:has-text("Phân công")');
+  await expectOk(p, 'TP SX phân công kiêm nhiệm tạm');
+  if (!(await p.innerText('main')).includes('kiêm nhiệm tạm')) fail('Kiêm nhiệm người chưa có tay nghề phải ghi "kiêm nhiệm tạm"');
+  // Tổ đóng gói 1 người ngày đầu tiên trong danh sách
+  await p.goto(`${BASE}/nhan-su-xuong?tab=dong-goi`);
+  const fk = p.locator('form:has(select[name=crew])').first();
+  if (await fk.count()) {
+    await fk.locator('select[name=crew]').selectOption('1');
+    await Promise.all([p.waitForURL(/ok=|err=/), fk.locator('button', { hasText: 'Lưu' }).click()]);
+    await expectOk(p, 'TP SX đặt tổ đóng gói 1 người');
+  }
+  await p.goto(`${BASE}/nhan-su-xuong?tab=canh-bao`);
+  if (/Application error|PGRST/i.test(await p.innerText('body'))) fail('Thẻ Cảnh báo & gợi ý lỗi');
+  await p.screenshot({ path: `${SHOTS}/15-nhan-su-xuong.png`, fullPage: true });
+  // Lịch máy: thông số người đứng máy đổi → cần xếp lại; bảng người có mặt
+  await p.goto(`${BASE}/lich-may?tab=lich`);
+  const lb = await p.innerText('main');
+  if (/Application error|PGRST/i.test(lb)) fail('Lịch máy lỗi sau khi đổi nhân sự');
+  if (!/cần xếp lại|Xếp lại lịch/i.test(lb)) fail('Đổi lịch vắng / kiêm nhiệm / thông số người: lịch máy phải nhắc xếp lại');
+  const rb = p.locator('form button', { hasText: /Xếp lại lịch|Xếp lịch/ }).first();
+  if (await rb.count()) {
+    await Promise.all([p.waitForURL(/ok=|err=/), rb.click()]);
+    const fm = await flash(p);
+    if (!fm.includes('Giám đốc duyệt')) fail(`TP SX xếp lại lịch theo người đứng máy: ${fm}`);
+    ok(`TP SX xếp lại lịch theo người đứng máy → ${fm.trim().slice(0, 120)}`);
+  }
+  await p.goto(`${BASE}/lich-may?tab=toiuu`);
+  if (!(await p.innerText('main')).includes('thêm người')) fail('Thẻ Tối ưu phải có mục Nếu thêm người');
+  await c.close();
+  ok('Nhân sự xưởng: thêm người, lịch vắng, kiêm nhiệm tạm (ghi chưa có tay nghề), tổ đóng gói; lịch máy nhắc xếp lại, xếp lại theo người');
 }
 
 await browser.close();

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Alert, LockNote, Swatch, dd, pc, wd, wdl } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
-import { bobbins, dayData, infoChecks, type Check, type SlipLine } from '@/lib/kh/day';
+import { bobbins, dayData, dayPeople, infoChecks, type Check, type SlipLine } from '@/lib/kh/day';
 import { ROLE, hasRole, loadKh } from '@/lib/kh/load';
 import { UNIT, addDays, isWorkday, opName, prevWorkday as prevWd } from '@/lib/kh/scheduler';
 import { df, nf } from '@/lib/format';
@@ -70,7 +70,7 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
     : date === today ? ['Chưa phát · đang trong ngày', 'warn']
     : ['Chưa phát · hạn ' + deadline, date === nextWd(todayW, 1) || date === todayW ? 'warn' : 'info'];
   const slip = last?.slip_lines ? last.slip_lines : !past ? preview.slip : [];
-  const people = [...new Set(work.map((x) => x.r.sl.operator).filter(Boolean))];
+  const people = [...new Set(work.flatMap((x) => dayPeople(kh, x.r.sl, date).map((y) => y.p)))];
   const q = (d: string) => `/lenh-ngay?${kh.planId ? `plan=${kh.planId}&` : ''}d=${d}`;
 
   return (
@@ -189,7 +189,7 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
                     const near = o?.due && o.due >= date && (new Date(o.due).getTime() - new Date(date).getTime()) / 86400000 <= 3;
                     return [headRow, (
                       <tr key={x.machine.code + x.s + x.r.sl.key + x.r.sl.start}>
-                        <td className="mono">{x.machine.code}</td><td><b>{x.r.sl.operator}</b></td>
+                        <td className="mono">{x.machine.code}</td><td className="text-[12.5px]">{dayPeople(kh, x.r.sl, date).map((y, i) => <div key={y.p}>{i === 0 ? <b>{y.p}</b> : y.p}{y.c ? <span className="text-warn"> · kiêm nhiệm tạm</span> : ''}</div>)}</td>
                         <td className="mono whitespace-nowrap">{o?.label}{o?.prio === 0 && <> <Pill tone="bad">Gấp</Pill></>}</td>
                         <td><b>{o?.product_code}</b><div className="text-[12px] text-muted">{o ? opName(x.r.sl.op, o) : x.r.sl.op}</div></td>
                         <td className="text-[12.5px]">{x.r.sl.color ? <><Swatch color={x.r.sl.color} />{x.r.sl.color}</> : '—'}</td>

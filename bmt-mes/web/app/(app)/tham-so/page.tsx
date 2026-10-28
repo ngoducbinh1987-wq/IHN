@@ -5,19 +5,22 @@ import { Alert, LockNote } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { QC_LEARN_MIN_SAMPLES, ROLE, hasRole, loadConfig } from '@/lib/kh/load';
-import { DEFAULT_WD, OP_SHORT, type Op, flowOf, shiftRun } from '@/lib/kh/scheduler';
+import { DEFAULT_WD, OP_SHORT, type Op, flowOf, peopleOf, shiftRun } from '@/lib/kh/scheduler';
 import { df, nf, numIn } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { saveChangeovers, saveConfig, saveFlow, saveRates, saveShifts, setMode } from './actions';
+import { availExclude, saveChangeovers, saveConfig, saveFlow, savePeople, saveRates, saveShifts, setMode } from './actions';
 
 export const metadata = { title: 'Tham số xếp lịch' };
 
 const DOW: [number, string][] = [[1, 'T2'], [2, 'T3'], [3, 'T4'], [4, 'T5'], [5, 'T6'], [6, 'T7'], [7, 'CN']];
+type AvailRow = { machine_code: string; machine_name: string; tracked_days: number; plan_hours: number; down_hours: number; events: number; down_pct: number;
+  fill_pct: number; fill_now: number; enough: boolean; below_floor: boolean; avail_learn: boolean; avail_days: number; avail_min_days: number; avail_floor_pct: number };
+type AvailEvent = { id: string; started_at: string; ended_at: string | null; minutes: number; source: string; note: string | null; excluded: boolean; exclude_reason: string | null };
 
 const PARAMS: [key: string, label: string, unit: string, range: string][] = [
   ['fill_pct', 'Tỷ lệ xếp lịch mỗi ca', '%', '60 – 95'], ['frozen_days', 'Vùng khóa lịch', 'ngày', '1 – 7'],
-  ['cutoff_time', 'Giờ chốt phát lệnh ngày', 'hôm trước', 'HH:MM'], ['machines_per_operator', 'Số máy 1 người đứng cùng lúc', 'máy', '1 – 3'],
+  ['cutoff_time', 'Giờ chốt phát lệnh ngày', 'hôm trước', 'HH:MM'],
   ['downtime_reason_min', 'Dừng máy bắt buộc lý do khi quá', 'phút', '1 – 30'], ['plc_dev_pct', 'Ngưỡng lệch mét PLC / khai báo', '%', '0,1 – 2'],
   ['auto_shifts', 'Số ca đạt liên tiếp để chuyển tự động', 'ca', '3 – 30'], ['plc_loss_min', 'Mất kết nối PLC chuyển sang nhập tay sau', 'phút', '1 – 60'],
   ['group_days', 'Khung gom lô cùng cỡ ruột, cùng màu (0 = không gom)', 'ngày', '0 – 30'],
@@ -34,10 +37,20 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
   const F = flowOf(cfg);
   const wd = cfg.workdays ?? DEFAULT_WD;
   const { data: log } = await db.schema('app').from('v_kh_param_log').select('*').order('at', { ascending: false }).limit(100);
+  const PP = peopleOf(cfg);
+  const { data: avRows } = await db.schema('app').from('v_machine_avail').select('*').order('machine_code');
+  const av = (avRows ?? []) as AvailRow[];
+  const evOf = new Map<string, AvailEvent[]>();
+  await Promise.all(av.filter((a) => a.events > 0).map(async (a) => {
+    const { data } = await db.schema('app').rpc('avail_events', { p_machine: a.machine_code });
+    evOf.set(a.machine_code, (data ?? []) as AvailEvent[]);
+  }));
+  const avCfg = av[0] ?? null;
+  const isGd = me.roles.includes('BGD') || me.roles.includes('ADMIN');
   const isBgd = hasRole(me.roles, ROLE.params), isKt = hasRole(me.roles, ROLE.rates);
   const edit = sp.sua ?? null;
   const E = (s: string, ok: boolean) => ok && edit === s;
-  const mine = [isBgd && 'ca làm việc, tham số xếp lịch, cách nhập dữ liệu máy, giới hạn tăng ca', isKt && 'tốc độ chuẩn, phút đổi máy, thông số dòng chảy (QC, mét/bobin, hạn dùng silicone)'].filter(Boolean).join('; ');
+  const mine = [isBgd && 'ca làm việc, tham số xếp lịch, cách nhập dữ liệu máy, giới hạn tăng ca, tỷ lệ xếp lịch riêng', isKt && 'tốc độ chuẩn, phút đổi máy, thông số dòng chảy (QC, mét/bobin, hạn dùng silicone)', (isBgd || isKt) && 'thông số người đứng máy'].filter(Boolean).join('; ');
   const head = (sec: string, title: string, ok: boolean, owner: string) => (
     <div className="card-h"><h2>{title}</h2>
       {E(sec, ok) ? <Pill tone="info">Đang sửa</Pill>
@@ -63,7 +76,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
       <Toolbar title="Tham số xếp lịch" reload="/tham-so" />
       <div className="mt-3"><Flash ok={sp.ok} err={sp.err} /></div>
       <Alert tone={mine ? 'ok' : 'info'} title={mine ? `Tài khoản của bạn được sửa: ${mine}` : 'Tài khoản của bạn chỉ xem'}>
-        Tốc độ chuẩn, phút đổi máy: TP Kỹ thuật/QA. Ca, ngày làm việc, tham số xếp lịch, cách nhập dữ liệu máy: Giám đốc (chỉ sửa ở trang này). Quản lý SX đề xuất, không sửa trực tiếp. Mọi thay đổi phải ghi lý do và được lưu nhật ký. Người đứng máy và tay nghề khai báo ở <Link href="/may" className="link">Quản lý máy → hồ sơ máy → Người đứng máy</Link>.
+        Tốc độ chuẩn, phút đổi máy: TP Kỹ thuật/QA. Ca, ngày làm việc, tham số xếp lịch, cách nhập dữ liệu máy: Giám đốc (chỉ sửa ở trang này). Quản lý SX đề xuất, không sửa trực tiếp. Mọi thay đổi phải ghi lý do và được lưu nhật ký. Người đứng máy, lịch vắng, kiêm nhiệm tạm, tổ đóng gói: <Link href="/nhan-su-xuong" className="link">Nhân sự xưởng</Link> (TP SX); tay nghề từng máy: <Link href="/may" className="link">Quản lý máy → hồ sơ máy → Người đứng máy</Link>.
       </Alert>
 
       <div className="flex flex-col gap-4">
@@ -218,6 +231,74 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
               : <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Thuật toán xếp lịch không dùng số cố định: đổi các thông số này (hoặc tốc độ máy) rồi bấm Xếp lại lịch, MES tự tính lại gối đầu, máy cổ chai, thứ tự lô và đề xuất tăng ca.</p>}
           </form>
         </section>
+        <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
+          <section className="card" id="nguoi-dung-may">
+            {head('people', 'Người đứng máy', isBgd || isKt, 'Giám đốc, TP Kỹ thuật/QA')}
+            <form action={savePeople}>
+              <input type="hidden" name="sec" value="people" />
+              <div className="overflow-x-auto"><table className="tbl"><tbody>
+                {([['start_min', 'Máy tự chạy (bện, đùn, xoắn): người có mặt khi khởi động, cộng phút đổi máy', PP.start_min, 'phút'],
+                  ['bobbin_min', 'Mỗi lần thay bobin: người có mặt', PP.bobbin_min, 'phút'],
+                  ['watch_max', 'Cảnh báo khi một người trông quá (chỉ cảnh báo, không chặn)', PP.watch_max, 'máy'],
+                  ['pack_crew', 'Máy đóng gói: số người mặc định khi có lịch (TP SX đổi theo ngày)', PP.pack_crew, 'người'],
+                  ['pack_one_pct', 'Đóng gói 1 người: tốc độ', PP.pack_one_pct, '%']] as [string, string, number, string][]).map(([k, l, v, u]) => (
+                  <tr key={k}><td>{l}</td><td className="num whitespace-nowrap">{E('people', isBgd || isKt)
+                    ? <input name={k} defaultValue={numIn(v)} className="inp inline-block w-[80px] py-1 text-right" aria-label={l} /> : <b>{nf(v)}</b>} {u}</td></tr>
+                ))}
+              </tbody></table></div>
+              {E('people', isBgd || isKt) ? foot('people', 'Ví dụ: Bấm giờ thực tế: khởi động line đùn 25 phút.')
+                : <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Máy trộn: 1 người đứng suốt giờ trộn, không rời máy trộn để thay bobin line khác. Một người không có mặt hai nơi cùng lúc; người vắng không xếp; người kiêm nhiệm tạm (TP SX phân công ở <Link href="/nhan-su-xuong" className="link">Nhân sự xưởng</Link>) được đứng máy chưa có tay nghề.</p>}
+            </form>
+          </section>
+
+          <section className="card" id="ty-le-rieng">
+            {head('avail', 'Tỷ lệ xếp lịch riêng từng máy', isBgd, 'Giám đốc')}
+            <form action={savePeople}>
+              <input type="hidden" name="sec" value="avail" />
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 text-[13.5px]">
+                {E('avail', isBgd) ? <>
+                  <label className="inline-flex items-center gap-1.5"><input type="checkbox" name="avail_learn" value="1" defaultChecked={avCfg?.avail_learn ?? true} />Trừ tỷ lệ hỏng riêng từng máy</label>
+                  <label className="inline-flex items-center gap-1.5">Tính trong <input name="avail_days" defaultValue={String(avCfg?.avail_days ?? 90)} className="inp w-[64px] py-1 text-right" aria-label="Số ngày tính tỷ lệ hỏng" /> ngày gần nhất</label>
+                  <label className="inline-flex items-center gap-1.5">cần ≥ <input name="avail_min_days" defaultValue={String(avCfg?.avail_min_days ?? 30)} className="inp w-[64px] py-1 text-right" aria-label="Ngày tối thiểu có dữ liệu" /> ngày làm việc</label>
+                  <label className="inline-flex items-center gap-1.5">sàn <input name="avail_floor_pct" defaultValue={String(avCfg?.avail_floor_pct ?? 60)} className="inp w-[64px] py-1 text-right" aria-label="Sàn tỷ lệ riêng" /> %</label>
+                </> : <span className="text-muted">Tỷ lệ riêng = {nf(cfg.fill_pct)}% − tỷ lệ dừng do hỏng trong {avCfg?.avail_days ?? 90} ngày gần nhất · cần ≥ {avCfg?.avail_min_days ?? 30} ngày làm việc có dữ liệu · sàn {avCfg?.avail_floor_pct ?? 60}% · {avCfg?.avail_learn === false ? <b>đang tắt</b> : <b>đang bật</b>} · MES tính lại mỗi đêm</span>}
+              </div>
+              {E('avail', isBgd) && foot('avail', 'Ví dụ: Áp dụng tỷ lệ riêng khi đã đủ 30 ngày dữ liệu.')}
+            </form>
+            <div className="overflow-x-auto"><table className="tbl">
+              <thead><tr><th>Máy</th><th className="num">Ngày có dữ liệu</th><th className="num">Giờ hỏng / giờ ca</th><th className="num">Tỷ lệ hỏng</th><th className="num">Tỷ lệ xếp lịch dùng</th></tr></thead>
+              <tbody>{av.length ? av.map((a) => (
+                <tr key={a.machine_code}>
+                  <td><b>{a.machine_code}</b><div className="text-[12px] text-muted">{a.machine_name}</div>
+                    {(evOf.get(a.machine_code) ?? []).length > 0 && (
+                      <details className="mt-1 text-[12.5px]"><summary className="cursor-pointer text-brand">{evOf.get(a.machine_code)!.length} lần hỏng</summary>
+                        {evOf.get(a.machine_code)!.map((ev) => (
+                          <div key={ev.id} className="mt-1 border-t border-line pt-1">
+                            {df(ev.started_at, true)} → {ev.ended_at ? df(ev.ended_at, true) : 'đang hỏng'} · {nf(Number(ev.minutes) / 60, 1)} giờ{ev.note ? ` · ${ev.note}` : ''}
+                            {ev.excluded && <div className="text-warn">Giám đốc bỏ qua: {ev.exclude_reason}</div>}
+                            {isGd && ev.ended_at && (
+                              <form action={availExclude} className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <input type="hidden" name="event" value={ev.id} /><input type="hidden" name="exclude" value={ev.excluded ? '0' : '1'} />
+                                <input name="reason" className="inp w-[180px] py-1" placeholder="Lý do (bắt buộc)" aria-label="Lý do" required />
+                                <SubmitButton className="btn btn-sm" pendingText="…">{ev.excluded ? 'Tính lại lần này' : 'Bỏ qua lần này'}</SubmitButton>
+                              </form>
+                            )}
+                          </div>
+                        ))}
+                      </details>
+                    )}</td>
+                  <td className="num">{a.tracked_days}</td>
+                  <td className="num">{nf(Number(a.down_hours), 1)} / {nf(Number(a.plan_hours), 0)} h</td>
+                  <td className="num">{nf(Number(a.down_pct), 1)}%</td>
+                  <td className="num">{a.enough && a.avail_learn ? <b className={a.below_floor ? 'text-bad' : ''}>{nf(Number(a.fill_now ?? a.fill_pct), 1)}%</b> : <span className="text-muted">{nf(cfg.fill_pct)}% chung{!a.enough ? ` (chưa đủ ${a.avail_min_days} ngày)` : ''}</span>}
+                    {a.below_floor && <div className="text-[12px] text-bad">chạm sàn: kiểm tra nguyên nhân hỏng</div>}</td>
+                </tr>
+              )) : <tr><td colSpan={5} className="text-[13px] text-muted">Chưa tính (MES tính mỗi đêm).</td></tr>}</tbody>
+            </table></div>
+            <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Giờ hỏng: dừng máy lý do &quot;Hỏng máy&quot; trong báo cáo ca đã chốt và các lần báo Hỏng trên MES, giờ trùng chỉ tính một lần, chỉ phần trong giờ ca; không tính bảo dưỡng theo kế hoạch, chờ vật tư, chờ người, đổi máy; lần hỏng đang diễn ra không tính (lịch đã chặn đến giờ chạy lại). Máy tỷ lệ riêng thấp hơn chạy ít mét hơn mỗi ca trên lịch.</p>
+          </section>
+        </div>
+
         <section className="card">
           <div className="card-h"><h2>Nhật ký thay đổi tham số</h2><span className="text-[13px] font-normal text-muted">lưu vĩnh viễn, không sửa xóa được</span></div>
           <div className="overflow-x-auto"><table className="tbl">
