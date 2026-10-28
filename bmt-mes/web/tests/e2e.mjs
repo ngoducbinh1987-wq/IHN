@@ -529,7 +529,23 @@ await ctx.close();
 {
   [ctx, page] = await ctxFor();
   await login(page, 'bgd@bmt.test');
-  const nav = await page.locator('aside').innerText();
+  const nav = await page.locator('aside nav').textContent();
+  // Menu thu gọn theo nhóm: ở Tổng quan nhóm Sản xuất đóng, bấm tên nhóm thì thả xuống; nhóm đóng hiện tổng số việc của mục con
+  const grp = page.locator('aside nav button', { hasText: 'Sản xuất' });
+  if ((await grp.getAttribute('aria-expanded')) !== 'false' || await page.locator('aside nav a', { hasText: 'Lịch máy' }).isVisible()) fail('Ở Tổng quan nhóm Sản xuất phải thu gọn');
+  await grp.click();
+  if ((await grp.getAttribute('aria-expanded')) !== 'true' || !(await page.locator('aside nav a', { hasText: 'Lịch máy' }).isVisible())) fail('Bấm nhóm Sản xuất phải hiện các mục con');
+  await grp.click();
+  const sums = await page.$$eval('aside nav [data-group]', (gs) => gs.map((g) => {
+    const b = g.querySelector('button'); const kids = [...g.querySelectorAll('a span.bg-bad')].reduce((s, x) => s + Number(x.textContent), 0);
+    return { g: g.getAttribute('data-group'), open: b.getAttribute('aria-expanded'), head: Number(b.querySelector('span.bg-bad')?.textContent ?? 0), kids };
+  }));
+  const wrong = sums.filter((x) => (x.open === 'false' ? x.head !== x.kids : x.head !== 0));
+  if (wrong.length) fail(`Số trên nhóm thu gọn phải bằng tổng số của mục con: ${JSON.stringify(wrong)}`);
+  ok(`Menu thu gọn theo nhóm, số việc hiện ở nhóm khi đóng: ${sums.map((x) => `${x.g}${x.head ? ' ' + x.head : ''}${x.open === 'true' ? ' (mở)' : ''}`).join(', ')}`);
+  await page.goto(`${BASE}/lich-may`);
+  if ((await page.locator('aside nav button', { hasText: 'Sản xuất' }).getAttribute('aria-expanded')) !== 'true') fail('Mở trang Lịch máy thì nhóm Sản xuất phải tự mở');
+  await page.goto(`${BASE}/`);
   if (/Quét mã QR|Cấp NVL cho SX|Nhận NVL tại máy|Máy, người & tham số/.test(nav) || !nav.includes('Tham số xếp lịch')) fail('Menu còn mục thừa hoặc thiếu Tham số xếp lịch');
   const wd = async () => (await page.locator('section', { hasText: 'Ca làm việc' }).first().innerText()).match(/Ngày làm việc:\s*(.+)/)?.[1] ?? '';
   for (const [on, reason] of [[true, 'E2E: thử làm cả chủ nhật'], [false, 'E2E: trả lại nghỉ chủ nhật']]) {

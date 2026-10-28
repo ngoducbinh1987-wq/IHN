@@ -265,6 +265,11 @@ Phần mềm điều hành sản xuất (MES) cho nhà máy cáp BMT. Trả lờ
 - Kiểm thử: `tests/test_dashboard.sql` 27 (cục bộ + Supabase; quyền từng vai trò, bỏ tick quyền/mục có hiệu lực ngay, sản lượng, lô, việc của tôi, QC, hiệu suất BUN-01 dừng 60 phút, giá trị NVL 200 kg × 250.000 − xuất 100 kg, giá thành 24 triệu ÷ 2.000 m = 12.000 đ/m lệch 9,09 %, dự phòng, hao hụt); E2E 108/108 (mục 7 vận hành không thấy giá/dự phòng/QC, mục 13 Giám đốc đủ 9 khối, TP SX không giá). Supabase sau khi áp: dashboard 27, safeupdate, page_access 34, procure_schedule 50, scheduler_flow 72, role_standard 55, security_p0 13 đạt; 6 tài khoản ACTIVE, 0 người dùng thử. Cục bộ 25 bộ SQL đạt, tsc.
 - Số 4800 trùng phiên xếp lịch: đã đổi sang 4900 trước khi áp.
 
+## Menu thu gọn theo nhóm (28/10/2026, chỉ web, đẩy `main`)
+- Anh Bình yêu cầu: menu chính dài → thu gọn dạng bấm thả theo nhóm; số thông báo hiện ở nhóm khi thu gọn, ở mục con khi thả xuống.
+- `web/components/sidebar.tsx`: mỗi nhóm (Điều hành, Mua hàng, Sản xuất, Kho, Báo cáo, Kỹ thuật / QA, Quản lý máy, Hệ thống) là một nút có biểu tượng (`GROUP_ICONS`) + mũi tên; nhóm đóng hiện tổng số đỏ của các mục con; nhóm chứa trang đang xem tự mở (viền xanh trên nút nhóm khi đóng); nhóm đã mở nhớ ở `localStorage` `bmt-menu-open` (bị chặn thì chỉ mở nhóm hiện tại); đang gõ tìm kiếm thì mở mọi nhóm có kết quả. Mục con đóng vẫn có trong DOM (`hidden` + class `hidden`; chỉ thuộc tính `hidden` không đủ vì class `flex` đè `display`). Menu điện thoại dùng chung.
+- Kiểm thử: E2E 109/109 (mục 8b: Tổng quan nhóm Sản xuất đóng, bấm mở/đóng, số trên nhóm đóng = tổng số mục con, mở /lich-may tự mở nhóm Sản xuất). Kiểm thử đọc menu dùng `textContent` (mục con ẩn vẫn có), không dùng `innerText`.
+
 ## Việc còn chờ
 - Tạo tài khoản: Quản lý SX (Quản lý sản xuất + Tổ trưởng ca + Kế hoạch SX + Thủ kho, kho KNL/KBTP/KPL), Kế toán SX (Kế toán kho + Kế toán giá thành), NV mua hàng, 5 công nhân (email nội bộ; NV3 thêm NV kho, kho KTP vì NV3 giữ kho thành phẩm theo chỉ đạo 25/10/2026; NV1 là tổ phó).
 - Người dùng tự thêm trên Vercel: `CRON_SECRET`, `SMTP_*` (Zoho smtp.zoho.com:465), `APP_URL`; và chạy `vault.create_secret` cho `mes_app_url`, `mes_cron_secret` trên Supabase.
