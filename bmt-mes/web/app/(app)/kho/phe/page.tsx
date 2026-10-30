@@ -5,7 +5,7 @@ import { after } from 'next/server';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Toolbar } from '@/components/ui';
 import { df, nf, parseNum } from '@/lib/format';
-import { SCRAP_CAT, errText, keeps, withMsg } from '@/lib/kho';
+import { LoadErrors, SCRAP_CAT, errText, keeps, withMsg } from '@/lib/kho';
 import { flushEmailOutbox } from '@/lib/notify';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -34,16 +34,17 @@ export default async function ScrapPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const me = await requireMe();
   const supabase = await createClient();
+  const le = new LoadErrors();
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
-  const [{ data: recs }, { data: bags }] = await Promise.all([
+  const [{ data: recs }, { data: bags }] = le.all(await Promise.all([
     supabase.schema('app').rpc('loss_scrap', { p_from: today, p_to: today }),
     keeps(me, 'KPL') ? supabase.schema('app').from('v_hu').select('id, hu_no, item_code, item_name, qty, location_code, lot_no').eq('warehouse_code', 'KPL').eq('status', 'ACTIVE').order('hu_no') : Promise.resolve({ data: [] as never[] }),
-  ]);
+  ]));
   type Rec = { reason_name: string; category: string; op_code: string; machine_code: string | null; scrap_code: string; kg: number; times: number };
   return (
     <>
       <Toolbar title="Phế liệu" reload="/kho/phe" actions={<Link className="btn btn-soft" href="/bao-cao/hao-hut">Báo cáo hao hụt</Link>} />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <p className="mb-3 text-[13px] text-muted">Phế cân theo lý do, ghi trên phiếu hoàn thành và báo cáo ca; nhập kho phế liệu với giá trị 0. Bán phế: Kế toán SX kiểm tra, Giám đốc duyệt.</p>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card p-4 text-[14px]">

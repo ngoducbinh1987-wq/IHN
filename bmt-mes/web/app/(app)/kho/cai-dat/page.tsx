@@ -3,7 +3,7 @@ import { Printer } from 'lucide-react';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf, numIn } from '@/lib/format';
-import { LOC_KINDS, hasRole, keeps } from '@/lib/kho';
+import { LOC_KINDS, LoadErrors, hasRole, keeps } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createOpening, saveLocation, saveMaterialStock, savePackage, saveSetting } from './actions';
@@ -17,15 +17,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const me = await requireMe();
   const tab = (TABS as readonly string[]).includes(sp.tab ?? '') ? sp.tab! : 'so';
   const supabase = await createClient();
+  const le = new LoadErrors();
   const admin = hasRole(me, 'ADMIN');
-  const [{ data: settings }, { data: locs }, { data: pkgs }, { data: mats }, { data: whs }, { data: groups }] = await Promise.all([
+  const [{ data: settings }, { data: locs }, { data: pkgs }, { data: mats }, { data: whs }, { data: groups }] = le.all(await Promise.all([
     supabase.schema('app').from('v_inv_settings').select('*').order('sort'),
     supabase.schema('app').from('v_locations').select('*').order('warehouse_code').order('sort'),
     supabase.schema('master').from('package_types').select('*').order('code'),
     tab === 'vat-tu' ? supabase.schema('master').from('materials').select('id, code, name, uom, reorder_point, shelf_life_days, storage_zone, abc_class, has_expiry').eq('is_scrap', false).order('code') : Promise.resolve({ data: [] as never[] }),
     supabase.schema('inv').from('warehouses').select('id, code, name').order('code'),
     supabase.schema('master').from('material_groups').select('code, name').order('code'),
-  ]);
+  ]));
   const canMat = hasRole(me, 'ADMIN', 'KT_KHO', 'MUA_NV', 'MUA_TP');
   const canPkg = hasRole(me, 'ADMIN', 'THU_KHO', 'MUA_NV', 'KT_KHO');
   const canLoc = (wh: string) => admin || keeps(me, wh as 'KNL');
@@ -37,7 +38,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         { key: 'bi', label: 'Bảng bì', href: '/kho/cai-dat?tab=bi' }, { key: 'vat-tu', label: 'Vật tư: mức đặt hàng, HSD', href: '/kho/cai-dat?tab=vat-tu' },
         { key: 'dau-ky', label: 'Tồn đầu kỳ', href: '/kho/cai-dat?tab=dau-ky' },
       ]} />
-      <Flash ok={sp.ok} err={sp.err} />
+      <Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} />
 
       {tab === 'so' && (
         <section className="card overflow-x-auto">

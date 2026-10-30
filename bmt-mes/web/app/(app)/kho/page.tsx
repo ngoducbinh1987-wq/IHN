@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { Empty, Flash, Kpi, StatusPill, Toolbar } from '@/components/ui';
 import { df } from '@/lib/format';
-import { DOC_TYPES, REVIEW_STATUS, hasRole, keeps } from '@/lib/kho';
+import { DOC_TYPES, LoadErrors, REVIEW_STATUS, hasRole, keeps } from '@/lib/kho';
 import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
@@ -18,11 +18,12 @@ export default async function KhoHome({ searchParams }: { searchParams: Promise<
   await requirePage('kho');
   const me = await requireMe();
   const supabase = await createClient();
-  const [{ data: ov }, { data: docs }] = await Promise.all([
+  const le = new LoadErrors();
+  const [{ data: ov }, { data: docs }] = le.all(await Promise.all([
     supabase.schema('app').rpc('kho_overview'),
     supabase.schema('app').from('v_stock_docs').select('id, doc_no, doc_type, warehouse_code, posted_at, created_at, review_status, status, created_by_name, ref_no')
       .order('created_at', { ascending: false }).limit(12),
-  ]);
+  ]));
   const o = (ov ?? {}) as Ov;
   const kt = hasRole(me, 'KT_KHO');
   const qc = can(me, 'quality', 'edit');
@@ -45,7 +46,7 @@ export default async function KhoHome({ searchParams }: { searchParams: Promise<
   return (
     <>
       <Toolbar title="Kho" reload="/kho" />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {qc && <Kpi label="Lô chờ QC" value={o.qc_pending ?? 0} tone={o.qc_pending ? 'warn' : undefined} href="/kho/qc" />}
         <Kpi label={kt ? 'Phiếu chờ tôi duyệt' : 'Phiếu chờ Kế toán SX'} value={o.review_pending ?? 0}

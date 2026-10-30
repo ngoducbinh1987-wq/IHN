@@ -4,7 +4,7 @@ import { ScanList } from '@/components/scan';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { REQ_STATUS, REVIEW_STATUS, hasRole, keeps } from '@/lib/kho';
+import { LoadErrors, REQ_STATUS, REVIEW_STATUS, hasRole, keeps } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { cancelRequisition, issuePick } from '../actions';
@@ -18,19 +18,24 @@ export default async function RequisitionDetail({ params, searchParams }: { para
   const sp = await searchParams;
   const me = await requireMe();
   const supabase = await createClient();
-  const { data: r } = await supabase.schema('app').from('v_requisitions').select('*').eq('id', id).maybeSingle();
-  if (!r) notFound();
-  const [{ data: lines }, { data: docs }, { data: vh }, { data: tt }, { data: kt }] = await Promise.all([
+  const le = new LoadErrors();
+  const { data: r } = le.one(await supabase.schema('app').from('v_requisitions').select('*').eq('id', id).maybeSingle());
+  if (!r) {
+    // Lỗi tải dữ liệu thì báo rõ, không báo nhầm "không tìm thấy"
+    if (le.has) return <><Toolbar title="Phiếu lĩnh" /><div className="mt-4"><Flash err={le.text} /></div></>;
+    notFound();
+  }
+  const [{ data: lines }, { data: docs }, { data: vh }, { data: tt }, { data: kt }] = le.all(await Promise.all([
     supabase.schema('app').from('v_requisition_lines').select('*').eq('req_id', id).order('material_code'),
     supabase.schema('app').from('v_stock_docs').select('id, doc_no, doc_type, posted_at, receiver_name, received_at, review_status, total_qty, created_by_name')
       .eq('requisition_id', id).order('posted_at', { ascending: false }),
     supabase.schema('app').rpc('role_holders', { p_role: 'VAN_HANH' }),
     supabase.schema('app').rpc('role_holders', { p_role: 'TO_TRUONG' }),
     supabase.schema('app').rpc('role_holders', { p_role: 'KT_KHO' }),
-  ]);
+  ]));
   const open = (lines ?? []).filter((l) => Number(l.remaining) > 0);
   const { data: sugg } = open.length
-    ? await supabase.schema('app').from('v_pick_suggest').select('*').in('material_id', open.map((l) => l.material_id)).lte('pick_order', 3).order('pick_order')
+    ? le.one(await supabase.schema('app').from('v_pick_suggest').select('*').in('material_id', open.map((l) => l.material_id)).lte('pick_order', 3).order('pick_order'))
     : { data: [] as never[] };
   const receivers = [...((vh ?? []) as Person[]), ...((tt ?? []) as Person[])].filter((p, i, a) => p.id !== me.id && a.findIndex((x) => x.id === p.id) === i);
   const witnesses = ((kt ?? []) as Person[]).filter((p) => p.id !== me.id);
@@ -40,7 +45,7 @@ export default async function RequisitionDetail({ params, searchParams }: { para
     <>
       <Toolbar title={<span>{r.req_no} · lệnh {r.wo_no}</span>} reload={`/kho/cap-phat/${id}`}
         actions={<>{r.approval_id && <Link className="btn btn-soft" href={`/duyet/${r.approval_id}`}>Xem quy trình duyệt</Link>}<Link className="btn" href="/kho/cap-phat">Đóng</Link></>} />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-[14px]">
         <span><span className="text-muted">Sản phẩm:</span> <span className="mono">{r.product_code}</span> · {r.product_name}</span>
         <span><span className="text-muted">Loại:</span> {r.kind === 'NORM' ? `Theo định mức · ${nf(r.qty_m)} m · ngày ${df(r.work_date)}` : `Bổ sung · ${r.reason_name}`}</span>

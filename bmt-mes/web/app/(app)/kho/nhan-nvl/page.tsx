@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { errText, withMsg } from '@/lib/kho';
+import { LoadErrors, errText, withMsg } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
@@ -22,19 +22,20 @@ export default async function ReceiveAtMachine({ searchParams }: { searchParams:
   const sp = await searchParams;
   const me = await requireMe();
   const supabase = await createClient();
-  const { data: docs } = await supabase.schema('app').from('v_stock_docs')
+  const le = new LoadErrors();
+  const { data: docs } = le.one(await supabase.schema('app').from('v_stock_docs')
     .select('id, doc_no, posted_at, posted_by_name, ref_no, req_no, received_at').eq('doc_type', 'ISSUE_WO').eq('receiver_id', me.id)
-    .order('posted_at', { ascending: false }).limit(40);
+    .order('posted_at', { ascending: false }).limit(40));
   const ids = (docs ?? []).map((d) => d.id);
   const { data: lines } = ids.length
-    ? await supabase.schema('app').from('v_stock_doc_lines').select('doc_id, hu_no, item_code, item_name, qty, uom, lot_no').in('doc_id', ids).order('line_no')
+    ? le.one(await supabase.schema('app').from('v_stock_doc_lines').select('doc_id, hu_no, item_code, item_name, qty, uom, lot_no').in('doc_id', ids).order('line_no'))
     : { data: [] as never[] };
   const pending = (docs ?? []).filter((d) => !d.received_at);
   const done = (docs ?? []).filter((d) => d.received_at).slice(0, 10);
   return (
     <>
       <Toolbar title="Nhận nguyên vật liệu tại máy" reload="/kho/nhan-nvl" />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <p className="mb-3 text-[13px] text-muted">Kiểm đúng mã, đủ số ống/bao trên tem QR rồi bấm Xác nhận. Người xuất kho không tự nhận thay.</p>
       {pending.length === 0 && <div className="card mb-4"><Empty>Không có hàng chờ bạn xác nhận.</Empty></div>}
       <div className="flex flex-col gap-3">

@@ -59,6 +59,44 @@ export function errText(msg: string | undefined | null): string {
   return msg;
 }
 
+// Gom lỗi khi tải dữ liệu của một trang: truy vấn lỗi thì trang báo rõ thay vì hiện danh sách trống / "không tìm thấy"
+type QRes = { data?: unknown; error?: { message: string } | null };
+export class LoadErrors {
+  private list: string[] = [];
+  one<T extends QRes>(r: T): T {
+    if (r.error) this.list.push(errText(r.error.message));
+    return r;
+  }
+  all<T extends readonly QRes[]>(rs: readonly [...T]): T {
+    rs.forEach((r) => this.one(r));
+    return rs as T;
+  }
+  get has(): boolean {
+    return this.list.length > 0;
+  }
+  get text(): string | undefined {
+    if (!this.list.length) return undefined;
+    return `Không tải được đủ dữ liệu (${[...new Set(this.list)].join('; ')}). Số liệu bên dưới có thể thiếu: bấm Tải lại; còn lỗi thì báo Quản trị hệ thống.`;
+  }
+}
+
+// Đọc hết danh sách dài: máy chủ dữ liệu (PostgREST) trả tối đa 1.000 dòng mỗi lần, nên đọc nối từng trang
+// đến khi hết. `page(from, to)` phải dựng truy vấn mới mỗi lần, có sắp xếp ổn định (để các trang không trùng, không sót).
+export async function fetchAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  max = 20000,
+): Promise<{ data: T[]; error: { message: string } | null; truncated: boolean }> {
+  const SIZE = 1000;
+  const out: T[] = [];
+  while (out.length < max) {
+    const { data, error } = await page(out.length, out.length + SIZE - 1);
+    if (error) return { data: out, error, truncated: false };
+    if (!data || data.length === 0) return { data: out, error: null, truncated: false };
+    out.push(...data);
+  }
+  return { data: out.slice(0, max), error: null, truncated: true };
+}
+
 // Đường dẫn kèm thông báo kết quả
 export const withMsg = (path: string, kind: 'ok' | 'err', msg: string) =>
   `${path}${path.includes('?') ? '&' : '?'}${kind}=${encodeURIComponent(msg)}`;

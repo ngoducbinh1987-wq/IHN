@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, InfoRow, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { DOC_TYPES, QC_STATUS, REVIEW_STATUS, STOCK_DOC_STATUS, hasRole } from '@/lib/kho';
+import { DOC_TYPES, LoadErrors, QC_STATUS, REVIEW_STATUS, STOCK_DOC_STATUS, hasRole } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { checkReceipt, confirmDoc, returnDoc, reverseDoc, setPrices } from '../actions';
@@ -19,15 +19,20 @@ export default async function DocDetail({ params, searchParams }: { params: Prom
   await requirePage('kho-phieu');
   const me = await requirePerm('inventory', 'view');
   const supabase = await createClient();
-  const { data: d } = await supabase.schema('app').from('v_stock_docs').select('*').eq('id', id).maybeSingle();
-  if (!d) notFound();
-  const [{ data: lines }, { data: prices }, { data: gr }] = await Promise.all([
+  const le = new LoadErrors();
+  const { data: d } = le.one(await supabase.schema('app').from('v_stock_docs').select('*').eq('id', id).maybeSingle());
+  if (!d) {
+    // Lỗi tải dữ liệu thì báo rõ, không báo nhầm "không tìm thấy"
+    if (le.has) return <><Toolbar title="Phiếu kho" /><div className="mt-4"><Flash err={le.text} /></div></>;
+    notFound();
+  }
+  const [{ data: lines }, { data: prices }, { data: gr }] = le.all(await Promise.all([
     supabase.schema('app').from('v_stock_doc_lines').select('*').eq('doc_id', id).order('line_no'),
     me.can_see_price ? supabase.schema('app').rpc('doc_line_prices', { p_doc: id }) : Promise.resolve({ data: [] as { line_id: string; unit_cost: number | null; amount: number | null }[] }),
     d.doc_type === 'GR' && d.ref_type === 'GR'
       ? supabase.schema('purchase').from('goods_receipts').select('gr_no, delivery_note, no_po_reason, checked_by, checked_at, check_note').eq('id', d.ref_id).maybeSingle()
       : Promise.resolve({ data: null }),
-  ]);
+  ]));
   const price = (lineId: string) => (prices ?? []).find((p: { line_id: string }) => p.line_id === lineId) as { unit_cost: number | null; amount: number | null } | undefined;
   const kt = hasRole(me, 'KT_KHO');
   const mine = d.created_by === me.id || d.posted_by === me.id;
@@ -46,7 +51,7 @@ export default async function DocDetail({ params, searchParams }: { params: Prom
           {d.approval_id && <Link className="btn btn-soft" href={`/duyet/${d.approval_id}`}>Xem quy trình duyệt</Link>}
           <Link className="btn" href="/kho/phieu">Đóng</Link>
         </>} />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
         <section className="card overflow-x-auto">
           <div className="card-h">Dòng phiếu · {lines?.length ?? 0} dòng</div>

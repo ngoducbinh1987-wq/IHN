@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { Printer } from 'lucide-react';
 import { ScanInput } from '@/components/scan';
-import { Empty, InfoRow, Pill, StatusPill, Toolbar } from '@/components/ui';
+import { Empty, Flash, InfoRow, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { DOC_TYPES, HU_STATUS, KIND_NAMES, QC_STATUS, keeps, scanCode } from '@/lib/kho';
+import { DOC_TYPES, HU_STATUS, KIND_NAMES, LoadErrors, QC_STATUS, keeps, scanCode } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
@@ -14,23 +14,25 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
   const me = await requireMe();
   const code = sp.ma ? scanCode(sp.ma) : '';
   const supabase = await createClient();
+  const le = new LoadErrors();
   const { data: h } = code
-    ? await supabase.schema('app').from('v_hu').select('*').eq('hu_no', code).maybeSingle()
+    ? le.one(await supabase.schema('app').from('v_hu').select('*').eq('hu_no', code).maybeSingle())
     : { data: null };
   const { data: lotHus } = !h && code
-    ? await supabase.schema('app').from('v_hu').select('id, hu_no, qty, uom, status, location_code, warehouse_code').eq('lot_no', code).order('hu_no')
+    ? le.one(await supabase.schema('app').from('v_hu').select('id, hu_no, qty, uom, status, location_code, warehouse_code').eq('lot_no', code).order('hu_no'))
     : { data: null };
   const { data: moves } = h
-    ? await supabase.schema('app').from('v_ledger').select('id, moved_at, doc_no, doc_id, doc_type, warehouse_code, location_code, qty, posted_by_name')
-      .eq('hu_no', h.hu_no).order('moved_at', { ascending: false }).limit(30)
+    ? le.one(await supabase.schema('app').from('v_ledger').select('id, moved_at, doc_no, doc_id, doc_type, warehouse_code, location_code, qty, posted_by_name')
+      .eq('hu_no', h.hu_no).order('moved_at', { ascending: false }).limit(30))
     : { data: null };
   return (
     <>
       <Toolbar title="Quét mã" />
+      <div className="mt-4"><Flash err={le.text} /></div>
       <form className="mx-auto mt-4 max-w-[720px]" action="/kho/quet">
         <ScanInput name="ma" submitOnScan defaultValue={code} placeholder="Quét tem QR ống / bao / bobin, hoặc gõ số rồi Enter" />
       </form>
-      {code && !h && !lotHus?.length && <div className="mx-auto mt-4 max-w-[720px] card"><Empty>Không tìm thấy mã <b className="mono">{code}</b>.</Empty></div>}
+      {code && !h && !lotHus?.length && !le.has && <div className="mx-auto mt-4 max-w-[720px] card"><Empty>Không tìm thấy mã <b className="mono">{code}</b>.</Empty></div>}
       {lotHus && lotHus.length > 0 && (
         <section className="card mx-auto mt-4 max-w-[720px] overflow-x-auto">
           <div className="card-h">Lô {code}: {lotHus.length} đơn vị chứa</div>

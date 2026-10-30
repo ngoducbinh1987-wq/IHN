@@ -1,7 +1,7 @@
 import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
 import { df, nf } from '@/lib/format';
-import { KIND_NAMES, QC_STATUS, hasRole } from '@/lib/kho';
+import { KIND_NAMES, LoadErrors, QC_STATUS, hasRole } from '@/lib/kho';
 import { STAGE_NAMES, qcTestsFor } from '@/lib/qc';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -27,7 +27,8 @@ export default async function QcPage({ searchParams }: { searchParams: Promise<{
   const me = await requirePerm('quality', 'view');
   const tab = sp.tab === 'cach-ly' ? 'cach-ly' : 'cho';
   const supabase = await createClient();
-  const { data } = await supabase.schema('app').from('v_qc_queue').select('*').order('created_at').returns<Lot[]>();
+  const le = new LoadErrors();
+  const { data } = le.one(await supabase.schema('app').from('v_qc_queue').select('*').order('created_at').returns<Lot[]>());
   const all = data ?? [];
   const pending = all.filter((l) => l.qc_status === 'PENDING');
   const held = all.filter((l) => l.qc_status === 'QUARANTINE');
@@ -42,7 +43,7 @@ export default async function QcPage({ searchParams }: { searchParams: Promise<{
         { key: 'cho', label: 'Chờ kiểm tra', href: '/kho/qc', count: pending.length },
         { key: 'cach-ly', label: 'Cách ly / NCR', href: '/kho/qc?tab=cach-ly', count: held.length },
       ]} />
-      <Flash ok={sp.ok} err={sp.err} />
+      <Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} />
       <p className="mb-3 text-[13px] text-muted">
         QC lấy mẫu từng bobin sau mỗi công đoạn, trả kết quả trong 2 giờ: Đạt thì dán tem xanh QC PASS (chỉ bobin này được lắp vào máy sau),
         Không đạt thì dán tem đỏ, đưa vào ô cách ly, TP Kỹ thuật/QA quyết định sửa, hạ cấp hay phế. Không ai tự ký QC PASS cho bobin mình làm.

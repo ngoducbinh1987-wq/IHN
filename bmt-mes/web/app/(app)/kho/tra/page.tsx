@@ -5,7 +5,7 @@ import { ScanOne } from '@/components/scan';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Toolbar } from '@/components/ui';
 import { df, nf, parseNum } from '@/lib/format';
-import { errText, keeps, withMsg } from '@/lib/kho';
+import { LoadErrors, errText, keeps, withMsg } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
@@ -32,16 +32,17 @@ export default async function ReturnPage({ searchParams }: { searchParams: Promi
   const me = await requireMe();
   if (!keeps(me, 'KNL')) redirect('/kho?err=' + encodeURIComponent('Trả NVL do Quản lý SX (thủ kho NVL) nhận'));
   const supabase = await createClient();
-  const [{ data: locs }, { data: kt }, { data: recent }] = await Promise.all([
+  const le = new LoadErrors();
+  const [{ data: locs }, { data: kt }, { data: recent }] = le.all(await Promise.all([
     supabase.schema('app').from('v_locations').select('id, code, name').eq('warehouse_code', 'KNL').eq('active', true).order('sort'),
     supabase.schema('app').rpc('role_holders', { p_role: 'KT_KHO' }),
     supabase.schema('app').from('v_stock_docs').select('id, doc_no, posted_at, ref_no, total_qty, created_by_name').eq('doc_type', 'RETURN_WO')
       .order('posted_at', { ascending: false }).limit(15),
-  ]);
+  ]));
   return (
     <>
       <Toolbar title="Trả nguyên vật liệu thừa cuối ca" reload="/kho/tra" />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <p className="mb-3 text-[13px] text-muted">NV4 cân phần dùng dở, Quản lý SX quét tem cũ và nhập kg. Hàng về đúng lô cũ; tiêu hao của lệnh = cấp − trả.</p>
       <form action={returnHu} className="card mb-4 grid gap-4 p-4 md:grid-cols-2">
         <ScanOne name="hu_id" label="Ống/bao/cuộn trả về (quét tem QR)" initial={sp.ma} />

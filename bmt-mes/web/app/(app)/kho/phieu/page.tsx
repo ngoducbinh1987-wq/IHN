@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf, overdueText } from '@/lib/format';
-import { DOC_TYPES, REVIEW_STATUS, STOCK_DOC_STATUS, hasRole } from '@/lib/kho';
+import { DOC_TYPES, LoadErrors, REVIEW_STATUS, STOCK_DOC_STATUS, hasRole } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { confirmDoc } from './actions';
@@ -16,6 +16,7 @@ export default async function DocsPage({ searchParams }: { searchParams: Promise
   const tab = ['duyet', 'gia', 'tra-lai', 'nhap'].includes(sp.tab ?? '') ? sp.tab! : 'tat-ca';
   const kt = hasRole(me, 'KT_KHO');
   const supabase = await createClient();
+  const le = new LoadErrors();
   let q = supabase.schema('app').from('v_stock_docs').select('*').order('created_at', { ascending: false }).limit(300);
   if (tab === 'duyet') q = q.eq('status', 'POSTED').eq('review_status', 'PENDING');
   if (tab === 'gia') q = q.eq('status', 'DRAFT').eq('price_pending', true);
@@ -24,12 +25,12 @@ export default async function DocsPage({ searchParams }: { searchParams: Promise
   if (sp.loai && DOC_TYPES[sp.loai]) q = q.eq('doc_type', sp.loai);
   const term = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
   if (term) q = q.or(`doc_no.ilike.*${term}*,note.ilike.*${term}*,ref_no.ilike.*${term}*`);
-  const [{ data: docs }, { count: nDuyet }, { count: nGia }, { count: nTra }] = await Promise.all([
+  const [{ data: docs }, { count: nDuyet }, { count: nGia }, { count: nTra }] = le.all(await Promise.all([
     q,
     supabase.schema('inv').from('stock_docs').select('id', { count: 'exact', head: true }).eq('status', 'POSTED').eq('review_status', 'PENDING'),
     supabase.schema('inv').from('stock_docs').select('id', { count: 'exact', head: true }).eq('status', 'DRAFT').eq('price_pending', true),
     supabase.schema('inv').from('stock_docs').select('id', { count: 'exact', head: true }).eq('review_status', 'RETURNED').is('reversed_by', null),
-  ]);
+  ]));
   const href = (t: string) => `/kho/phieu${t === 'tat-ca' ? '' : `?tab=${t}`}`;
   return (
     <>
@@ -41,7 +42,7 @@ export default async function DocsPage({ searchParams }: { searchParams: Promise
         { key: 'nhap', label: 'Nháp / chờ phê duyệt', href: href('nhap') },
         { key: 'tat-ca', label: 'Tất cả', href: href('tat-ca') },
       ]} />
-      <Flash ok={sp.ok} err={sp.err} />
+      <Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} />
       <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
         <span className="text-muted">Loại:</span>
         <Link className={`btn btn-sm ${!sp.loai ? 'btn-pri' : ''}`} href={href(tab)}>Tất cả</Link>

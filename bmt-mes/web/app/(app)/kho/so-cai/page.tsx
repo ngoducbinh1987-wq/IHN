@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { Empty, Tabs, Toolbar } from '@/components/ui';
+import { Empty, Flash, Tabs, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { DOC_TYPES, KIND_NAMES } from '@/lib/kho';
+import { DOC_TYPES, KIND_NAMES, LoadErrors, fetchAll } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 
@@ -27,10 +27,13 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const to = isDate(sp.den) ? sp.den! : def.to;
   const tab = sp.tab === 'the-kho' || sp.ma ? 'the-kho' : 'nxt';
   const supabase = await createClient();
-  const { data: whs } = await supabase.schema('inv').from('warehouses').select('id, code, name').order('code');
+  const le = new LoadErrors();
+  const { data: whs } = le.one(await supabase.schema('inv').from('warehouses').select('id, code, name').order('code'));
   const wh = (whs ?? []).find((w) => w.code === sp.kho);
-  const { data: nxtData, error } = await supabase.schema('app').rpc('stock_nxt', { p_from: from, p_to: to, p_wh: wh?.id ?? null });
-  const nxt = (nxtData ?? []) as Nxt[];
+  // Đọc hết (nối từng trang 1.000 dòng)
+  const nxtRes = le.one(await fetchAll<Nxt>((a, b) => supabase.schema('app').rpc('stock_nxt', { p_from: from, p_to: to, p_wh: wh?.id ?? null })
+    .order('warehouse_code').order('item_code').range(a, b)));
+  const nxt = nxtRes.data;
   const money = nxt.some((r) => r.value_closing !== null);
   const qs = (extra: Record<string, string | undefined>) => {
     const p = new URLSearchParams({ tu: from, den: to, ...(sp.kho ? { kho: sp.kho } : {}) });
@@ -39,15 +42,19 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   };
 
   // Thẻ kho một mã: tồn đầu từ NXT, cộng dồn từng dòng
-  let card: { rows: Record<string, unknown>[]; opening: number; uom: string; name: string } | null = null;
+  let card: { rows: Record<string, unknown>[]; opening: number; uom: string; name: string; truncated: boolean } | null = null;
   if (tab === 'the-kho' && sp.ma) {
-    let q = supabase.schema('app').from('v_ledger').select('*').eq('item_code', sp.ma).gte('doc_date', from).lte('doc_date', to)
-      .order('doc_date').order('moved_at').limit(2000);
-    if (wh) q = q.eq('warehouse_id', wh.id);
-    const { data: rows } = await q;
+    const ma = sp.ma;
+    const ledger = le.one(await fetchAll<Record<string, unknown>>((a, b) => {
+      let q = supabase.schema('app').from('v_ledger').select('*').eq('item_code', ma).gte('doc_date', from).lte('doc_date', to);
+      if (wh) q = q.eq('warehouse_id', wh.id);
+      return q.order('doc_date').order('moved_at').order('id').range(a, b);
+    }));
+    const rows = ledger.data;
     const items = nxt.filter((r) => r.item_code === sp.ma);
     card = {
-      rows: rows ?? [], opening: items.reduce((s, r) => s + Number(r.opening), 0),
+      truncated: ledger.truncated || nxtRes.truncated,
+      rows, opening: items.reduce((s, r) => s + Number(r.opening), 0),
       uom: items[0]?.uom ?? (rows?.[0]?.uom as string) ?? '', name: items[0]?.item_name ?? (rows?.[0]?.item_name as string) ?? '',
     };
   }
@@ -76,7 +83,8 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
         { key: 'the-kho', label: 'Thẻ kho từng mã', href: qs({ tab: 'the-kho' }) },
       ]} />
       {filter}
-      {error && <div className="card mb-4 p-4 text-bad">{error.message}</div>}
+      <Flash err={le.text} />
+      {nxtRes.truncated && <p className="mb-3 text-[12.5px] text-warn">Kết quả quá {nxt.length.toLocaleString('vi-VN')} dòng nên chỉ hiện chừng đó dòng. Chọn kho để thu hẹp.</p>}
 
       {tab === 'nxt' && (
         <section className="card overflow-x-auto">
@@ -137,7 +145,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
                 })()}</tbody>
               </table>
             ) : <Empty>Mã này không có phát sinh trong kỳ.</Empty>}
-            {card.rows.length >= 2000 && <p className="border-t border-line px-4 py-2 text-[12.5px] text-warn">Chỉ hiện 2.000 dòng đầu; thu hẹp khoảng ngày để xem đủ.</p>}
+            {card.truncated && <p className="border-t border-line px-4 py-2 text-[12.5px] text-warn">Quá nhiều dòng nên chỉ hiện {card.rows.length.toLocaleString('vi-VN')} dòng đầu, số tồn cộng dồn có thể thiếu: thu hẹp khoảng ngày hoặc chọn kho.</p>}
           </section>
         ) : <div className="card"><Empty>Chọn mã hàng để xem thẻ kho.</Empty></div>
       )}

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Toolbar } from '@/components/ui';
 import { nf, parseNum } from '@/lib/format';
-import { CARRIER_STATUS, errText, keeps, withMsg } from '@/lib/kho';
+import { CARRIER_STATUS, LoadErrors, errText, keeps, withMsg } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { str } from '../util';
@@ -28,14 +28,15 @@ export default async function CarriersPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const me = await requireMe();
   const supabase = await createClient();
-  const { data } = await supabase.schema('app').from('v_carriers').select('*').order('code');
+  const le = new LoadErrors();
+  const { data } = le.one(await supabase.schema('app').from('v_carriers').select('*').order('code'));
   const edit = keeps(me, 'KBTP') || me.roles.includes('ADMIN');
   const rows = data ?? [];
   const count = (s: string) => rows.filter((r) => r.status === s).length;
   return (
     <>
       <Toolbar title="Bobin trung gian" reload="/kho/bobin" />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <p className="mb-3 text-[13px] text-muted">
         Bobin thép 500/630 là tài sản quay vòng (BR-KHO-15): khi ghi đầu ra công đoạn chọn mã bobin, hệ thống tự chuyển Đang chứa; dùng hết hàng tự về Trống.
         Đang có {rows.length} bobin · trống {count('EMPTY')} · đang chứa {count('IN_USE')} · hỏng {count('DAMAGED')}.

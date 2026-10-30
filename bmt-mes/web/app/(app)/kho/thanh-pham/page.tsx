@@ -6,7 +6,7 @@ import { Printer } from 'lucide-react';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Toolbar } from '@/components/ui';
 import { df, nf, parseNum } from '@/lib/format';
-import { errText, hasRole, keeps, withMsg } from '@/lib/kho';
+import { LoadErrors, errText, hasRole, keeps, withMsg } from '@/lib/kho';
 import { flushEmailOutbox } from '@/lib/notify';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -98,12 +98,13 @@ export default async function FgToolsPage({ searchParams }: { searchParams: Prom
   const tp = hasRole(me, 'KT_TP', 'ADMIN');
   if (!paper && !keeper && !tp) redirect('/kho?err=' + encodeURIComponent('Trang dành cho Kế toán SX, TP SX, người giữ kho thành phẩm và TP Kỹ thuật/QA'));
   const supabase = await createClient();
-  const [{ data: prods }, { data: groups }, { data: coils }, { data: keepers }] = await Promise.all([
+  const le = new LoadErrors();
+  const [{ data: prods }, { data: groups }, { data: coils }, { data: keepers }] = le.all(await Promise.all([
     supabase.schema('app').from('v_products').select('id, code, description, spec_status').order('code'),
     supabase.schema('app').from('v_fg_stock').select('*').order('product_code').returns<FgGroup[]>(),
     supabase.schema('app').from('v_fg_coils').select('*').order('product_code').order('mfg_date').returns<Coil[]>(),
     supabase.schema('app').rpc('fg_keepers'),
-  ]);
+  ]));
   const kp = (keepers ?? []) as { code: string; full_name: string | null }[];
   const enter = paper || keeper;
   const wait = (groups ?? []).filter((g) => g.putaway_coils > 0);
@@ -123,7 +124,7 @@ export default async function FgToolsPage({ searchParams }: { searchParams: Prom
     <>
       <Toolbar title="Kho thành phẩm: nhập kho, cắt cuộn, hàng trả" reload="/kho/thanh-pham"
         actions={<Link className="btn btn-soft" href="/in/nhap-kho-tp" target="_blank"><Printer size={16} />In phiếu nhập kho TP</Link>} />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <p className="mb-3 text-[13px] text-muted">
         Cuộn thành phẩm chỉ dán tem QC PASS, không in, không quét QR. Người giữ kho thành phẩm (khai báo ở Nhân sự xưởng) làm và ký trên phiếu giấy; Kế toán SX nhập vào MES.
         {kp.length === 0 && <b className="text-bad"> Chưa khai báo người giữ kho thành phẩm: TP SX giao ở Nhân sự xưởng → Người.</b>}

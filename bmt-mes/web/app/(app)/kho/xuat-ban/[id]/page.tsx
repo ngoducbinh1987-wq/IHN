@@ -5,7 +5,7 @@ import { ScanList } from '@/components/scan';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { DELIVERY_STATUS, hasRole, keeps } from '@/lib/kho';
+import { DELIVERY_STATUS, LoadErrors, hasRole, keeps } from '@/lib/kho';
 import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { cancelDelivery, saveDelivery, ship, shipDirect, submitDelivery } from '../actions';
@@ -22,16 +22,21 @@ export default async function DeliveryDetail({ params, searchParams }: { params:
   await requirePage('kho-xuat-ban');
   const me = await requireMe();
   const supabase = await createClient();
-  const { data: d } = await supabase.schema('app').from('v_deliveries').select('*').eq('id', id).maybeSingle();
-  if (!d) notFound();
-  const [{ data: items }, { data: lines }, { data: groups }, { data: keepers }] = await Promise.all([
+  const le = new LoadErrors();
+  const { data: d } = le.one(await supabase.schema('app').from('v_deliveries').select('*').eq('id', id).maybeSingle());
+  if (!d) {
+    // Lỗi tải dữ liệu thì báo rõ, không báo nhầm "không tìm thấy"
+    if (le.has) return <><Toolbar title="Lệnh giao" /><div className="mt-4"><Flash err={le.text} /></div></>;
+    notFound();
+  }
+  const [{ data: items }, { data: lines }, { data: groups }, { data: keepers }] = le.all(await Promise.all([
     supabase.schema('app').from('v_delivery_items').select('*').eq('delivery_id', id).order('line_no').returns<Item[]>(),
     supabase.schema('app').from('v_delivery_lines').select('*').eq('delivery_id', id).order('hu_no'),
     supabase.schema('app').from('v_fg_stock').select('*').order('product_code').returns<FgGroup[]>(),
     supabase.schema('app').rpc('fg_keepers'),
-  ]);
+  ]));
   const { data: reviewEdit } = d.status === 'PENDING_APPROVAL' && d.direct
-    ? await supabase.schema('app').rpc('can_review_edit', { p_doc_type: 'DELIVERY', p_doc_id: id })
+    ? le.one(await supabase.schema('app').rpc('can_review_edit', { p_doc_type: 'DELIVERY', p_doc_id: id }))
     : { data: false };
   const reviewer = reviewEdit === true;
   const maker = can(me, 'sales', 'create') || hasRole(me, 'KT_KHO', 'ADMIN');
@@ -49,7 +54,7 @@ export default async function DeliveryDetail({ params, searchParams }: { params:
           )}
           {d.stock_doc_id && <Link className="btn btn-soft print:hidden" href={`/kho/phieu/${d.stock_doc_id}`}>Phiếu xuất kho</Link>}
           <PrintButton /><Link className="btn print:hidden" href="/kho/xuat-ban">Đóng</Link></>} />
-      <div className="mt-4 print:hidden"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4 print:hidden"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <h2 className="mb-2 hidden text-center text-[20px] font-bold print:block">PHIẾU XUẤT KHO THÀNH PHẨM</h2>
       <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-[14px]">
         <span><span className="text-muted">Khách hàng:</span> <b>{d.customer_name}</b></span>

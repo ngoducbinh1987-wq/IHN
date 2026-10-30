@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { Empty, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
+import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { KIND_NAMES, QC_STATUS } from '@/lib/kho';
+import { KIND_NAMES, LoadErrors, QC_STATUS, fetchAll } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { kindLabel, type FgGroup } from '../xuat-ban/items-fields';
@@ -16,7 +16,7 @@ type Row = {
 
 const FILTERS: Record<string, string> = { '': 'Tất cả', dat: 'Đạt', qc: 'Chờ QC', 'cach-ly': 'Cách ly', hsd: 'Sắp hết hạn', le: 'Đoạn lẻ', thieu: 'Dưới mức đặt hàng' };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ kho?: string; loc?: string; q?: string; xem?: string }> }) {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ kho?: string; loc?: string; q?: string; xem?: string; trang?: string }> }) {
   const sp = await searchParams;
   const me = await requirePage('kho-ton');
   await requirePerm('inventory', 'view');
@@ -26,16 +26,17 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const loc = sp.loc && FILTERS[sp.loc] && !(fgOnly && sp.loc === 'thieu') ? sp.loc : '';
   const detail = sp.xem === 'ct' || !!sp.q;
   const supabase = await createClient();
+  const le = new LoadErrors();
   const qs = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams(Object.entries({ kho, loc, q: sp.q, xem: sp.xem, ...patch }).filter(([, v]) => v) as [string, string][]);
     return `/kho/ton${p.toString() ? '?' + p.toString() : ''}`;
   };
 
   if (loc === 'thieu') {
-    const [{ data: mats }, { data: avail }] = await Promise.all([
+    const [{ data: mats }, { data: avail }] = le.all(await Promise.all([
       supabase.schema('master').from('materials').select('id, code, name, uom, reorder_point, target_months').not('reorder_point', 'is', null).order('code'),
       supabase.schema('app').from('v_materials').select('id, available, in_quality'),
-    ]);
+    ]));
     const rows = (mats ?? []).map((m) => {
       const a = (avail ?? []).find((x) => x.id === m.id);
       return { ...m, available: Number(a?.available ?? 0), in_quality: Number(a?.in_quality ?? 0) };
@@ -43,6 +44,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     return (
       <>
         <Toolbar title="Tồn kho" reload={qs({})} />
+        <Flash err={le.text} />
         <FilterBar kho={kho} loc={loc} qs={qs} />
         <section className="card overflow-x-auto">
           <div className="card-h">Vật tư chạm mức đặt hàng · Kế toán SX báo NV mua hàng</div>
@@ -58,21 +60,31 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     );
   }
 
-  let q = supabase.schema('app').from('v_stock').select('*').order('item_code').order('lot_no').order('hu_no').limit(2000);
-  if (kho) q = q.eq('warehouse_code', kho);
-  if (loc === 'dat') q = q.eq('qc_status', 'PASSED');
-  if (loc === 'qc') q = q.eq('qc_status', 'PENDING');
-  if (loc === 'cach-ly') q = q.in('qc_status', ['QUARANTINE', 'REJECTED']);
-  if (loc === 'hsd') q = q.eq('expiring', true);
-  if (loc === 'le') q = q.eq('is_remnant', true);
   const term = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
-  if (term) q = q.or(`item_code.ilike.*${term}*,item_name.ilike.*${term}*,lot_no.ilike.*${term}*,hu_no.ilike.*${term}*,location_code.ilike.*${term}*`);
-  const [{ data }, { data: fg }] = await Promise.all([
-    q.returns<Row[]>(),
+  // Đọc hết tồn (nối từng trang 1.000 dòng): bảng theo mã hàng cộng từ mọi dòng, không được thiếu
+  const stockPage = (from: number, to: number) => {
+    let q = supabase.schema('app').from('v_stock').select('*');
+    if (kho) q = q.eq('warehouse_code', kho);
+    if (loc === 'dat') q = q.eq('qc_status', 'PASSED');
+    if (loc === 'qc') q = q.eq('qc_status', 'PENDING');
+    if (loc === 'cach-ly') q = q.in('qc_status', ['QUARANTINE', 'REJECTED']);
+    if (loc === 'hsd') q = q.eq('expiring', true);
+    if (loc === 'le') q = q.eq('is_remnant', true);
+    if (term) q = q.or(`item_code.ilike.*${term}*,item_name.ilike.*${term}*,lot_no.ilike.*${term}*,hu_no.ilike.*${term}*,location_code.ilike.*${term}*`);
+    return q.order('item_code').order('lot_no').order('hu_no').order('warehouse_code').order('location_code').order('lot_id').order('hu_id')
+      .range(from, to).returns<Row[]>();
+  };
+  const [stock, { data: fg }] = le.all(await Promise.all([
+    fetchAll<Row>(stockPage),
     // Thành phẩm đếm theo cuộn, chủng loại (mã · nhãn · quy cách): cuộn chỉ dán tem QC PASS, xuất theo số cuộn
     kho === 'KTP' && !detail ? supabase.schema('app').from('v_fg_stock').select('*').order('product_code').order('brand').returns<FgGroup[]>() : Promise.resolve({ data: [] as FgGroup[] }),
-  ]);
-  const rows = data ?? [];
+  ]));
+  const rows = stock.data;
+  // Bảng chi tiết hiện 500 dòng mỗi trang
+  const PER = 500;
+  const pages = Math.max(1, Math.ceil(rows.length / PER));
+  const pg = Math.min(pages, Math.max(1, Math.floor(Number(sp.trang)) || 1));
+  const shown = rows.slice((pg - 1) * PER, pg * PER);
 
   // Gộp theo mã hàng + kho
   const sum = new Map<string, { wh: string; kind: string; code: string; name: string; uom: string; qty: number; avail: number; res: number; pending: number; held: number; units: number; exp: string | null }>();
@@ -90,6 +102,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <Toolbar title="Tồn kho" reload={qs({})} search={{ placeholder: 'Tìm mã hàng, lô, mã QR, vị trí', value: sp.q }} hidden={{ kho, loc, xem: sp.xem }} />
+      <Flash err={le.text} />
       <FilterBar kho={kho} loc={loc} qs={qs} />
       <div className="mb-3 flex gap-2">
         <Link className={`btn btn-sm ${!detail ? 'btn-pri' : ''}`} href={qs({ xem: undefined })}>Theo mã hàng</Link>
@@ -126,7 +139,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         ) : (
           <table className="tbl">
             <thead><tr><th>Mã QR</th><th>Mã hàng</th><th>Lô</th><th>Kho / vị trí</th><th className="num">Tồn</th><th className="num">Đang giữ</th><th>QC</th><th>HSD / ngày SX</th><th>Ghi chú</th></tr></thead>
-            <tbody>{rows.map((r) => (
+            <tbody>{shown.map((r) => (
               <tr key={`${r.warehouse_code}${r.location_code}${r.lot_id}${r.hu_id}`}>
                 <td>{r.hu_no ? <Link className="link mono" href={`/kho/quet?ma=${r.hu_no}`}>{r.hu_no}</Link> : '—'}</td>
                 <td className="min-w-[160px]"><span className="mono">{r.item_code}</span> · {r.item_name}</td>
@@ -140,7 +153,14 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           </table>
         )}
       </section>
-      {rows.length >= 2000 && <p className="mt-2 text-[12.5px] text-muted">Hiện 2.000 dòng đầu. Dùng ô tìm kiếm để thu hẹp.</p>}
+      {detail && pages > 1 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px]">
+          <span className="text-muted">Dòng {((pg - 1) * PER + 1).toLocaleString('vi-VN')}–{Math.min(pg * PER, rows.length).toLocaleString('vi-VN')} / {rows.length.toLocaleString('vi-VN')}</span>
+          {pg > 1 && <Link className="btn btn-sm" href={qs({ trang: String(pg - 1) })}>Trang trước</Link>}
+          {pg < pages && <Link className="btn btn-sm" href={qs({ trang: String(pg + 1) })}>Trang sau</Link>}
+        </div>
+      )}
+      {stock.truncated && <p className="mt-2 text-[12.5px] text-warn">Kết quả quá {rows.length.toLocaleString('vi-VN')} dòng nên chỉ tính chừng đó dòng. Chọn kho hoặc dùng ô tìm kiếm để thu hẹp.</p>}
     </>
   );
 }

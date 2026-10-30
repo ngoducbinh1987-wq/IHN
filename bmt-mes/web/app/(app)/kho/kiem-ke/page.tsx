@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Toolbar } from '@/components/ui';
 import { df } from '@/lib/format';
-import { COUNT_STATUS, hasRole } from '@/lib/kho';
+import { COUNT_STATUS, LoadErrors, hasRole } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { openCount } from './actions';
@@ -14,16 +14,17 @@ export default async function CountsPage({ searchParams }: { searchParams: Promi
   await requirePage('kho-kiem-ke');
   const me = await requirePerm('inventory', 'view');
   const supabase = await createClient();
-  const [{ data: counts }, { data: whs }, { data: locs }] = await Promise.all([
+  const le = new LoadErrors();
+  const [{ data: counts }, { data: whs }, { data: locs }] = le.all(await Promise.all([
     supabase.schema('app').from('v_counts').select('*').order('count_date', { ascending: false }).limit(100),
     supabase.schema('inv').from('warehouses').select('id, code, name').order('code'),
     supabase.schema('app').from('v_locations').select('id, code, name, warehouse_code').eq('active', true).order('warehouse_code').order('sort'),
-  ]);
+  ]));
   const kt = hasRole(me, 'KT_KHO');
   return (
     <>
       <Toolbar title="Kiểm kê" reload="/kho/kiem-ke" />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <p className="mb-3 text-[13px] text-muted">
         Kiểm kê chọn mẫu hằng tuần và toàn bộ cuối tháng (Quy chuẩn mục 3, 5). Kế toán SX chủ trì, Quản lý SX và NV5 đếm mù (không thấy số sổ sách),
         Kế toán trưởng duyệt biên bản chênh lệch. Chỉ tiêu: chênh lệch ≤ 0,5% giá trị tồn.

@@ -27,7 +27,8 @@ export async function lookupLocation(raw: string): Promise<{ loc?: LocInfo; erro
   const code = locCode(raw);
   if (!code) return { error: 'Chưa có mã vị trí' };
   const supabase = await createClient();
-  const { data } = await supabase.schema('app').from('v_locations').select('id, code, name, active, warehouse_code').eq('code', code).maybeSingle();
+  const { data, error } = await supabase.schema('app').from('v_locations').select('id, code, name, active, warehouse_code').eq('code', code).maybeSingle();
+  if (error) return { error: error.message };
   if (!data || !data.active) return { error: `Không có vị trí ${code}` };
   return { loc: { id: data.id, code: data.code, name: data.name, warehouse_code: data.warehouse_code } };
 }

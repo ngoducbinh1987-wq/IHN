@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { DELIVERY_STATUS, hasRole } from '@/lib/kho';
+import { DELIVERY_STATUS, LoadErrors, hasRole } from '@/lib/kho';
 import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createDelivery } from './actions';
@@ -15,18 +15,19 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
   await requirePage('kho-xuat-ban');
   const me = await requireMe();
   const supabase = await createClient();
-  const [{ data: dvs }, { data: groups }, { data: customers }] = await Promise.all([
+  const le = new LoadErrors();
+  const [{ data: dvs }, { data: groups }, { data: customers }] = le.all(await Promise.all([
     supabase.schema('app').from('v_deliveries').select('*').order('created_at', { ascending: false }).limit(100),
     supabase.schema('app').from('v_fg_stock').select('*').order('product_code').order('brand').order('pack_m', { ascending: false }).returns<FgGroup[]>(),
     supabase.schema('core').from('partners').select('id, name').eq('is_customer', true).eq('active', true).order('name'),
-  ]);
+  ]));
   const canCreate = can(me, 'sales', 'create') || hasRole(me, 'KT_KHO', 'ADMIN');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
   const stock = (groups ?? []).filter((g) => g.total_coils > 0);
   return (
     <>
       <Toolbar title="Xuất giao hàng thành phẩm" reload="/kho/xuat-ban" />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <p className="mb-3 text-[13px] text-muted">
         Cuộn thành phẩm chỉ dán tem QC PASS, không quét QR: xuất kho chỉ cần <b>bao nhiêu cuộn, chủng loại nào</b>. Kinh doanh hoặc Kế toán SX lập lệnh giao → <b>Giám đốc duyệt</b> (được sửa số cuộn, ngày giao) →
         Kế toán SX in phiếu xuất cho người giữ kho thành phẩm → giao xong Kế toán SX nhập &quot;đã giao&quot; theo phiếu có chữ ký; MES tự chọn cuộn QC Đạt, lô cũ trước để trừ tồn.

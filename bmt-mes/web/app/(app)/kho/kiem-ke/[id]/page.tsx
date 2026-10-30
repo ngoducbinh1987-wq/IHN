@@ -4,7 +4,7 @@ import { ScanOne } from '@/components/scan';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { COUNT_STATUS, hasRole } from '@/lib/kho';
+import { COUNT_STATUS, LoadErrors, hasRole } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { cancelCount, closeCount, scanCount } from '../actions';
@@ -17,13 +17,18 @@ export default async function CountDetail({ params, searchParams }: { params: Pr
   await requirePage('kho-kiem-ke');
   const me = await requirePerm('inventory', 'view');
   const supabase = await createClient();
-  const { data: c } = await supabase.schema('app').from('v_counts').select('*').eq('id', id).maybeSingle();
-  if (!c) notFound();
-  const [{ data: lines }, { data: locs }, { data: adj }] = await Promise.all([
+  const le = new LoadErrors();
+  const { data: c } = le.one(await supabase.schema('app').from('v_counts').select('*').eq('id', id).maybeSingle());
+  if (!c) {
+    // Lỗi tải dữ liệu thì báo rõ, không báo nhầm "không tìm thấy"
+    if (le.has) return <><Toolbar title="Kiểm kê" /><div className="mt-4"><Flash err={le.text} /></div></>;
+    notFound();
+  }
+  const [{ data: lines }, { data: locs }, { data: adj }] = le.all(await Promise.all([
     supabase.schema('app').from('v_count_lines').select('*').eq('count_id', id).order('location_code').order('item_code').order('hu_no'),
     supabase.schema('app').from('v_locations').select('id, code, name').eq('warehouse_code', c.warehouse_code).eq('active', true).order('sort'),
     c.adj_doc_id ? supabase.schema('app').from('v_stock_docs').select('id, doc_no, approval_id, status').eq('id', c.adj_doc_id).maybeSingle() : Promise.resolve({ data: null }),
-  ]);
+  ]));
   const kt = hasRole(me, 'KT_KHO');
   const counting = ['OPEN', 'COUNTED'].includes(c.status);
   const canCount = counting && (kt || hasRole(me, c.warehouse_code === 'KTP' ? 'KHO_NV' : 'THU_KHO'));
@@ -32,7 +37,7 @@ export default async function CountDetail({ params, searchParams }: { params: Pr
     <>
       <Toolbar title={<span>{c.count_no} · {c.warehouse_code} · {c.count_type === 'SAMPLE' ? 'chọn mẫu' : 'toàn bộ'}</span>} reload={`/kho/kiem-ke/${id}`}
         actions={<>{adj?.approval_id && <Link className="btn btn-soft" href={`/duyet/${adj.approval_id}`}>Biên bản chờ duyệt</Link>}<Link className="btn" href="/kho/kiem-ke">Đóng</Link></>} />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-[14px]">
         <span><span className="text-muted">Trạng thái:</span> <StatusPill map={COUNT_STATUS} value={c.status} /></span>
         <span><span className="text-muted">Đã đếm:</span> {c.counted}/{c.line_count}</span>

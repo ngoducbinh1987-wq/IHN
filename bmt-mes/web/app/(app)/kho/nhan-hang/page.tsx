@@ -1,5 +1,5 @@
 import { Flash, Toolbar } from '@/components/ui';
-import { keeps } from '@/lib/kho';
+import { LoadErrors, keeps } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
@@ -15,13 +15,14 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const me = await requireMe();
   if (!keeps(me, 'KNL')) redirect('/kho?err=' + encodeURIComponent('Nhận hàng do Quản lý SX (thủ kho NVL) thực hiện'));
   const supabase = await createClient();
-  const [{ data: pos }, { data: mats }, { data: sups }, { data: locs }, { data: pkgs }] = await Promise.all([
+  const le = new LoadErrors();
+  const [{ data: pos }, { data: mats }, { data: sups }, { data: locs }, { data: pkgs }] = le.all(await Promise.all([
     supabase.schema('app').from('v_open_po_lines').select('*').order('po_no', { ascending: false }).order('line_no').returns<PoLine[]>(),
     supabase.schema('master').from('materials').select('code, name, uom, has_expiry').eq('is_scrap', false).eq('active', true).order('code').returns<MatOpt[]>(),
     supabase.schema('core').from('partners').select('id, name').eq('is_supplier', true).eq('active', true).order('name'),
     supabase.schema('app').from('v_locations').select('id, code, name').eq('warehouse_code', 'KNL').eq('active', true).order('sort'),
     supabase.schema('master').from('package_types').select('id, code, name, tare_kg').eq('active', true).order('code'),
-  ]);
+  ]));
   const poOpts: PoOpt[] = [];
   for (const l of pos ?? []) {
     let p = poOpts.find((x) => x.id === l.po_id);
@@ -32,7 +33,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   return (
     <>
       <Toolbar title="Nhận hàng vào kho nguyên liệu" reload="/kho/nhan-hang" />
-      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} /></div>
       <p className="mb-3 text-[13px] text-muted">
         Quản lý SX ký nhận và lập phiếu, NV4 bốc xếp và cân, NV mua hàng đối chiếu PO trên MES, TP Kỹ thuật/QA kiểm tra chất lượng (Quy chuẩn mục 9).
         Hàng mới nhận ở trạng thái Chờ QC, chưa cấp được cho sản xuất.

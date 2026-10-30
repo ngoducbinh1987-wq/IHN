@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
-import { REQ_STATUS, hasRole } from '@/lib/kho';
+import { LoadErrors, REQ_STATUS, hasRole } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createExtra, createRequisition } from './actions';
@@ -16,12 +16,13 @@ export default async function RequisitionsPage({ searchParams }: { searchParams:
   const me = await requireMe();
   const tab = sp.tab && TAB_STATUS[sp.tab] ? sp.tab : 'mo';
   const supabase = await createClient();
-  const [{ data: reqs }, { data: counts }, { data: wos }, { data: reasons }] = await Promise.all([
+  const le = new LoadErrors();
+  const [{ data: reqs }, { data: counts }, { data: wos }, { data: reasons }] = le.all(await Promise.all([
     supabase.schema('app').from('v_requisitions').select('*').in('status', TAB_STATUS[tab]).order('created_at', { ascending: false }).limit(200),
     supabase.schema('app').from('v_requisitions').select('status'),
     supabase.schema('app').from('v_open_wos').select('*').order('wo_no'),
     supabase.schema('master').from('reason_codes').select('code, name').eq('kind', 'EXTRA_ISSUE').order('code'),
-  ]);
+  ]));
   const n = (k: string) => (counts ?? []).filter((r) => TAB_STATUS[k].includes(r.status)).length;
   const planner = hasRole(me, 'SX_TP', 'TO_TRUONG', 'SX_KH');
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
@@ -34,7 +35,7 @@ export default async function RequisitionsPage({ searchParams }: { searchParams:
         { key: 'xong', label: 'Đã cấp đủ', href: '/kho/cap-phat?tab=xong' },
         { key: 'huy', label: 'Đã hủy', href: '/kho/cap-phat?tab=huy' },
       ]} />
-      <Flash ok={sp.ok} err={sp.err} />
+      <Flash ok={sp.ok} err={sp.err} /><Flash err={le.text} />
       <p className="mb-3 text-[13px] text-muted">
         Phiếu lĩnh do MES tự tính theo định mức từ lệnh sản xuất (Quy chuẩn mục 3). Kho mở đầu ca xuất đủ cho cả ca, cuối ca nhận lại phần thừa và phế.
         Lĩnh vượt định mức phải có TP Kỹ thuật/QA duyệt.
