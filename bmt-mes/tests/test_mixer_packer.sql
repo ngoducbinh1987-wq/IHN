@@ -48,6 +48,8 @@ select pg_temp.ok(plan.mix_kg_km((select current_spec_id from master.products wh
 insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom)
 select id, 'SIZE_MM2', 'Thử dải nhầm', 10, 35, 'mm²' from master.machines where code in ('SIL-MIX', 'PACK-01');
 select pg_temp.as_user('X_SXTP');
+-- Dữ liệu thật có thể đã khai báo tốc độ riêng máy trộn (SIL-MIX 50 kg/giờ từ 28/10/2026): thử theo tốc độ mặc định
+delete from master.machine_speeds where op_code = 'CD0';
 set local role authenticated;
 create temp table cap as select app.check_capacity(null, pg_temp.today(), pg_temp.today() + 6, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', (select v from t where k = 'sif'), 'qty_m', 10000))) as j;
