@@ -14,6 +14,7 @@ type Row = {
 };
 
 const GROUPS = ['PFR', 'SFR', 'CFR', 'CTL', 'SIF', 'PVC'];
+const BRANDS = ['KAVIX', 'HEIZKA'];
 const TABS = [
   { key: 'tat-ca', label: 'Tất cả', st: null },
   { key: 'nhap', label: 'Nháp', st: 'DRAFT' },
@@ -22,7 +23,7 @@ const TABS = [
   { key: 'rdc', label: 'Rdc vượt', st: 'rdc' },
 ];
 
-export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ nhom?: string; tab?: string; q?: string; ok?: string; err?: string }> }) {
+export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ nhom?: string; th?: string; tab?: string; q?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
   await requirePage('san-pham');
   const me = await requirePerm('spec', 'view');
@@ -30,15 +31,17 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const supabase = await createClient();
   let query = supabase.schema('app').from('v_products').select('*').order('code');
   if (sp.nhom && GROUPS.includes(sp.nhom)) query = query.eq('group_code', sp.nhom);
+  if (sp.th && BRANDS.includes(sp.th)) query = query.eq('default_brand', sp.th);
   if (tab.st === 'rdc') query = query.eq('rdc_over', true);
   else if (tab.st) query = query.eq('spec_status', tab.st);
   const q = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
   if (q) query = query.or(`code.ilike.*${q}*,description.ilike.*${q}*`);
   const { data, error } = await query.returns<Row[]>();
-  const href = (o: { tab?: string; nhom?: string | null }) => {
+  const href = (o: { tab?: string; nhom?: string | null; th?: string | null }) => {
     const p = new URLSearchParams();
     const t = o.tab ?? tab.key; if (t !== 'tat-ca') p.set('tab', t);
     const n = o.nhom === undefined ? sp.nhom : o.nhom; if (n) p.set('nhom', n);
+    const b = o.th === undefined ? sp.th : o.th; if (b) p.set('th', b);
     if (q) p.set('q', q);
     const s = p.toString();
     return s ? `/san-pham?${s}` : '/san-pham';
@@ -46,12 +49,17 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <Toolbar title="Sản phẩm & Spec" reload={href({})} search={{ placeholder: 'Tìm mã hoặc quy cách', value: sp.q }} hidden={{ tab: sp.tab, nhom: sp.nhom }}
+      <Toolbar title="Sản phẩm & Spec" reload={href({})} search={{ placeholder: 'Tìm mã hoặc quy cách', value: sp.q }} hidden={{ tab: sp.tab, nhom: sp.nhom, th: sp.th }}
         add={can(me, 'spec', 'create') ? { href: '/san-pham/moi', label: 'Thêm spec mới' } : undefined} />
       <Tabs active={tab.key} items={TABS.map((t) => ({ key: t.key, label: t.label, href: href({ tab: t.key }) }))} />
       <Flash ok={sp.ok} err={sp.err ?? error?.message} />
+      <div className="mb-2 flex flex-wrap items-center gap-1.5" id="loc-san-pham">
+        <span className="mr-1 w-[92px] text-[13px] text-muted">Sản phẩm:</span>
+        <Link className={`btn btn-sm ${!sp.th ? 'btn-pri' : ''}`} href={href({ th: null })}>Tất cả</Link>
+        {BRANDS.map((b) => <Link key={b} className={`btn btn-sm ${sp.th === b ? 'btn-pri' : ''}`} href={href({ th: b })}>{b}</Link>)}
+      </div>
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[13px] text-muted">Nhóm:</span>
+        <span className="mr-1 w-[92px] text-[13px] text-muted">Nhóm:</span>
         <Link className={`btn btn-sm ${!sp.nhom ? 'btn-pri' : ''}`} href={href({ nhom: null })}>Tất cả</Link>
         {GROUPS.map((g) => <Link key={g} className={`btn btn-sm ${sp.nhom === g ? 'btn-pri' : ''}`} href={href({ nhom: g })}>{g}</Link>)}
       </div>
