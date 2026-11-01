@@ -75,9 +75,9 @@ select pg_temp.blocked($q$select app.save_bom_line(pg_temp.v('spec'), 'CU-024', 
 select pg_temp.as_user('E_ADM');
 select pg_temp.blocked($q$select app.admin_spec_edit(pg_temp.v('spec'), 'spec', '{"description":"Sửa thử"}', ' ')$q$, 'lý do', 'Quản trị sửa spec bắt buộc ghi lý do');
 select pg_temp.as_api($q$select app.admin_spec_edit(pg_temp.v('spec'), 'spec', '{"description":"Quy cách sửa bởi Quản trị","brand":"HEIZKA","od_mm":"7.5"}', 'Sai quy cách in trên catalogue')$q$);
-select pg_temp.ok((select p.description = 'Quy cách sửa bởi Quản trị' and p.default_brand = 'HEIZKA' and s.brand = 'HEIZKA' and s.status = 'RELEASED'
+select pg_temp.ok((select p.description = master.spec_name(s.id) and p.default_brand = 'HEIZKA' and s.brand = 'HEIZKA' and s.status = 'RELEASED'
   from master.products p join master.product_specs s on s.product_id = p.id where s.id = pg_temp.v('spec')),
-  'Quản trị sửa quy cách, thương hiệu spec đã phát hành; spec vẫn Đã phát hành');
+  'Quản trị sửa thương hiệu spec đã phát hành (tên vẫn do MES đặt); spec vẫn Đã phát hành');
 select pg_temp.ok((select mrp_stale from plan.production_plans where id = pg_temp.v('plan')),
   'Kế hoạch đang dùng mã này được đánh dấu cần chạy lại MRP');
 select pg_temp.as_api($q$select app.admin_spec_edit(pg_temp.v('spec'), 'bom_save',

@@ -49,7 +49,7 @@ export default async function NewSpec({ searchParams }: { searchParams: Promise<
             <label className="lbl">Nhóm
               <select className="inp" name="group" defaultValue={tpl.group_code}>{(groups ?? []).map((g) => <option key={g.code} value={g.code}>{g.code} · {g.name}</option>)}</select>
             </label>
-            <label className="lbl"><span className="req">Quy cách</span><input className="inp" name="description" required placeholder="Cáp chống cháy 2 lõi 1,0 mm²…" /></label>
+            <div className="lbl">Quy cách<div className="inp text-muted">MES tự đặt theo thông số (vd. 2×0.75 mm² SI/vỏ LSZH, không shield)</div></div>
           </div>
           <SpecFields s={{ ...spec, ...(res ?? {}), config_note: '' }} coreCodes={coreCodes.length ? coreCodes : [spec.core_code]} />
           <div className="flex gap-2 border-t border-line pt-4">

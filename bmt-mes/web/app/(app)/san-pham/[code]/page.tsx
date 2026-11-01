@@ -145,7 +145,7 @@ export default async function ProductDetail({ params, searchParams }:
               {reasonField}
               {pv?.error && <div className="rounded border-l-4 border-bad bg-bad/10 px-3 py-2 text-[13.5px]" id="tam-tinh"><b>Tạm tính chưa được:</b> {pv.error.message}</div>}
               {preview && <PreviewBox before={{ ...spec, ...(res ?? {}) }} after={{ ...preview.spec, ...(preview.res ?? {}) }} issues={preview.issues ?? []} href={`/san-pham/${encodeURIComponent(code)}?v=${specId}&tab=thong-so`} />}
-              <label className="lbl">Quy cách<input className="inp" name="description" defaultValue={typeof tam?.description === 'string' ? tam.description : p.description} /></label>
+              <div className="lbl">Quy cách (MES tự đặt)<div className="inp bg-sunk">{p.description}</div><span className="text-[12px] text-muted">Theo quy tắc: tiết diện × số lõi (số cặp), cách điện/vỏ, chống nhiễu. Đổi thông số rồi Lưu thì tên tự đổi.</span></div>
               <SpecFields s={formVals} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} bom={preview?.bom ?? ((bom ?? []) as SpecBomLine[])} perPallet={perPallet} bomIssues={(bomIss as string[] | null) ?? null} />
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
                 <SubmitButton className="btn btn-pri">Lưu thông số</SubmitButton>
