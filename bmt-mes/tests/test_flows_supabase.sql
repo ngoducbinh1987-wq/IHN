@@ -85,6 +85,9 @@ select pg_temp.fails($$update master.bom_lines set qty_per_basis = 1 where bom_i
 select pg_temp.fails($$update master.product_specs set status = 'RELEASED' where id = (select v from t where k = 'spec_sfr')$$, 'luồng duyệt', 'Không phát hành spec ngoài luồng duyệt');
 select pg_temp.fails($$select master.release_spec((select v from t where k = 'spec_sfr'))$$, 'qua quy trình duyệt', 'Không gọi thẳng hàm phát hành spec');
 select pg_temp.as_user('U_KTTP');
+-- Dữ liệu thật đã chuẩn hóa ruột dẫn 1,0 mm² (Rdc đạt): bản nháp dùng ruột 15×0,24 để Rdc vượt giới hạn
+select master.set_spec_layers((select v from t where k = 'spec_sfr'), '{"wire_mix":[{"n":15,"d":0.24}]}');
+select master.calc_spec((select v from t where k = 'spec_sfr'));
 select pg_temp.fails($$select wf.submit('SPEC_NEW', (select v from t where k = 'spec_sfr'), 'SPEC SFR-2P-1')$$, 'Rdc', 'SFR-2P-1 Rdc vượt: chặn gửi duyệt');
 -- Phiên bản mới từ spec đã phát hành
 select pg_temp.as_user('U_KTNV');
