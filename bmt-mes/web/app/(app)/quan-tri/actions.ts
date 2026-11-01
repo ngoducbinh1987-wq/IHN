@@ -74,6 +74,26 @@ export async function resetPassword(form: FormData) {
   redirect(`/quan-tri?sua=${id}&ok=` + encodeURIComponent(`Đã đặt lại mật khẩu cho ${email}${extra}. Gửi mật khẩu mới cho người dùng qua kênh riêng.`));
 }
 
+// Quản trị hệ thống xóa người dùng. Database quyết định: chưa có dấu vết nghiệp vụ → xóa hẳn; đã có → khóa vĩnh viễn, ẩn.
+export async function deleteUser(form: FormData) {
+  const id = String(form.get('id') ?? '');
+  const back = (msg: string) => redirect(`/quan-tri?sua=${id}&err=` + encodeURIComponent(msg));
+  const me = await requireMe();
+  if (!me.is_admin) back('Chỉ Quản trị hệ thống được xóa người dùng');
+  if (form.get('confirm') !== 'on') back('Tích ô xác nhận trước khi xóa người dùng');
+  const reason = String(form.get('reason') ?? '').trim();
+  if (!reason) back('Ghi lý do xóa người dùng');
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('app').rpc('admin_user_delete', { p_user: id, p_reason: reason });
+  if (error) back(error.message);
+  const r = data as { mode: string; email: string | null; full_name: string; traces: number };
+  const who = r.email ? `${r.full_name} (${r.email})` : r.full_name;
+  revalidatePath('/quan-tri');
+  redirect('/quan-tri?ok=' + encodeURIComponent(r.mode === 'DELETED'
+    ? `Đã xóa hẳn tài khoản ${who}.`
+    : `Đã xóa ${who} khỏi danh sách: khóa đăng nhập vĩnh viễn, bỏ mọi vai trò. Người này đã có ${r.traces} dấu vết trên chứng từ nên MES giữ tên để truy vết.`));
+}
+
 export async function updateUser(form: FormData) {
   const id = String(form.get('id'));
   if (form.getAll('roles').length === 0) redirect(`/quan-tri?sua=${id}&err=` + encodeURIComponent('Chọn ít nhất một vai trò'));

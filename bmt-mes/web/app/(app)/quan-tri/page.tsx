@@ -4,17 +4,19 @@ import { ROLE_NAMES, df } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { ResetPasswordFields } from '@/components/reset-password-fields';
-import { createUser, resetPassword, updateUser } from './actions';
+import { Trash2 } from 'lucide-react';
+import { createUser, deleteUser, resetPassword, updateUser } from './actions';
 
 export const metadata = { title: 'Người dùng' };
 
 type U = { id: string; full_name: string; employee_code: string | null; department: string | null; title: string | null;
-  status: string; email: string | null; last_sign_in_at: string | null; roles: string[]; warehouses: string[] };
+  status: string; email: string | null; last_sign_in_at: string | null; roles: string[]; warehouses: string[]; deleted_at: string | null };
 type W = { code: string; name: string };
 type C = { role_a: string; role_b: string; reason: string };
 type R = { at: string; by_name: string; signout: boolean; sessions_ended: number };
 type O = { at: string; actor: string; action: string; doc_type: string | null; doc_no: string | null; reason: string | null };
-const OVERRIDE: Record<string, string> = { ADMIN_CANCEL: 'Hủy quy trình', ADMIN_REOPEN: 'Mở lại để sửa', ADMIN_DELETE: 'Xóa chứng từ', ADMIN_STOCK: 'Sửa số tồn', ADMIN_COST: 'Sửa giá', ADMIN_PO: 'Sửa đơn mua đã duyệt' };
+const OVERRIDE: Record<string, string> = { ADMIN_CANCEL: 'Hủy quy trình', ADMIN_REOPEN: 'Mở lại để sửa', ADMIN_DELETE: 'Xóa chứng từ', ADMIN_STOCK: 'Sửa số tồn', ADMIN_COST: 'Sửa giá', ADMIN_PO: 'Sửa đơn mua đã duyệt',
+  ADMIN_SPEC: 'Sửa spec', ADMIN_USER_DELETE: 'Xóa người dùng' };
 
 const DEPTS: [string, string][] = [['BGD', 'Ban giám đốc'], ['KD', 'Kinh doanh'], ['KT', 'Kỹ thuật/QA'], ['KHO', 'Kho'],
   ['MUA', 'Mua hàng'], ['KTOAN', 'Kế toán'], ['SX', 'Sản xuất'], ['IT', 'Quản trị hệ thống']];
@@ -55,7 +57,7 @@ function WarehouseChecks({ selected, warehouses }: { selected: string[]; warehou
   );
 }
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; sua?: string; them?: string }> }) {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; sua?: string; them?: string; da_xoa?: string }> }) {
   const sp = await searchParams;
   await requirePage('quan-tri');
   const me = await requirePerm('admin', 'view');
@@ -68,7 +70,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const warehouses = whs ?? [];
   const conflicts = conf ?? [];
   const whName = (c: string) => warehouses.find((w) => w.code === c)?.name ?? c;
-  const editing = data?.find((u) => u.id === sp.sua);
+  // Người đã xóa (còn giữ hồ sơ vì có dấu vết trên chứng từ) ẩn khỏi danh sách, xem riêng bằng ?da_xoa=1
+  const showDeleted = sp.da_xoa === '1';
+  const deletedCount = (data ?? []).filter((u) => u.deleted_at).length;
+  const users = (data ?? []).filter((u) => showDeleted ? !!u.deleted_at : !u.deleted_at);
+  const editing = users.find((u) => u.id === sp.sua && !u.deleted_at);
   const editable = can(me, 'admin', 'edit');
   // Đặt lại mật khẩu: chỉ vai trò Quản trị hệ thống (database kiểm lại khi lưu)
   const canReset = me.roles.includes('ADMIN');
@@ -86,18 +92,27 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <table className="tbl">
             <thead><tr><th>Họ tên</th><th>Email</th><th>Mã NV</th><th>Vai trò</th><th>Đăng nhập gần nhất</th><th>TT</th>{editable && <th />}</tr></thead>
             <tbody>
-              {(data ?? []).map((u) => (
+              {users.map((u) => (
                 <tr key={u.id} className={u.id === sp.sua ? 'bg-brand-soft/60' : ''}>
                   <td className="font-medium">{u.full_name}</td><td className="text-muted">{u.email}</td><td className="mono">{u.employee_code ?? '—'}</td>
                   <td className="min-w-[180px]"><div className="flex flex-wrap gap-1">{u.roles.map((r) => <Pill key={r} tone="cu">{ROLE_NAMES[r] ?? r}</Pill>)}</div>
                     {u.warehouses?.length > 0 && <div className="mt-1 text-[12px] text-muted">Kho: {u.warehouses.map(whName).join(', ')}</div>}</td>
                   <td className="whitespace-nowrap">{df(u.last_sign_in_at, true)}</td>
-                  <td><Pill tone={u.status === 'ACTIVE' ? 'ok' : 'warn'}>{u.status === 'ACTIVE' ? 'Hoạt động' : u.status === 'LOCKED' ? 'Tạm khóa' : 'Ngưng'}</Pill></td>
-                  {editable && <td><a className="btn btn-sm btn-soft" href={`/quan-tri?sua=${u.id}`}>Sửa</a></td>}
+                  <td>{u.deleted_at
+                    ? <Pill tone="warn">Đã xóa {df(u.deleted_at)}</Pill>
+                    : <Pill tone={u.status === 'ACTIVE' ? 'ok' : 'warn'}>{u.status === 'ACTIVE' ? 'Hoạt động' : u.status === 'LOCKED' ? 'Tạm khóa' : 'Ngưng'}</Pill>}</td>
+                  {editable && <td>{!u.deleted_at && <a className="btn btn-sm btn-soft" href={`/quan-tri?sua=${u.id}`}>Sửa</a>}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
+          {(deletedCount > 0 || showDeleted) && (
+            <p className="px-4 py-2 text-[12.5px] text-muted" id="nguoi-da-xoa">
+              {showDeleted
+                ? <>Đang xem {deletedCount} người đã xóa (giữ tên để truy vết chứng từ cũ, không đăng nhập được). <a className="text-brand underline" href="/quan-tri">Quay lại danh sách</a></>
+                : <a className="text-brand underline" href="/quan-tri?da_xoa=1">Xem {deletedCount} người đã xóa</a>}
+            </p>
+          )}
         </section>
 
         {editable && (
@@ -140,6 +155,20 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                     </div>
                   )}
                 </form>
+              )}
+              {me.is_admin && editing.id !== me.id && (
+                <details className="card p-4" id="admin-xoa-nguoi-dung">
+                  <summary className="cursor-pointer text-[15px] font-medium text-bad">Quản trị hệ thống: xóa người dùng {editing.full_name}</summary>
+                  <form action={deleteUser} className="mt-3 flex flex-col gap-3">
+                    <input type="hidden" name="id" value={editing.id} />
+                    <label className="lbl">Lý do xóa<input className="inp" name="reason" required /></label>
+                    <label className="flex items-center gap-2 text-[12.5px]"><input type="checkbox" name="confirm" />Tôi hiểu người dùng sẽ bị xóa, không đăng nhập được nữa</label>
+                    <div><SubmitButton className="btn btn-bad-o" pendingText="Đang xóa…"><Trash2 size={14} />Xóa người dùng</SubmitButton></div>
+                  </form>
+                  <p className="mt-2 text-[12.5px] text-muted">Người chưa lập, duyệt hay ghi nhận gì trên MES: xóa hẳn tài khoản. Người đã có tên trên chứng từ:
+                    MES giữ tên để truy vết, khóa đăng nhập vĩnh viễn, bỏ mọi vai trò, kho, ủy quyền và ẩn khỏi danh sách.
+                    Cả hai cách đều bỏ người đó khỏi các bước duyệt được giao đích danh, gỡ liên kết người đứng máy, đăng xuất mọi thiết bị. Ghi vào Nhật ký can thiệp.</p>
+                </details>
               )}
             </div>
           ) : sp.them ? (

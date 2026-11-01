@@ -1115,5 +1115,57 @@ await ctx.close();
   ok('Sản phẩm & Spec: nút Sửa từng dòng chỉ Quản trị; spec đã phát hành sửa được, vẫn Đã phát hành; TP Mua không thấy nút');
 }
 
+// 17. Quản trị xóa người dùng: chưa có dấu vết → xóa hẳn; đã có hoạt động → khóa vĩnh viễn, ẩn; cả hai không đăng nhập được
+{
+  const cannotLogin = async (email) => {
+    const [c, p] = await ctxFor();
+    await p.goto(`${BASE}/login`);
+    await p.fill('#email', email);
+    await p.fill('#password', PASS);
+    await p.click('button[type=submit]');
+    await p.waitForTimeout(2500);
+    const still = new URL(p.url()).pathname.startsWith('/login');
+    await c.close();
+    if (!still) fail(`${email} đã bị xóa mà vẫn đăng nhập được`);
+  };
+  const del = async (p, email, reason) => {
+    await p.goto(`${BASE}/quan-tri`);
+    await clickNav(p, `tr:has-text("${email}") a:has-text("Sửa")`);
+    await p.click('#admin-xoa-nguoi-dung summary');
+    await p.fill('#admin-xoa-nguoi-dung input[name=reason]', reason);
+    await p.check('#admin-xoa-nguoi-dung input[name=confirm]');
+    await clickNav(p, '#admin-xoa-nguoi-dung button:has-text("Xóa người dùng")');
+    await expectOk(p, `Quản trị xóa ${email}`);
+    return flash(p);
+  };
+  const [c, p] = await ctxFor();
+  await login(p, 'admin@bmt.test', 'Admin@12345');
+  await p.goto(`${BASE}/quan-tri?them=1`);
+  await p.fill('input[name=full_name]', 'Tài Khoản Nhầm');
+  await p.fill('input[name=email]', 'xoa.thu@bmt.test');
+  await p.fill('input[name=password]', PASS);
+  await p.check('#n-KT_NV');
+  await clickNav(p, 'button:has-text("Tạo tài khoản")');
+  await expectOk(p, 'Tạo tài khoản để thử xóa');
+  if (!(await del(p, 'xoa.thu@bmt.test', 'E2E: tạo nhầm')).includes('xóa hẳn')) fail('Tài khoản chưa có hoạt động phải được xóa hẳn');
+  if ((await p.innerText('main')).includes('xoa.thu@bmt.test')) fail('Tài khoản đã xóa hẳn không còn trong danh sách');
+  const msg = await del(p, 'mua.nv@bmt.test', 'E2E: nghỉ việc');
+  if (!msg.includes('khỏi danh sách')) fail(`NV mua đã lập chứng từ phải được khóa + ẩn (giữ tên): "${msg}"`);
+  if ((await p.locator('table.tbl').first().innerText()).includes('mua.nv@bmt.test')) fail('Người đã xóa phải ẩn khỏi danh sách');
+  await clickNav(p, '#nguoi-da-xoa a');
+  if (!(await p.innerText('main')).includes('mua.nv@bmt.test')) fail('Xem người đã xóa phải thấy NV mua');
+  await p.goto(`${BASE}/quan-tri`);
+  if (!(await p.innerText('main')).includes('Xóa người dùng')) fail('Nhật ký can thiệp phải ghi lần xóa người dùng');
+  await c.close();
+  await cannotLogin('xoa.thu@bmt.test');
+  await cannotLogin('mua.nv@bmt.test');
+  const [c2, p2] = await ctxFor();
+  await login(p2, 'bgd@bmt.test');
+  await p2.goto(`${BASE}/quan-tri`);
+  if (await p2.locator('#admin-xoa-nguoi-dung').count()) fail('Giám đốc không được thấy khung xóa người dùng');
+  await c2.close();
+  ok('Quản trị xóa người dùng: tài khoản mới xóa hẳn; NV mua đã có chứng từ bị khóa + ẩn, giữ tên; cả hai không đăng nhập được; Giám đốc không thấy khung xóa');
+}
+
 await browser.close();
 console.log(`==> ĐẠT ${n} kiểm tra end-to-end`);
