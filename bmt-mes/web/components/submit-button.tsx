@@ -5,11 +5,11 @@ import type { ReactNode } from 'react';
 
 // Nút gửi form: khóa khi đang xử lý để tránh bấm hai lần
 // formAction: cho phép nhiều nút trong cùng form gọi các hành động khác nhau
-export function SubmitButton({ children, className = 'btn btn-pri', pendingText = 'Đang xử lý…', formAction }:
-  { children: ReactNode; className?: string; pendingText?: string; formAction?: (form: FormData) => void | Promise<void> }) {
+export function SubmitButton({ children, className = 'btn btn-pri', pendingText = 'Đang xử lý…', formAction, noValidate }:
+  { children: ReactNode; className?: string; pendingText?: string; formAction?: (form: FormData) => void | Promise<void>; noValidate?: boolean }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className={className} disabled={pending} formAction={formAction}>
+    <button type="submit" className={className} disabled={pending} formAction={formAction} formNoValidate={noValidate}>
       {pending ? pendingText : children}
     </button>
   );

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { CopyPlus, Send, Trash2 } from 'lucide-react';
+import { Calculator, CopyPlus, Send, Trash2 } from 'lucide-react';
 import { SpecFields, type SpecBomLine } from '@/components/spec-form';
 import { StageBar, type Stage } from '@/components/stage-bar';
 import { SubmitButton } from '@/components/submit-button';
@@ -9,13 +9,13 @@ import type { Approval } from '@/lib/approvals';
 import { SPEC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminUpdateSpec, deleteBomLine, newVersion, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
+import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminUpdateSpec, deleteBomLine, newVersion, previewSpec, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
 
 const BASIS: Record<string, string> = { KM: '/km', PACK: '/kiện', PALLET: '/pallet', LOT: '/lô' };
 const OPS = ['CD0', 'CD1', 'CD2', 'CD3', 'CD4', 'CD5', 'CD6'];
 
 export default async function ProductDetail({ params, searchParams }:
-  { params: Promise<{ code: string }>; searchParams: Promise<{ ok?: string; err?: string; v?: string; tab?: string }> }) {
+  { params: Promise<{ code: string }>; searchParams: Promise<{ ok?: string; err?: string; v?: string; tab?: string; tam?: string }> }) {
   const { code: rawCode } = await params;
   const code = decodeURIComponent(rawCode);
   // Mã sản phẩm viết IN HOA từ 27/10/2026 (1p5 → 1P5): đường dẫn cũ chữ thường chuyển sang mã mới
@@ -45,7 +45,15 @@ export default async function ProductDetail({ params, searchParams }:
   // Quản trị hệ thống sửa được cả spec đã phát hành / đang duyệt (giữ trạng thái, bắt buộc lý do, ghi nhật ký)
   const adminEdit = !editable && me.is_admin === true && spec.status !== 'OBSOLETE';
   const canEdit = editable || adminEdit;
-  const reasonField = adminEdit ? <AdminReason status={spec.status} /> : null;
+  // Tạm tính (chưa lưu): số đang nhập gửi qua tham số tam, database tính trong giao dịch con rồi hủy
+  let tam: Record<string, unknown> | null = null;
+  try { tam = sp.tam && canEdit ? JSON.parse(sp.tam) : null; } catch { tam = null; }
+  const tamReason = tam && typeof tam._reason === 'string' ? tam._reason : '';
+  if (tam) delete tam._reason;
+  const pv = tam ? await supabase.schema('app').rpc('spec_preview', { p_spec: specId, p: tam }) : null;
+  const preview = (pv?.data ?? null) as { spec: Record<string, unknown>; res: Record<string, unknown> | null; issues: string[] | null } | null;
+  const formVals = { ...spec, ...(res ?? {}), ...(preview ? { ...preview.spec, ...(preview.res ?? {}) } : {}) };
+  const reasonField = adminEdit ? <AdminReason status={spec.status} d={tamReason} /> : null;
   const last = reqs?.[0];
   const stages: Stage[] = last && (last.status === 'PENDING' || spec.status !== 'DRAFT')
     ? last.steps ?? []
@@ -104,11 +112,17 @@ export default async function ProductDetail({ params, searchParams }:
           </nav>
 
           {tab === 'thong-so' && (canEdit ? (
-            <form action={adminEdit ? adminUpdateSpec : updateSpec} className="card flex flex-col gap-4 p-4" id={adminEdit ? 'admin-sua-spec' : undefined}>{hidden}
+            <form key={sp.tam ?? 'da-luu'} action={adminEdit ? adminUpdateSpec : updateSpec} className="card flex flex-col gap-4 p-4" id={adminEdit ? 'admin-sua-spec' : undefined}>{hidden}
               {reasonField}
-              <label className="lbl">Quy cách<input className="inp" name="description" defaultValue={p.description} /></label>
-              <SpecFields s={{ ...spec, ...(res ?? {}) }} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} bom={(bom ?? []) as SpecBomLine[]} />
-              <div className="border-t border-line pt-3"><SubmitButton className="btn btn-pri">Lưu thông số</SubmitButton></div>
+              {pv?.error && <div className="rounded border-l-4 border-bad bg-bad/10 px-3 py-2 text-[13.5px]" id="tam-tinh"><b>Tạm tính chưa được:</b> {pv.error.message}</div>}
+              {preview && <PreviewBox before={{ ...spec, ...(res ?? {}) }} after={{ ...preview.spec, ...(preview.res ?? {}) }} issues={preview.issues ?? []} href={`/san-pham/${encodeURIComponent(code)}?v=${specId}&tab=thong-so`} />}
+              <label className="lbl">Quy cách<input className="inp" name="description" defaultValue={typeof tam?.description === 'string' ? tam.description : p.description} /></label>
+              <SpecFields s={formVals} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} bom={(bom ?? []) as SpecBomLine[]} />
+              <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+                <SubmitButton className="btn btn-pri">Lưu thông số</SubmitButton>
+                <SubmitButton className="btn btn-soft" formAction={previewSpec} noValidate pendingText="Đang tính…"><Calculator size={15} />Tạm tính (chưa lưu)</SubmitButton>
+                <span className="text-[12.5px] text-muted">Tạm tính: MES tính đồng, cách điện, Rdc, tiết diện theo số đang nhập; chỉ lưu khi bấm Lưu thông số.</span>
+              </div>
             </form>
           ) : (
             <section className="card flex flex-col gap-3 p-4">
@@ -223,12 +237,48 @@ export default async function ProductDetail({ params, searchParams }:
   );
 }
 
-function AdminReason({ status }: { status: string }) {
+function AdminReason({ status, d = '' }: { status: string; d?: string }) {
   return (
     <div className="rounded border-l-4 border-warn bg-warn/10 px-3 py-2 text-[13.5px]">
       <b>Quản trị hệ thống sửa spec {status === 'RELEASED' ? 'đã phát hành' : 'đang duyệt'}:</b> giữ nguyên trạng thái, ghi nhật ký can thiệp
       {status === 'RELEASED' ? '; kế hoạch đang dùng mã này sẽ cần chạy lại MRP.' : '; lịch sử duyệt ghi lần sửa.'}
-      <label className="lbl mt-2"><span className="req">Lý do sửa</span><input className="inp" name="reason" required /></label>
+      <label className="lbl mt-2"><span className="req">Lý do sửa</span><input className="inp" name="reason" defaultValue={d} required /></label>
     </div>
+  );
+}
+
+// Khung kết quả tạm tính: số cũ (đang lưu) → số mới (theo ô đang nhập), chưa lưu
+function PreviewBox({ before, after, issues, href }: { before: Record<string, unknown>; after: Record<string, unknown>; issues: string[]; href: string }) {
+  const rows: [string, string, number][] = [
+    ['Tiết diện ruột (mm²)', 'a_total_mm2', 4], ['Đường kính ruột (mm)', 'bundle_dia_mm', 3], ['Đường kính lõi (mm)', 'core_dia_mm', 3],
+    ['Đồng (kg/km cáp)', 'metal_kgkm', 3], ['Cách điện (kg/km cáp)', 'ins_kgkm', 3], ['Tổng khối lượng (kg/km)', 'total_kgkm', 3],
+    ['Rdc tính (Ω/km)', 'rdc_calc', 3], ['Rdc giới hạn (Ω/km)', 'rdc_limit', 2],
+  ];
+  const n = (x: unknown) => (x === null || x === undefined || x === '' ? null : Number(x));
+  return (
+    <section id="tam-tinh" className="rounded border-l-4 border-info bg-info/10 px-3 py-3 text-[13.5px]">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <b>Kết quả tạm tính – CHƯA LƯU (các ô bên dưới đang hiện số tạm tính)</b>
+        <Link className="btn btn-sm" href={href}>Bỏ tạm tính</Link>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="tbl table-fixed min-w-[460px] bg-surface">
+          <colgroup><col /><col className="w-[120px]" /><col className="w-[120px]" /><col className="w-[110px]" /></colgroup>
+          <thead><tr><th>Chỉ tiêu</th><th className="num" style={{ textAlign: 'right' }}>Đang lưu</th><th className="num" style={{ textAlign: 'right' }}>Tạm tính</th><th className="num" style={{ textAlign: 'right' }}>Chênh</th></tr></thead>
+          <tbody>{rows.map(([label, k, d]) => {
+            const a = n(before[k]); const b = n(after[k]); const diff = a !== null && b !== null ? b - a : null;
+            const over = k === 'rdc_calc' && b !== null && n(after.rdc_limit) !== null && b > (n(after.rdc_limit) as number);
+            return (
+              <tr key={k}><td>{label}</td><td className="num">{nf(a, d)}</td>
+                <td className={`num font-medium ${over ? 'text-bad' : ''}`}>{nf(b, d)}</td>
+                <td className={`num ${diff && Math.abs(diff) > 1e-9 ? (diff > 0 ? 'text-warn' : 'text-brand') : 'text-muted'}`}>{diff === null ? '—' : `${diff > 0 ? '+' : ''}${nf(diff, d)}`}</td></tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+      {issues.length > 0
+        ? <p className="mt-2 text-[13px]"><b>Chưa đủ điều kiện phát hành:</b> {issues.join('; ')}</p>
+        : <p className="mt-2 text-[13px] text-brand-dark">Đạt kiểm tra tự động.</p>}
+    </section>
   );
 }

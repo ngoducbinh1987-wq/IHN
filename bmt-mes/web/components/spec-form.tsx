@@ -9,7 +9,7 @@ export type SpecBomLine = {
   basis: string; qty_per_basis: number; loss_rate: number;
 };
 
-const COLORS = ['Nâu', 'Trắng', 'Đen', 'Xám', 'Xanh dương', 'Đỏ', 'Vàng', 'Xanh lá', 'Vàng-xanh lá', 'Cam', 'Tím', 'Hồng'];
+const COLORS = ['Trắng', 'Nâu', 'Đen', 'Xám', 'Xanh dương', 'Đỏ', 'Vàng', 'Xanh lá', 'Vàng-xanh lá', 'Cam', 'Tím', 'Hồng'];
 const R = { textAlign: 'right' as const };
 const G4 = 'grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4';
 
@@ -161,7 +161,7 @@ export function SpecFields({ s, coreCodes, bom = [], ro = false }: { s: Vals; co
             ))}</tbody>
           </table>
           {colors.length === 0 && s.insulation_colors ? <p className="mt-1 text-[12.5px] text-muted">Màu đang ghi chung: “{String(s.insulation_colors)}” – khai lại theo từng lõi.</p> : null}
-          {!ro && <p className="mt-1 text-[12.5px] text-muted">Đổi số lõi thì bấm Lưu thông số trước, bảng màu sẽ đủ dòng theo số lõi mới.</p>}
+          {!ro && <p className="mt-1 text-[12.5px] text-muted">Đổi số lõi thì bấm Tạm tính (hoặc Lưu), bảng màu sẽ đủ dòng theo số lõi mới.</p>}
         </div>
         <BomRows lines={bom} ops={['CD0', 'CD2']} mPerPack={mPerPack} />
       </Section>

@@ -131,3 +131,13 @@ export async function adminDeleteVersion(form: FormData) {
   revalidatePath('/san-pham', 'layout');
   back(code, 'ok', `Đã xóa phiên bản ${data}. Bản sao nội dung lưu trong nhật ký can thiệp của Quản trị.`);
 }
+
+// Tạm tính: chuyển số đang nhập sang trang (tham số tam), trang gọi app.spec_preview tính trong giao dịch con rồi hủy – không lưu gì
+export async function previewSpec(form: FormData) {
+  const code = String(form.get('code')); const spec = String(form.get('spec_id'));
+  const p = readParams(form);
+  if (typeof p === 'string') back(code, 'err', p, spec);
+  const reason = String(form.get('reason') ?? '').trim();
+  const tam = encodeURIComponent(JSON.stringify({ ...(p as Record<string, unknown>), ...(reason ? { _reason: reason } : {}) }));
+  redirect(`/san-pham/${encodeURIComponent(code)}?v=${spec}&tab=thong-so&tam=${tam}#tam-tinh`);
+}
