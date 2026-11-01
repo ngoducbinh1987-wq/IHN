@@ -9,7 +9,7 @@ import type { Approval } from '@/lib/approvals';
 import { SPEC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { deleteBomLine, newVersion, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
+import { adminDeleteBomLine, adminSaveBomLine, adminUpdateSpec, deleteBomLine, newVersion, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
 
 const BASIS: Record<string, string> = { KM: '/km', PACK: '/kiện', PALLET: '/pallet', LOT: '/lô' };
 const OPS = ['CD0', 'CD1', 'CD2', 'CD3', 'CD4', 'CD5', 'CD6'];
@@ -42,6 +42,10 @@ export default async function ProductDetail({ params, searchParams }:
     .eq('doc_type', 'SPEC_NEW').eq('enabled', true).order('seq');
   const problems = (issues as string[] | null) ?? [];
   const editable = ['DRAFT', 'PILOT_PENDING', 'PILOT'].includes(spec.status) && (can(me, 'spec', 'edit') || can(me, 'spec', 'create'));
+  // Quản trị hệ thống sửa được cả spec đã phát hành / đang duyệt (giữ trạng thái, bắt buộc lý do, ghi nhật ký)
+  const adminEdit = !editable && me.is_admin === true && spec.status !== 'OBSOLETE';
+  const canEdit = editable || adminEdit;
+  const reasonField = adminEdit ? <AdminReason status={spec.status} /> : null;
   const last = reqs?.[0];
   const stages: Stage[] = last && (last.status === 'PENDING' || spec.status !== 'DRAFT')
     ? last.steps ?? []
@@ -88,8 +92,9 @@ export default async function ProductDetail({ params, searchParams }:
             ))}
           </nav>
 
-          {tab === 'thong-so' && (editable ? (
-            <form action={updateSpec} className="card flex flex-col gap-4 p-4">{hidden}
+          {tab === 'thong-so' && (canEdit ? (
+            <form action={adminEdit ? adminUpdateSpec : updateSpec} className="card flex flex-col gap-4 p-4" id={adminEdit ? 'admin-sua-spec' : undefined}>{hidden}
+              {reasonField}
               <label className="lbl">Quy cách<input className="inp" name="description" defaultValue={p.description} /></label>
               <SpecFields s={{ ...spec, ...(res ?? {}) }} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} />
               <div className="border-t border-line pt-3"><SubmitButton className="btn btn-pri">Lưu thông số</SubmitButton></div>
@@ -113,21 +118,22 @@ export default async function ProductDetail({ params, searchParams }:
           {tab === 'bom' && (
             <section className="card overflow-x-auto">
               <table className="tbl">
-                <thead><tr><th>Công đoạn</th><th>Mã VT</th><th>Vật tư</th><th className="num">Suất</th><th>ĐVT</th><th className="num">Hao hụt</th><th className="num">Khởi động / lô</th>{editable && <th />}</tr></thead>
+                <thead><tr><th>Công đoạn</th><th>Mã VT</th><th>Vật tư</th><th className="num">Suất</th><th>ĐVT</th><th className="num">Hao hụt</th><th className="num">Khởi động / lô</th>{canEdit && <th />}</tr></thead>
                 <tbody>
                   {(bom ?? []).map((l) => (
                     <tr key={l.id}>
                       <td className="mono">{l.operation_code}</td><td className="mono font-medium">{l.material_code}</td><td>{l.material_name}</td>
                       <td className="num">{nf(l.qty_per_basis, 4)}</td><td className="whitespace-nowrap">{l.uom}{BASIS[l.basis]}</td>
                       <td className="num">{nf(l.loss_rate * 100, 1)}%</td><td className="num">{Number(l.startup_per_lot) ? nf(l.startup_per_lot, 3) : '—'}</td>
-                      {editable && <td><form action={deleteBomLine}>{hidden}<input type="hidden" name="line_id" value={l.id} /><SubmitButton className="btn btn-sm btn-bad-o" pendingText="…"><Trash2 size={14} />Xóa</SubmitButton></form></td>}
+                      {canEdit && <td><form action={adminEdit ? adminDeleteBomLine : deleteBomLine} className="flex gap-1">{hidden}<input type="hidden" name="line_id" value={l.id} />
+                        {adminEdit && <input className="inp inp-y w-36" name="reason" placeholder="Lý do xóa" aria-label="Lý do xóa dòng BOM" required />}<SubmitButton className="btn btn-sm btn-bad-o" pendingText="…"><Trash2 size={14} />Xóa</SubmitButton></form></td>}
                     </tr>
                   ))}
                   {(bom ?? []).length === 0 && <tr><td colSpan={8}><Empty>BOM chưa có dòng nào.</Empty></td></tr>}
                 </tbody>
               </table>
-              {editable && (
-                <form action={saveBomLine} className="grid gap-3 border-t border-line bg-sunk/50 p-4 md:grid-cols-[2fr_0.8fr_0.8fr_0.7fr_0.8fr_0.8fr_auto] md:items-end">{hidden}
+              {canEdit && (
+                <form action={adminEdit ? adminSaveBomLine : saveBomLine} id={adminEdit ? 'admin-sua-bom' : undefined} className="grid gap-3 border-t border-line bg-sunk/50 p-4 md:grid-cols-[2fr_0.8fr_0.8fr_0.7fr_0.8fr_0.8fr_auto] md:items-end">{hidden}
                   <datalist id="mats">{(mats ?? []).map((m) => <option key={m.code} value={`${m.code} · ${m.name} (${m.uom})`} />)}</datalist>
                   <label className="lbl"><span className="req">Vật tư</span><input className="inp" name="material_code" list="mats" required /></label>
                   <label className="lbl"><span className="req">Suất</span><input className="inp text-right" name="qty" inputMode="decimal" required /></label>
@@ -136,6 +142,7 @@ export default async function ProductDetail({ params, searchParams }:
                   <label className="lbl">Khởi động/lô<input className="inp text-right" name="startup" inputMode="decimal" /></label>
                   <label className="lbl">Công đoạn<select className="inp" name="operation">{OPS.map((o) => <option key={o}>{o}</option>)}</select></label>
                   <SubmitButton className="btn btn-pri">Lưu dòng</SubmitButton>
+                  {adminEdit && <div className="md:col-span-7">{reasonField}</div>}
                   <p className="text-[12.5px] text-muted md:col-span-7">Nhập lại vật tư đã có cùng “Theo” để sửa suất của dòng đó.</p>
                 </form>
               )}
@@ -211,5 +218,15 @@ export default async function ProductDetail({ params, searchParams }:
         </aside>
       </div>
     </>
+  );
+}
+
+function AdminReason({ status }: { status: string }) {
+  return (
+    <div className="rounded border-l-4 border-warn bg-warn/10 px-3 py-2 text-[13.5px]">
+      <b>Quản trị hệ thống sửa spec {status === 'RELEASED' ? 'đã phát hành' : 'đang duyệt'}:</b> giữ nguyên trạng thái, ghi nhật ký can thiệp
+      {status === 'RELEASED' ? '; kế hoạch đang dùng mã này sẽ cần chạy lại MRP.' : '; lịch sử duyệt ghi lần sửa.'}
+      <label className="lbl mt-2"><span className="req">Lý do sửa</span><input className="inp" name="reason" required /></label>
+    </div>
   );
 }

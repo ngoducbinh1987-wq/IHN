@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Pencil } from 'lucide-react';
 import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { SPEC_STATUS, nf } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
@@ -57,7 +58,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       <div className="card overflow-x-auto">
         {data && data.length > 0 ? (
           <table className="tbl">
-            <thead><tr><th>Mã SP</th><th>Quy cách</th><th>Nhóm</th><th>Thương hiệu</th><th className="num">kg/km</th><th className="num">OD mm</th><th className="num">Rdc tính</th><th className="num">Giới hạn</th><th>Spec</th></tr></thead>
+            <thead><tr><th>Mã SP</th><th>Quy cách</th><th>Nhóm</th><th>Thương hiệu</th><th className="num">kg/km</th><th className="num">OD mm</th><th className="num">Rdc tính</th><th className="num">Giới hạn</th><th>Spec</th>{me.is_admin && <th className="text-center">Sửa</th>}</tr></thead>
             <tbody>
               {data.map((r) => (
                 <tr key={r.id}>
@@ -70,6 +71,13 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                   <td className={`num ${r.rdc_over ? 'font-medium text-bad' : ''}`}>{nf(r.rdc_calc, 3)}</td>
                   <td className="num">{r.rdc_limit === null ? <Pill tone="warn">Chưa có</Pill> : nf(r.rdc_limit, 2)}</td>
                   <td className="whitespace-nowrap"><StatusPill map={SPEC_STATUS} value={r.spec_status} /> <span className="text-[12px] text-muted">v{r.version}</span></td>
+                  {me.is_admin && (
+                    <td className="text-center">
+                      <Link className="btn btn-sm" href={`/san-pham/${encodeURIComponent(r.code)}?tab=thong-so`} title={`Quản trị sửa ${r.code}`} aria-label={`Sửa ${r.code}`}>
+                        <Pencil size={14} />Sửa
+                      </Link>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

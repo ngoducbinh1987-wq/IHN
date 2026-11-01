@@ -85,3 +85,36 @@ export async function newVersion(form: FormData) {
   // Phiên bản mới là bản nháp; sản phẩm vẫn dùng bản đã phát hành cho tới khi bản mới được duyệt
   back(code, 'ok', 'Đã tạo phiên bản nháp mới. Sửa thông số / BOM rồi gửi duyệt.', data as string);
 }
+
+// Quản trị hệ thống sửa spec / BOM đã phát hành hoặc đang duyệt (database kiểm core.is_admin, bắt buộc lý do, ghi nhật ký)
+async function adminEdit(form: FormData, action: 'spec' | 'bom_save' | 'bom_delete', p: Record<string, unknown>, done: string) {
+  const code = String(form.get('code')); const spec = String(form.get('spec_id'));
+  const reason = String(form.get('reason') ?? '').trim();
+  if (!reason) back(code, 'err', 'Ghi lý do sửa', spec);
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('admin_spec_edit', { p_spec: spec, p_action: action, p, p_reason: reason });
+  if (error) back(code, 'err', error.message, spec);
+  revalidatePath('/san-pham', 'layout');
+  back(code, 'ok', done, spec);
+}
+
+export async function adminUpdateSpec(form: FormData) {
+  const p = readParams(form);
+  if (typeof p === 'string') back(String(form.get('code')), 'err', p, String(form.get('spec_id')));
+  await adminEdit(form, 'spec', p as Record<string, string>, 'Quản trị đã sửa thông số, định mức tính lại (ghi nhật ký can thiệp)');
+}
+
+export async function adminSaveBomLine(form: FormData) {
+  const qty = parseNum(form.get('qty')); const loss = parseNum(form.get('loss')); const startup = parseNum(form.get('startup'));
+  const code = String(form.get('code')); const spec = String(form.get('spec_id'));
+  if (qty === null || Number.isNaN(qty) || qty <= 0) back(code, 'err', 'Định mức phải lớn hơn 0', spec);
+  if (loss !== null && (Number.isNaN(loss) || loss < 0 || loss >= 100)) back(code, 'err', 'Hao hụt (%) phải từ 0 đến dưới 100', spec);
+  await adminEdit(form, 'bom_save', {
+    material_code: String(form.get('material_code') ?? '').split(' · ')[0].trim(), basis: String(form.get('basis') ?? 'KM'),
+    qty, loss: loss === null ? null : loss / 100, startup: startup ?? 0, operation: String(form.get('operation') ?? ''),
+  }, 'Quản trị đã lưu dòng BOM');
+}
+
+export async function adminDeleteBomLine(form: FormData) {
+  await adminEdit(form, 'bom_delete', { line_id: String(form.get('line_id')) }, 'Quản trị đã xóa dòng BOM');
+}

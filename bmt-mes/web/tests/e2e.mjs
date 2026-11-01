@@ -1083,5 +1083,29 @@ await ctx.close();
   ok('Quản trị sửa giá bình quân, nhật ký ghi lại; TP Mua không thấy khung sửa của Quản trị');
 }
 
+// 16. Sản phẩm & Spec: nút Sửa từng dòng chỉ Quản trị; Quản trị sửa spec đã phát hành (giữ trạng thái, có lý do)
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'admin@bmt.test', 'Admin@12345');
+  await p.goto(`${BASE}/san-pham?q=PFR-2C-1P5`);
+  const edit = p.locator('tr:has-text("PFR-2C-1P5") a[aria-label="Sửa PFR-2C-1P5"]');
+  if (!(await edit.count())) fail('Quản trị phải thấy nút Sửa ở dòng PFR-2C-1P5');
+  await Promise.all([p.waitForURL(/\/san-pham\/PFR-2C-1P5/), edit.click()]);
+  if (!(await p.locator('#admin-sua-spec').count())) fail('Spec đã phát hành: Quản trị phải thấy form sửa kèm lý do');
+  await p.fill('#admin-sua-spec input[name=description]', '2×1.5 mm² SI/vỏ (Quản trị sửa E2E)');
+  await p.fill('#admin-sua-spec input[name=reason]', 'E2E: sửa quy cách');
+  await clickNav(p, '#admin-sua-spec button:has-text("Lưu thông số")');
+  await expectOk(p, 'Quản trị sửa spec đã phát hành');
+  const t = await p.innerText('main');
+  if (!t.includes('Quản trị sửa E2E') || !t.includes('Đã phát hành')) fail('Spec phải giữ Đã phát hành và hiện quy cách mới');
+  await c.close();
+  const [c2, p2] = await ctxFor();
+  await login(p2, 'mua.tp@bmt.test');
+  await p2.goto(`${BASE}/san-pham`);
+  if (await p2.locator('a[aria-label^="Sửa "]').count()) fail('Người không phải Quản trị không được thấy nút Sửa');
+  await c2.close();
+  ok('Sản phẩm & Spec: nút Sửa từng dòng chỉ Quản trị; spec đã phát hành sửa được, vẫn Đã phát hành; TP Mua không thấy nút');
+}
+
 await browser.close();
 console.log(`==> ĐẠT ${n} kiểm tra end-to-end`);
