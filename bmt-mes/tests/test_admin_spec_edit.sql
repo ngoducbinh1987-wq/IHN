@@ -104,7 +104,8 @@ do $$ begin
   end;
 end $$;
 select pg_temp.as_user('E_ADM');
-select pg_temp.ok((select count(*) = 3 from app.admin_overrides(50) where action = 'ADMIN_SPEC'), 'Nhật ký can thiệp của Quản trị ghi 3 lần sửa spec');
+select pg_temp.ok((select count(*) = 3 from core.audit_log where action = 'ADMIN_SPEC' and row_id = pg_temp.v('spec')::text)
+  and exists (select 1 from app.admin_overrides(50) where action = 'ADMIN_SPEC'), 'Nhật ký can thiệp của Quản trị ghi 3 lần sửa spec');
 select pg_temp.ok(not has_function_privilege('anon', 'app.admin_spec_edit(uuid,text,jsonb,text)', 'execute'), 'Khách (anon) không gọi được');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;
