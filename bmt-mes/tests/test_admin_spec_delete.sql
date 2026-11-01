@@ -105,7 +105,7 @@ insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, m_per_pack, pa
 select pg_temp.v('plan'), pg_temp.v('p2'), pg_temp.v('q3'), 1000, 500, s.pack_type, s.brand from master.product_specs s where s.id = pg_temp.v('q3');
 select pg_temp.blocked($q$select app.admin_spec_delete(pg_temp.v('q3'), 'thử')$q$, 'đang được dùng', 'Không xóa phiên bản kế hoạch đang dùng');
 
-select pg_temp.ok((select count(*) = 3 from core.audit_log where action = 'ADMIN_DELETE' and new_data ->> 'doc_type' = 'Xóa phiên bản spec'),
+select pg_temp.ok((select count(*) = 3 from core.audit_log where action = 'ADMIN_DELETE' and new_data ->> 'doc_type' = 'Xóa phiên bản spec' and at >= now()),
   'Nhật ký can thiệp ghi 3 lần xóa phiên bản');
 select pg_temp.ok(not has_function_privilege('anon', 'app.admin_spec_delete(uuid,text)', 'execute'), 'Khách (anon) không gọi được');
 
