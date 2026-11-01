@@ -8,9 +8,11 @@
 alter table master.product_specs add column if not exists wire_mix jsonb;
 alter table master.product_specs add column if not exists core_colors text[];
 
--- Dữ liệu cũ: một loại sợi
+-- Dữ liệu cũ: một loại sợi (cờ bmt.admin_spec_edit cho qua khóa spec đã phát hành, trạng thái giữ nguyên)
+select set_config('bmt.admin_spec_edit', 'on', true);
 update master.product_specs set wire_mix = jsonb_build_array(jsonb_build_object('n', wire_count, 'd', wire_dia_mm))
  where wire_mix is null;
+select set_config('bmt.admin_spec_edit', 'off', true);
 
 create or replace function master.set_spec_layers(p_spec uuid, p jsonb) returns void
 language plpgsql security definer set search_path = pg_catalog, public as $$
