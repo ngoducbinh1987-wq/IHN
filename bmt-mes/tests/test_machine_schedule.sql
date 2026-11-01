@@ -164,6 +164,8 @@ select pg_temp.ok((select sched_status is null and sched_note like '%Trả lại
   'Trả lại: bỏ đề xuất, ghi lý do');
 
 -- ================================================================ 5. M3: dừng máy trong báo cáo ca → nhật ký máy
+-- Dữ liệu thật có thể đang để máy Hỏng nhiều ngày (EXT-SI-02 từ 28/10/2026): coi lần báo tay đó bắt đầu từ bây giờ để không trùng giờ dừng hôm qua
+update mfg.machine_status_log set started_at = greatest(started_at, now()) where machine_id = (select v from t where k = 'si2') and ended_at is null;
 insert into mfg.shift_reports (work_date, shift_code, machine_code, status, lines, downtime, submitted_at)
 values (pg_temp.today() - 1, 'A', 'EXT-SI-02', 'SUBMITTED', '[]',
         '[{"from":"09:00","to":"10:30","min":90,"reason":"DT_BREAKDOWN","src":"MANUAL"},{"from":"14:00","to":"14:20","min":20,"reason":"DT_MATERIAL","src":"MANUAL"},{"from":"","to":"","min":0,"reason":"","src":"MANUAL"}]', now());
