@@ -6,7 +6,7 @@ import { MAX_CORES, WIRE_ROWS, wireMix } from '@/lib/spec';
 type Vals = Record<string, unknown>;
 export type SpecBomLine = {
   id: string; operation_code: string | null; material_code: string; material_name: string; uom: string;
-  basis: string; qty_per_basis: number; loss_rate: number;
+  basis: string; qty_per_basis: number; loss_rate: number; startup_per_lot?: number | null;
 };
 
 const COLORS = ['Trắng', 'Nâu', 'Đen', 'Xám', 'Xanh dương', 'Đỏ', 'Vàng', 'Xanh lá', 'Vàng-xanh lá', 'Cam', 'Tím', 'Hồng'];
@@ -57,35 +57,102 @@ function Section({ no, title, sub, children }: { no: number; title: string; sub:
   );
 }
 
+/** Định mức tịnh của dòng BOM quy về 1 km cáp; null = tính theo lô (khởi động) */
+export function bomPerKm(l: SpecBomLine, mPerPack: number | null, perPallet: number | null): number | null {
+  const q = Number(l.qty_per_basis);
+  if (l.basis === 'KM') return q;
+  if (l.basis === 'PACK') return mPerPack ? q * 1000 / mPerPack : null;
+  if (l.basis === 'PALLET') return mPerPack && perPallet ? q * 1000 / mPerPack / perPallet : null;
+  return null;
+}
+// Thứ tự theo dòng sản xuất: bện → trộn → bọc → xoắn → băng/drain → vỏ → đóng gói
+const OP_ORDER = ['CD1', 'CD0', 'CD2', 'CD3', 'CD4', 'CD5', 'CD6'];
+const qtyTxt = (x: number | null, uom: string, d = 4) => (x === null ? '—' : `${nf(x, d)} ${uom}`);
+
 /** Vật tư BOM của các công đoạn trong lớp, quy về định mức theo km cáp */
-function BomRows({ lines, ops, mPerPack }: { lines: SpecBomLine[]; ops: string[]; mPerPack: number | null }) {
+function BomRows({ lines, ops, mPerPack, perPallet }: { lines: SpecBomLine[]; ops: string[]; mPerPack: number | null; perPallet: number | null }) {
   const rows = lines.filter((l) => ops.includes(l.operation_code ?? ''));
-  const perKm = (l: SpecBomLine) => l.basis === 'KM' ? Number(l.qty_per_basis)
-    : l.basis === 'PACK' && mPerPack ? Number(l.qty_per_basis) * 1000 / mPerPack : null;
   return (
     <div className="overflow-x-auto">
       <div className="mb-1 text-[13px] font-medium text-ink">Vật tư theo BOM ({ops.join(', ')})</div>
       {rows.length === 0 ? <p className="text-[13px] text-muted">Chưa có dòng BOM cho công đoạn này (khai ở thẻ BOM).</p> : (
-        <table className="tbl table-fixed min-w-[560px]">
-          <colgroup><col className="w-[100px]" /><col className="w-[120px]" /><col /><col className="w-[150px]" /><col className="w-[90px]" /></colgroup>
-          <thead><tr><th>Công đoạn</th><th>Mã VT</th><th>Vật tư</th><th className="num" style={R}>Định mức / km cáp</th><th className="num" style={R}>Hao hụt</th></tr></thead>
-          <tbody>{rows.map((l) => {
-            const k = perKm(l);
-            return (
-              <tr key={l.id}>
-                <td className="mono">{l.operation_code}</td><td className="mono font-medium">{l.material_code}</td><td className="truncate">{l.material_name}</td>
-                <td className="num">{k === null ? `${nf(l.qty_per_basis, 3)} ${l.uom}/${l.basis === 'LOT' ? 'lô' : 'pallet'}` : `${nf(k, 4)} ${l.uom}`}</td>
-                <td className="num">{nf(Number(l.loss_rate) * 100, 1)}%</td>
-              </tr>
-            );
-          })}</tbody>
+        <table className="tbl table-fixed min-w-[640px]">
+          <colgroup><col className="w-[100px]" /><col className="w-[110px]" /><col /><col className="w-[150px]" /><col className="w-[80px]" /><col className="w-[130px]" /></colgroup>
+          <thead><tr><th>Công đoạn</th><th>Mã VT</th><th>Vật tư</th><th className="num" style={R}>Định mức / km cáp</th><th className="num" style={R}>Hao hụt</th><th className="num" style={R}>Khởi động / lô</th></tr></thead>
+          <tbody>{rows.map((l) => (
+            <tr key={l.id}>
+              <td className="mono">{l.operation_code}</td><td className="mono font-medium">{l.material_code}</td><td className="truncate">{l.material_name}</td>
+              <td className="num">{l.basis === 'LOT' ? '—' : qtyTxt(bomPerKm(l, mPerPack, perPallet), l.uom)}</td>
+              <td className="num">{nf(Number(l.loss_rate) * 100, 1)}%</td>
+              <td className="num">{Number(l.startup_per_lot) ? qtyTxt(Number(l.startup_per_lot), l.uom, 3) : '—'}</td>
+            </tr>
+          ))}</tbody>
         </table>
       )}
     </div>
   );
 }
 
-export function SpecFields({ s, coreCodes, bom = [], ro = false }: { s: Vals; coreCodes: string[]; bom?: SpecBomLine[]; ro?: boolean }) {
+/** Tổng hợp toàn bộ vật tư cho 1 km thành phẩm: gộp theo mã vật tư, tịnh + hao hụt = cần cấp */
+function BomSummary({ lines, mPerPack, perPallet, issues }: { lines: SpecBomLine[]; mPerPack: number | null; perPallet: number | null; issues: string[] | null }) {
+  type Row = { code: string; name: string; uom: string; ops: Set<string>; net: number; gross: number; startup: number; lossMax: number; noKm: boolean };
+  const by = new Map<string, Row>();
+  for (const l of lines) {
+    const r = by.get(l.material_code) ?? { code: l.material_code, name: l.material_name, uom: l.uom, ops: new Set<string>(), net: 0, gross: 0, startup: 0, lossMax: 0, noKm: false };
+    if (l.operation_code) r.ops.add(l.operation_code);
+    const k = l.basis === 'LOT' ? 0 : bomPerKm(l, mPerPack, perPallet);
+    if (k === null) r.noKm = true;
+    const loss = Number(l.loss_rate) || 0;
+    r.net += k ?? 0; r.gross += (k ?? 0) / (1 - loss); r.lossMax = Math.max(r.lossMax, loss);
+    r.startup += Number(l.startup_per_lot) || 0;
+    by.set(l.material_code, r);
+  }
+  const rank = (r: Row) => Math.min(...[...r.ops].map((o) => OP_ORDER.indexOf(o)).filter((x) => x >= 0), 99);
+  const rows = [...by.values()].sort((a, b) => rank(a) - rank(b) || a.code.localeCompare(b.code));
+  const kgNet = rows.filter((r) => r.uom === 'kg').reduce((x, r) => x + r.net, 0);
+  const kgGross = rows.filter((r) => r.uom === 'kg').reduce((x, r) => x + r.gross, 0);
+  return (
+    <section className="rounded border border-line" id="tong-hop-vat-tu">
+      <h3 className="flex flex-wrap items-baseline gap-x-2 border-b border-line bg-sunk/60 px-4 py-2.5">
+        <span className="text-[15px] font-medium text-ink">Tổng hợp vật tư cho 1 km thành phẩm</span>
+        <span className="text-[12.5px] text-muted">mọi công đoạn, gộp theo mã vật tư · cần cấp = tịnh ÷ (1 − hao hụt)</span>
+      </h3>
+      <div className="flex flex-col gap-3 p-4">
+        <div className="overflow-x-auto">
+          <table className="tbl table-fixed min-w-[760px]">
+            <colgroup><col className="w-[44px]" /><col className="w-[110px]" /><col className="w-[110px]" /><col /><col className="w-[120px]" /><col className="w-[70px]" /><col className="w-[120px]" /><col className="w-[120px]" /></colgroup>
+            <thead><tr><th>#</th><th>Công đoạn</th><th>Mã VT</th><th>Vật tư</th><th className="num" style={R}>Tịnh / km</th><th className="num" style={R}>Hao hụt</th><th className="num" style={R}>Cần cấp / km</th><th className="num" style={R}>Khởi động / lô</th></tr></thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.code}>
+                  <td className="text-muted">{i + 1}</td><td className="mono">{[...r.ops].sort((x, y) => OP_ORDER.indexOf(x) - OP_ORDER.indexOf(y)).join(', ')}</td>
+                  <td className="mono font-medium">{r.code}</td><td className="truncate">{r.name}</td>
+                  <td className="num">{r.noKm || (r.net === 0 && r.startup) ? '—' : qtyTxt(r.net, r.uom)}</td>
+                  <td className="num">{nf(r.lossMax * 100, 1)}%</td>
+                  <td className="num font-medium">{r.noKm || (r.net === 0 && r.startup) ? '—' : qtyTxt(r.gross, r.uom)}</td>
+                  <td className="num">{r.startup ? qtyTxt(r.startup, r.uom, 3) : '—'}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={8} className="text-muted">BOM chưa có dòng nào.</td></tr>}
+              {rows.length > 0 && (
+                <tr className="font-medium"><td colSpan={4}>Cộng vật tư tính bằng kg (gồm mực, talc, màng PE)</td>
+                  <td className="num">{nf(kgNet, 3)} kg</td><td /><td className="num">{nf(kgGross, 3)} kg</td><td /></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {issues === null ? null : issues.length === 0
+          ? <p className="rounded border-l-4 border-brand bg-brand-soft px-3 py-2 text-[13px] text-brand-dark">Đối chiếu BOM với thông số: khớp (đồng, cách điện, vỏ, độn, băng, drain đúng định mức MES tính; vật liệu, màu lõi, nhãn, bobin đúng sản phẩm; không có dòng thừa).</p>
+          : <div className="rounded border-l-4 border-bad bg-bad/10 px-3 py-2 text-[13px]"><b>BOM chưa khớp sản phẩm:</b>
+              <ul className="mt-1 list-disc pl-5">{issues.map((x) => <li key={x}>{x}</li>)}</ul></div>}
+        <p className="text-[12.5px] text-muted">Định mức đồng, cách điện, vỏ, độn, băng, drain trong BOM tự theo thông số mỗi lần lưu (giữ tỷ lệ giữa các dòng, ví dụ silicone : màu : phụ gia). Bao bì tính theo kiện quy ra km bằng mét/kiện{perPallet ? `, pallet ${nf(perPallet)} kiện/pallet` : ''}. Vật tư khởi động tính theo mỗi lần chạy lô, không cộng vào định mức/km.</p>
+      </div>
+    </section>
+  );
+}
+
+export function SpecFields({ s, coreCodes, bom = [], ro = false, perPallet = null, bomIssues = null }:
+  { s: Vals; coreCodes: string[]; bom?: SpecBomLine[]; ro?: boolean; perPallet?: number | null; bomIssues?: string[] | null }) {
   const mix = wireMix(s);
   const sumNd2 = mix.reduce((a, w) => a + w.n * w.d * w.d, 0);
   const metal = num(s.metal_kgkm); const ins = num(s.ins_kgkm);
@@ -134,7 +201,7 @@ export function SpecFields({ s, coreCodes, bom = [], ro = false }: { s: Vals; co
           </table>
           {!ro && <p className="mt-1 text-[12.5px] text-muted">Ruột bện từ nhiều cỡ sợi: khai mỗi cỡ một dòng (tối đa {WIRE_ROWS}); dòng để trống được bỏ qua. Đồng tính cho cả {cores} lõi, MES tính lại khi lưu.</p>}
         </div>
-        <BomRows lines={bom} ops={['CD1']} mPerPack={mPerPack} />
+        <BomRows lines={bom} ops={['CD1']} mPerPack={mPerPack} perPallet={perPallet} />
       </Section>
 
       <Section no={2} title="Dây đơn" sub="lõi bọc cách điện – CD2, phối trộn CD0">
@@ -163,7 +230,7 @@ export function SpecFields({ s, coreCodes, bom = [], ro = false }: { s: Vals; co
           {colors.length === 0 && s.insulation_colors ? <p className="mt-1 text-[12.5px] text-muted">Màu đang ghi chung: “{String(s.insulation_colors)}” – khai lại theo từng lõi.</p> : null}
           {!ro && <p className="mt-1 text-[12.5px] text-muted">Đổi số lõi thì bấm Tạm tính (hoặc Lưu), bảng màu sẽ đủ dòng theo số lõi mới.</p>}
         </div>
-        <BomRows lines={bom} ops={['CD0', 'CD2']} mPerPack={mPerPack} />
+        <BomRows lines={bom} ops={['CD0', 'CD2']} mPerPack={mPerPack} perPallet={perPallet} />
       </Section>
 
       <Section no={3} title="Dây hoàn thiện" sub="xoắn, băng, drain, vỏ, đóng gói – CD3 → CD6">
@@ -194,8 +261,10 @@ export function SpecFields({ s, coreCodes, bom = [], ro = false }: { s: Vals; co
           <Num name="m_per_pack" label="Mét / kiện" d={v(s, 'm_per_pack')} />
           <label className="lbl col-span-2 min-w-0 md:col-span-4"><Lbl label="Ghi chú cấu hình" /><input className="inp" name="config_note" defaultValue={v(s, 'config_note')} /></label>
         </div>
-        <BomRows lines={bom} ops={['CD3', 'CD4', 'CD5', 'CD6']} mPerPack={mPerPack} />
+        <BomRows lines={bom} ops={['CD3', 'CD4', 'CD5', 'CD6']} mPerPack={mPerPack} perPallet={perPallet} />
       </Section>
+
+      <BomSummary lines={bom} mPerPack={mPerPack} perPallet={perPallet} issues={bomIssues} />
 
       {!ro && <p className="text-[13px] text-muted">Định mức đồng, cách điện và Rdc được MES tự tính lại theo công thức file Excel 3.0 khi lưu; các lớp độn, băng, drain, vỏ nhập tay theo kg/km cáp.</p>}
     </fieldset>

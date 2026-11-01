@@ -141,3 +141,17 @@ export async function previewSpec(form: FormData) {
   const tam = encodeURIComponent(JSON.stringify({ ...(p as Record<string, unknown>), ...(reason ? { _reason: reason } : {}) }));
   redirect(`/san-pham/${encodeURIComponent(code)}?v=${spec}&tab=thong-so&tam=${tam}#tam-tinh`);
 }
+
+// Quản trị hệ thống đổi mã sản phẩm (database kiểm core.is_admin, mã IN HOA chưa ai dùng, bắt buộc lý do, ghi nhật ký)
+export async function adminRenameProduct(form: FormData) {
+  const code = String(form.get('code')); const spec = String(form.get('spec_id'));
+  const reason = String(form.get('reason') ?? '').trim();
+  const next = String(form.get('new_code') ?? '').trim().toUpperCase();
+  if (!next) back(code, 'err', 'Nhập mã mới', spec);
+  if (!reason) back(code, 'err', 'Ghi lý do đổi mã', spec);
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('app').rpc('admin_product_rename', { p_product: String(form.get('product_id')), p_new_code: next, p_reason: reason });
+  if (error) back(code, 'err', error.message, spec);
+  revalidatePath('/', 'layout');
+  back(String(data ?? next), 'ok', `Đã đổi mã ${code} → ${data ?? next}`, spec);
+}

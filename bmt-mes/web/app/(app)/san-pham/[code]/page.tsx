@@ -9,9 +9,10 @@ import type { Approval } from '@/lib/approvals';
 import { SPEC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminUpdateSpec, deleteBomLine, newVersion, previewSpec, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
+import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminRenameProduct, adminUpdateSpec, deleteBomLine, newVersion, previewSpec, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
 
 const BASIS: Record<string, string> = { KM: '/km', PACK: '/kiện', PALLET: '/pallet', LOT: '/lô' };
+const INS_NAME: Record<string, string> = { SIL: 'Silicone', HDPE: 'HDPE', PVC: 'PVC' };
 const OPS = ['CD0', 'CD1', 'CD2', 'CD3', 'CD4', 'CD5', 'CD6'];
 
 export default async function ProductDetail({ params, searchParams }:
@@ -38,6 +39,11 @@ export default async function ProductDetail({ params, searchParams }:
     supabase.schema('master').from('core_types').select('code').order('code'),
   ]);
   if (!spec) notFound();
+  const [{ data: pallets }, { data: bomIss }] = await Promise.all([
+    supabase.schema('master').from('tech_params').select('code, value').eq('set_id', spec.param_set_id).in('code', ['palletW', 'palletC']),
+    supabase.schema('master').rpc('bom_issues', { p_spec: specId }),
+  ]);
+  const perPallet = Number((pallets ?? []).find((x) => x.code === (spec.pack_type === 'Cuộn PE' ? 'palletC' : 'palletW'))?.value) || null;
   const { data: flow } = await supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code')
     .eq('doc_type', 'SPEC_NEW').eq('enabled', true).order('seq');
   const problems = (issues as string[] | null) ?? [];
@@ -51,7 +57,7 @@ export default async function ProductDetail({ params, searchParams }:
   const tamReason = tam && typeof tam._reason === 'string' ? tam._reason : '';
   if (tam) delete tam._reason;
   const pv = tam ? await supabase.schema('app').rpc('spec_preview', { p_spec: specId, p: tam }) : null;
-  const preview = (pv?.data ?? null) as { spec: Record<string, unknown>; res: Record<string, unknown> | null; issues: string[] | null } | null;
+  const preview = (pv?.data ?? null) as { spec: Record<string, unknown>; res: Record<string, unknown> | null; issues: string[] | null; bom?: SpecBomLine[] } | null;
   const formVals = { ...spec, ...(res ?? {}), ...(preview ? { ...preview.spec, ...(preview.res ?? {}) } : {}) };
   const reasonField = adminEdit ? <AdminReason status={spec.status} d={tamReason} /> : null;
   const last = reqs?.[0];
@@ -101,6 +107,17 @@ export default async function ProductDetail({ params, searchParams }:
           <p className="mt-2 text-[12.5px] text-muted">Xóa cả BOM của phiên bản. Không xóa được khi phiên bản đang được kế hoạch, lệnh SX, lô hàng dùng hoặc là bản duy nhất của mã. Xóa bản hiện hành thì mã chuyển sang bản đã phát hành gần nhất còn lại (bản cũ được phát hành lại).</p>
         </details>
       )}
+      {me.is_admin && (
+        <details className="mb-4 rounded border border-line bg-surface px-4 py-2 text-[14px]" id="admin-doi-ma">
+          <summary className="cursor-pointer font-medium text-brand">Quản trị hệ thống: đổi mã sản phẩm {code}</summary>
+          <form action={adminRenameProduct} className="mt-2 flex flex-wrap items-end gap-2">{hidden}<input type="hidden" name="product_id" value={p.id} />
+            <label className="w-[220px] text-[13px]"><span className="req">Mã mới</span><input className="inp mono block w-full" name="new_code" required placeholder="VD: CFR-2C-1P0" pattern="[A-Za-z0-9][A-Za-z0-9.\-]*" title="Chữ IN HOA, số, dấu chấm, gạch ngang" /></label>
+            <label className="min-w-[260px] flex-1 text-[13px]"><span className="req">Lý do đổi mã</span><input className="inp block w-full" name="reason" required /></label>
+            <SubmitButton className="btn btn-sm btn-pri">Đổi mã sản phẩm</SubmitButton>
+          </form>
+          <p className="mt-2 text-[12.5px] text-muted">Mọi phiên bản spec, BOM, kế hoạch, lệnh SX, lô, tồn kho, đơn bán, lệnh giao, tốc độ máy đi theo mã mới. Lịch máy đã xếp và số hồ sơ duyệt spec đổi theo. Số lô, số phiếu, thông báo đã gửi giữ nguyên. Ghi nhật ký can thiệp của Quản trị, báo TP SX, Kế hoạch SX, TP Mua, TP KT/QA.</p>
+        </details>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0">
@@ -117,7 +134,7 @@ export default async function ProductDetail({ params, searchParams }:
               {pv?.error && <div className="rounded border-l-4 border-bad bg-bad/10 px-3 py-2 text-[13.5px]" id="tam-tinh"><b>Tạm tính chưa được:</b> {pv.error.message}</div>}
               {preview && <PreviewBox before={{ ...spec, ...(res ?? {}) }} after={{ ...preview.spec, ...(preview.res ?? {}) }} issues={preview.issues ?? []} href={`/san-pham/${encodeURIComponent(code)}?v=${specId}&tab=thong-so`} />}
               <label className="lbl">Quy cách<input className="inp" name="description" defaultValue={typeof tam?.description === 'string' ? tam.description : p.description} /></label>
-              <SpecFields s={formVals} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} bom={(bom ?? []) as SpecBomLine[]} />
+              <SpecFields s={formVals} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} bom={preview?.bom ?? ((bom ?? []) as SpecBomLine[])} perPallet={perPallet} bomIssues={(bomIss as string[] | null) ?? null} />
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
                 <SubmitButton className="btn btn-pri">Lưu thông số</SubmitButton>
                 <SubmitButton className="btn btn-soft" formAction={previewSpec} noValidate pendingText="Đang tính…"><Calculator size={15} />Tạm tính (chưa lưu)</SubmitButton>
@@ -126,7 +143,7 @@ export default async function ProductDetail({ params, searchParams }:
             </form>
           ) : (
             <section className="card flex flex-col gap-3 p-4">
-              <SpecFields s={{ ...spec, ...(res ?? {}) }} coreCodes={[spec.core_code]} bom={(bom ?? []) as SpecBomLine[]} ro />
+              <SpecFields s={{ ...spec, ...(res ?? {}) }} coreCodes={[spec.core_code]} bom={(bom ?? []) as SpecBomLine[]} ro perPallet={perPallet} bomIssues={(bomIss as string[] | null) ?? null} />
               {!editable && spec.status !== 'RELEASED' && <p className="text-[13px] text-muted">Spec đang được duyệt nên không sửa được.</p>}
             </section>
           ))}
@@ -211,8 +228,13 @@ export default async function ProductDetail({ params, searchParams }:
             <h2 className="mb-2 font-medium">Định mức và kiểm tra · v{spec.version} <StatusPill map={SPEC_STATUS} value={spec.status} /></h2>
             <table className="w-full text-[14px]">
               <tbody className="[&_td]:py-1">
-                <tr><td className="text-muted">Đồng / kim loại</td><td className="num">{nf(res?.metal_kgkm, 3)} kg/km</td></tr>
-                <tr><td className="text-muted">Cách điện</td><td className="num">{nf(res?.ins_kgkm, 3)} kg/km</td></tr>
+                <tr><td className="text-muted">Đồng {spec.conductor_mat === 'TC' ? 'mạ thiếc (TC)' : 'trần (BC)'}</td><td className="num">{nf(res?.metal_kgkm, 3)} kg/km</td></tr>
+                <tr><td className="text-muted">Cách điện {INS_NAME[spec.insulation] ?? spec.insulation}</td><td className="num">{nf(res?.ins_kgkm, 3)} kg/km</td></tr>
+                {spec.sheath && spec.sheath !== 'Không' && <tr><td className="text-muted">Vỏ {spec.sheath}</td><td className="num">{nf(res?.sheath_kgkm, 3)} kg/km</td></tr>}
+                {Number(res?.pp_kgkm) > 0 && <tr><td className="text-muted">Độn PP</td><td className="num">{nf(res?.pp_kgkm, 3)} kg/km</td></tr>}
+                {Number(res?.pet_kgkm) > 0 && <tr><td className="text-muted">Băng PET</td><td className="num">{nf(res?.pet_kgkm, 3)} kg/km</td></tr>}
+                {Number(res?.alpet_kgkm) > 0 && <tr><td className="text-muted">Băng AL/PET</td><td className="num">{nf(res?.alpet_kgkm, 3)} kg/km</td></tr>}
+                {Number(res?.drain_kgkm) > 0 && <tr><td className="text-muted">Drain {spec.drain_mat}</td><td className="num">{nf(res?.drain_kgkm, 3)} kg/km</td></tr>}
                 <tr><td className="text-muted">Tổng</td><td className="num font-medium">{nf(res?.total_kgkm, 2)} kg/km</td></tr>
                 <tr><td className="text-muted">OD</td><td className="num">{nf(res?.od_mm, 2)} mm</td></tr>
                 <tr><td className="text-muted">Rdc tính / giới hạn</td><td className={`num ${res && res.rdc_limit !== null && res.rdc_calc > res.rdc_limit ? 'font-medium text-bad' : ''}`}>{nf(res?.rdc_calc, 3)} / {res?.rdc_limit === null ? '—' : nf(res?.rdc_limit, 2)}</td></tr>
