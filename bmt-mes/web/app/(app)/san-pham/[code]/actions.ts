@@ -118,3 +118,16 @@ export async function adminSaveBomLine(form: FormData) {
 export async function adminDeleteBomLine(form: FormData) {
   await adminEdit(form, 'bom_delete', { line_id: String(form.get('line_id')) }, 'Quản trị đã xóa dòng BOM');
 }
+
+// Quản trị hệ thống xóa một phiên bản spec (database chặn khi phiên bản đang được dùng hoặc là bản duy nhất)
+export async function adminDeleteVersion(form: FormData) {
+  const code = String(form.get('code')); const spec = String(form.get('spec_id'));
+  const reason = String(form.get('reason') ?? '').trim();
+  if (!reason) back(code, 'err', 'Ghi lý do xóa phiên bản', spec);
+  if (form.get('confirm') !== 'on') back(code, 'err', 'Đánh dấu "Tôi hiểu phiên bản sẽ bị xóa hẳn" trước khi xóa', spec);
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('app').rpc('admin_spec_delete', { p_spec: spec, p_reason: reason });
+  if (error) back(code, 'err', error.message, spec);
+  revalidatePath('/san-pham', 'layout');
+  back(code, 'ok', `Đã xóa phiên bản ${data}. Bản sao nội dung lưu trong nhật ký can thiệp của Quản trị.`);
+}

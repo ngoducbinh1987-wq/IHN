@@ -9,7 +9,7 @@ import type { Approval } from '@/lib/approvals';
 import { SPEC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { adminDeleteBomLine, adminSaveBomLine, adminUpdateSpec, deleteBomLine, newVersion, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
+import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminUpdateSpec, deleteBomLine, newVersion, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
 
 const BASIS: Record<string, string> = { KM: '/km', PACK: '/kiện', PALLET: '/pallet', LOT: '/lô' };
 const OPS = ['CD0', 'CD1', 'CD2', 'CD3', 'CD4', 'CD5', 'CD6'];
@@ -82,6 +82,17 @@ export default async function ProductDetail({ params, searchParams }:
           </Link>
         ))}
       </div>
+      {me.is_admin && (
+        <details className="mb-4 rounded border border-line bg-surface px-4 py-2 text-[14px]" id="admin-xoa-phien-ban">
+          <summary className="cursor-pointer font-medium text-bad">Quản trị hệ thống: xóa phiên bản v{spec.version} đang xem</summary>
+          <form action={adminDeleteVersion} className="mt-2 flex flex-wrap items-end gap-2">{hidden}
+            <label className="min-w-[260px] flex-1 text-[13px]">Lý do xóa<input className="inp block w-full" name="reason" required /></label>
+            <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" name="confirm" />Tôi hiểu phiên bản sẽ bị xóa hẳn</label>
+            <SubmitButton className="btn btn-sm btn-bad-o"><Trash2 size={14} />Xóa phiên bản v{spec.version}</SubmitButton>
+          </form>
+          <p className="mt-2 text-[12.5px] text-muted">Xóa cả BOM của phiên bản. Không xóa được khi phiên bản đang được kế hoạch, lệnh SX, lô hàng dùng hoặc là bản duy nhất của mã. Xóa bản hiện hành thì mã chuyển sang bản đã phát hành gần nhất còn lại (bản cũ được phát hành lại).</p>
+        </details>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0">

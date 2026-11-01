@@ -1098,6 +1098,15 @@ await ctx.close();
   await expectOk(p, 'Quản trị sửa spec đã phát hành');
   const t = await p.innerText('main');
   if (!t.includes('Quản trị sửa E2E') || !t.includes('Đã phát hành')) fail('Spec phải giữ Đã phát hành và hiện quy cách mới');
+  // Xóa phiên bản: tạo v2 nháp rồi Quản trị xóa
+  await clickNav(p, 'button:has-text("Tạo phiên bản mới")');
+  if (!(await p.innerText('main')).includes('v2')) fail('Phải tạo được phiên bản v2 nháp');
+  await p.click('#admin-xoa-phien-ban summary');
+  await p.fill('#admin-xoa-phien-ban input[name=reason]', 'E2E: tạo nhầm');
+  await p.check('#admin-xoa-phien-ban input[name=confirm]');
+  await clickNav(p, '#admin-xoa-phien-ban button:has-text("Xóa phiên bản v2")');
+  await expectOk(p, 'Quản trị xóa phiên bản v2 nháp');
+  if (await p.locator('a[href*="?v="]', { hasText: /^v2/ }).count()) fail('Sau khi xóa không còn phiên bản v2');
   await c.close();
   const [c2, p2] = await ctxFor();
   await login(p2, 'mua.tp@bmt.test');
