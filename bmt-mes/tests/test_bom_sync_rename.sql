@@ -128,9 +128,7 @@ select pg_temp.ok((select jsonb_array_length(j->'bom') > 0 and abs((select sum((
   'Tạm tính: BOM cách điện theo chiều dày mới; thông số đang lưu không đổi');
 
 -- (E) Đổi mã sản phẩm
-insert into plan.schedule_orders (version_id, plan_line_id, label, product_code, product_name, qty_m)
-select v.id, null, 'Thử', (select code from master.products where id = pg_temp.v('prod')), 'Thử', 100
-  from plan.schedule_versions v limit 1;
+create temp table so_before as select count(*) n from plan.schedule_orders where product_code = (select code from master.products where id = pg_temp.v('prod'));
 select pg_temp.blocked($q$select app.admin_product_rename(pg_temp.v('prod'), 'ZZ-MOI-1', 'thử')$q$, 'Chỉ Quản trị', 'Người không phải Quản trị không đổi được mã');
 select pg_temp.as_user('E_ADM');
 select pg_temp.blocked($q$select app.admin_product_rename(pg_temp.v('prod'), 'ZZ-MOI-1', ' ')$q$, 'lý do', 'Đổi mã bắt buộc lý do');
@@ -142,7 +140,7 @@ select 'SPEC_NEW', pg_temp.v('spec'), 'SPEC ' || o.code || ' v9', 'Phát hành '
   from oldc o;
 select pg_temp.as_api($q$select app.admin_product_rename(pg_temp.v('prod'), 'zz-moi-1', 'Đổi theo chuẩn mã mới')$q$);
 select pg_temp.ok((select code = 'ZZ-MOI-1' from master.products where id = pg_temp.v('prod')), 'Đổi mã: chữ thường đổi IN HOA, sản phẩm mang mã mới');
-select pg_temp.ok(((select count(*) from plan.schedule_orders where product_code = 'ZZ-MOI-1') >= 1 or not exists (select 1 from plan.schedule_versions))
+select pg_temp.ok((select count(*) from plan.schedule_orders where product_code = 'ZZ-MOI-1') = (select n from so_before)
   and not exists (select 1 from plan.schedule_orders s, oldc o where s.product_code = o.code), 'Lịch máy đã xếp đổi theo mã mới');
 select pg_temp.ok((select doc_no = 'SPEC ZZ-MOI-1 v9' and summary like 'Phát hành ZZ-MOI-1 (khác %P5)' and summary not like '%ZZ-MOI-1P5%' from wf.approval_requests where doc_id = pg_temp.v('spec') and doc_no like '%v9'),
   'Số hồ sơ duyệt spec đổi theo; mã khác có chung tiền tố không bị đổi');
