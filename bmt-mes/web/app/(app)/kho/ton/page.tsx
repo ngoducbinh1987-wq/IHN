@@ -1,22 +1,24 @@
 import Link from 'next/link';
+import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { df, nf } from '@/lib/format';
 import { KIND_NAMES, LoadErrors, QC_STATUS, fetchAll } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { adminAvgCost, adminStockSet } from '../../quan-tri/data-actions';
 import { kindLabel, type FgGroup } from '../xuat-ban/items-fields';
 
 export const metadata = { title: 'Tồn kho' };
 
 type Row = {
-  warehouse_code: string; location_code: string | null; lot_id: string; lot_no: string; hu_id: string | null; hu_no: string | null; item_kind: string;
+  warehouse_id: string; location_id: string | null; warehouse_code: string; location_code: string | null; lot_id: string; lot_no: string; hu_id: string | null; hu_no: string | null; item_kind: string;
   item_code: string; item_name: string; uom: string; group_code: string | null; qc_status: string; exp_date: string | null; mfg_date: string | null;
   brand: string | null; color: string | null; wip_stage: string | null; qty: number; reserved_qty: number; available: number; is_remnant: boolean; expiring: boolean;
 };
 
 const FILTERS: Record<string, string> = { '': 'Tất cả', dat: 'Đạt', qc: 'Chờ QC', 'cach-ly': 'Cách ly', hsd: 'Sắp hết hạn', le: 'Đoạn lẻ', thieu: 'Dưới mức đặt hàng' };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ kho?: string; loc?: string; q?: string; xem?: string; trang?: string }> }) {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ kho?: string; loc?: string; q?: string; xem?: string; trang?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;
   const me = await requirePage('kho-ton');
   await requirePerm('inventory', 'view');
@@ -74,10 +76,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     return q.order('item_code').order('lot_no').order('hu_no').order('warehouse_code').order('location_code').order('lot_id').order('hu_id')
       .range(from, to).returns<Row[]>();
   };
-  const [stock, { data: fg }] = le.all(await Promise.all([
+  const admin = me.is_admin === true;
+  const [stock, { data: fg }, { data: whs }] = le.all(await Promise.all([
     fetchAll<Row>(stockPage),
     // Thành phẩm đếm theo cuộn, chủng loại (mã · nhãn · quy cách): cuộn chỉ dán tem QC PASS, xuất theo số cuộn
     kho === 'KTP' && !detail ? supabase.schema('app').from('v_fg_stock').select('*').order('product_code').order('brand').returns<FgGroup[]>() : Promise.resolve({ data: [] as FgGroup[] }),
+    admin ? supabase.schema('inv').from('warehouses').select('id, code, name').order('code') : Promise.resolve({ data: [] as { id: string; code: string; name: string }[] }),
   ]));
   const rows = stock.data;
   // Bảng chi tiết hiện 500 dòng mỗi trang
@@ -102,8 +106,23 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <Toolbar title="Tồn kho" reload={qs({})} search={{ placeholder: 'Tìm mã hàng, lô, mã QR, vị trí', value: sp.q }} hidden={{ kho, loc, xem: sp.xem }} />
-      <Flash err={le.text} />
+      <Flash ok={sp.ok} err={sp.err ?? le.text} />
       <FilterBar kho={kho} loc={loc} qs={qs} />
+      {admin && (
+        <details className="card mb-3 px-4 py-3" id="admin-gia">
+          <summary className="cursor-pointer text-[14px] font-medium">Quản trị hệ thống: sửa giá bình quân vật tư</summary>
+          <form action={adminAvgCost} className="mt-3 flex flex-wrap items-end gap-2">
+            <input type="hidden" name="back" value={qs({})} />
+            <label className="text-[13px]">Kho<select className="inp block" name="warehouse_id" required>
+              {(whs ?? []).map((w) => <option key={w.id} value={w.id}>{w.code} · {w.name}</option>)}</select></label>
+            <label className="text-[13px]">Mã vật tư<input className="inp block uppercase" name="material_code" required /></label>
+            <label className="text-[13px]">Giá bình quân mới (đ)<input className="inp block" name="cost" inputMode="decimal" required /></label>
+            <label className="min-w-[240px] flex-1 text-[13px]">Lý do<input className="inp block w-full" name="reason" required /></label>
+            <SubmitButton className="btn btn-sm btn-pri">Lưu giá</SubmitButton>
+          </form>
+          <p className="mt-2 text-[12.5px] text-muted">Giá trị tồn = số tồn × giá mới. Sửa số tồn: xem chi tiết từng ống/bao/bobin, cột Quản trị. Mọi lần sửa ghi Nhật ký can thiệp của Quản trị.</p>
+        </details>
+      )}
       <div className="mb-3 flex gap-2">
         <Link className={`btn btn-sm ${!detail ? 'btn-pri' : ''}`} href={qs({ xem: undefined })}>Theo mã hàng</Link>
         <Link className={`btn btn-sm ${detail ? 'btn-pri' : ''}`} href={qs({ xem: 'ct' })}>Chi tiết từng ống/bao/bobin</Link>
@@ -138,7 +157,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           </table>
         ) : (
           <table className="tbl">
-            <thead><tr><th>Mã QR</th><th>Mã hàng</th><th>Lô</th><th>Kho / vị trí</th><th className="num">Tồn</th><th className="num">Đang giữ</th><th>QC</th><th>HSD / ngày SX</th><th>Ghi chú</th></tr></thead>
+            <thead><tr><th>Mã QR</th><th>Mã hàng</th><th>Lô</th><th>Kho / vị trí</th><th className="num">Tồn</th><th className="num">Đang giữ</th><th>QC</th><th>HSD / ngày SX</th><th>Ghi chú</th>{admin && <th>Quản trị</th>}</tr></thead>
             <tbody>{shown.map((r) => (
               <tr key={`${r.warehouse_code}${r.location_code}${r.lot_id}${r.hu_id}`}>
                 <td>{r.hu_no ? <Link className="link mono" href={`/kho/quet?ma=${r.hu_no}`}>{r.hu_no}</Link> : '—'}</td>
@@ -148,6 +167,21 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <td><StatusPill map={QC_STATUS} value={r.qc_status} /></td>
                 <td className={`whitespace-nowrap ${r.expiring ? 'text-warn' : ''}`}>{r.exp_date ? `HSD ${df(r.exp_date)}` : r.mfg_date ? df(r.mfg_date) : '—'}</td>
                 <td className="whitespace-nowrap">{r.is_remnant && <Pill tone="warn">Đoạn lẻ</Pill>} {r.brand ?? ''} {r.color ?? ''} {r.wip_stage ?? ''}</td>
+                {admin && (
+                  <td>
+                    <details>
+                      <summary className="cursor-pointer text-[13px] text-brand">Sửa số tồn</summary>
+                      <form action={adminStockSet} className="mt-1 flex min-w-[260px] flex-col gap-1">
+                        <input type="hidden" name="back" value={qs({})} />
+                        <input type="hidden" name="warehouse_id" value={r.warehouse_id} /><input type="hidden" name="lot_id" value={r.lot_id} />
+                        <input type="hidden" name="location_id" value={r.location_id ?? ''} /><input type="hidden" name="hu_id" value={r.hu_id ?? ''} />
+                        <input className="inp py-1" name="qty" inputMode="decimal" placeholder={`Số tồn mới (${r.uom})`} aria-label="Số tồn mới" required />
+                        <input className="inp py-1" name="reason" placeholder="Lý do" aria-label="Lý do sửa số tồn" required />
+                        <SubmitButton className="btn btn-sm btn-pri">Lưu (ghi phiếu điều chỉnh)</SubmitButton>
+                      </form>
+                    </details>
+                  </td>
+                )}
               </tr>
             ))}</tbody>
           </table>

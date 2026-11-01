@@ -99,7 +99,7 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
           {pending && (
             <Alert tone="warn" title={`Lệnh ngày ${dd(date)} bản ${pending.revision} chờ Giám đốc duyệt phát`}>
               <div>{pending.proposed_by_name} đề xuất lúc {df(pending.proposed_at, true)}{pending.note ? ` · Ghi chú: ${pending.note}` : ''}</div>
-              {isGd && pending.proposed_by !== me.id && (
+              {isGd && (pending.proposed_by !== me.id || me.is_admin) && (
                 <form action={reviewRelease} className="mt-2 flex flex-wrap items-center gap-2" id="release-review">
                   <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="d" value={date} /><input type="hidden" name="release_id" value={pending.id} />
                   <input name="note" className="inp min-w-[260px] flex-1 py-1" placeholder="Ý kiến Giám đốc (bắt buộc khi trả lại)" aria-label="Ý kiến duyệt lệnh ngày" />

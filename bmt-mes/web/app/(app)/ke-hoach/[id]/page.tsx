@@ -74,7 +74,7 @@ export default async function PlanDetail({ params, searchParams }:
   // Người đang giữ bước duyệt (Giám đốc duyệt, Chủ tịch HĐQT chốt) được sửa sản lượng, thêm, bỏ mã và đề nghị mua MRP rồi duyệt
   // (nguyên tắc 27/10/2026: người duyệt có quyền chỉnh sửa đề xuất; database kiểm lại: wf.review_request)
   const pending = plan.status === 'PENDING_APPROVAL';
-  const chairTurn = pending && req?.status === 'PENDING' && req.my_turn && !req.i_submitted;
+  const chairTurn = pending && req?.status === 'PENDING' && req.my_turn && (!req.i_submitted || me.is_admin);
   const lastStep = Boolean(req && req.step_index === req.step_total);
   const lineEdit = editable || chairTurn;
   const stale = Boolean(plan.mrp_stale);

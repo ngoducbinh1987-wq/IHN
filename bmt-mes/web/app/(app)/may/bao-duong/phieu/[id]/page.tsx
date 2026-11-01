@@ -35,7 +35,7 @@ export default async function WoPage({ params, searchParams }: { params: Promise
         {w.status === 'OPEN' && can(me, 'machine', 'edit') && (
           <form action={startWo}><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><SubmitButton>Bắt đầu làm</SubmitButton></form>
         )}
-        {w.status === 'DONE' && !w.confirmed_at && ['SX_TP', 'ADMIN'].some((r) => me.roles.includes(r)) && w.done_by !== me.id && (
+        {w.status === 'DONE' && !w.confirmed_at && ['SX_TP', 'ADMIN'].some((r) => me.roles.includes(r)) && (w.done_by !== me.id || me.is_admin) && (
           <form action={confirmWo}><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} /><SubmitButton>Xác nhận máy chạy lại đạt</SubmitButton></form>
         )}
         {w.plan_id && <Link className="btn btn-soft" href={`/may/bao-duong/ke-hoach/${w.plan_id}`}>Kế hoạch</Link>}

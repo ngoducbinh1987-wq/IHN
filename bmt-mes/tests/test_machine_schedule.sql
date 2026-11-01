@@ -151,10 +151,12 @@ select pg_temp.as_user('Y_SXKH');
 insert into x select 'pv3', app.kh_day_preview((select v from t where k = 'plan'), pg_temp.today());
 select pg_temp.ok(exists (select 1 from x, jsonb_array_elements(x.j -> 'checks') e where x.k = 'pv3' and e ->> 't' like 'Bảo dưỡng đã chốt trong ngày: EXT-SI-02%gộp lần đổi máy%'),
   'Giám đốc chốt; lệnh ngày hiện bảo dưỡng đã chốt (gộp lần đổi máy)');
--- Người đề xuất không tự chốt (Quản trị giữ cả hai quyền)
-select pg_temp.as_user('Y_ADMIN');
+-- Người đề xuất không tự chốt (người giữ cả TP KT/QA và TP SX; Quản trị thì được tự chốt – migration 5700)
+insert into core.user_roles (user_id, role_code) select id, 'SX_TP' from core.profiles where employee_code = 'Y_KTTP2';
+select pg_temp.as_user('Y_KTTP2');
 select app.maint_propose(null, (select v from t where k = 'pm'), pg_temp.today() + 20, 'OFF_SHIFT');
 select pg_temp.fails($$select app.maint_confirm((select v from t where k = 'pm'), true)$$, 'không tự chốt', 'Người đề xuất không tự chốt');
+delete from core.user_roles where role_code = 'SX_TP' and user_id = (select id from core.profiles where employee_code = 'Y_KTTP2');
 select pg_temp.ok((select off_shift from mfg.maint_work_orders where id = (select v from t where k = 'pm')), 'Ngoài giờ ca: phiếu đánh dấu off_shift (không trừ năng lực)');
 select pg_temp.as_user('Y_SXTP');
 select app.maint_confirm((select v from t where k = 'pm'), false, 'Ngày đó chạy lô gấp');

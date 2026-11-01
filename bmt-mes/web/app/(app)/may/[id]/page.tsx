@@ -107,7 +107,7 @@ export default async function MachineProfile({ params, searchParams }:
 
       <SubTabs base={base} items={tabs} active={tab} />
       {tab === 'thong-so' && <SpecsTab id={id} cfg={cfg} back={here} />}
-      {tab === 'toc-do' && <SpeedTab lineId={lineId} isLine={isLine} machineType={line?.machine_type ?? m.machine_type} cfg={cfg} canPropose={cfg || can(me, 'machine', 'create')} meId={me.id} canApprove={can(me, 'machine', 'approve')} back={here} />}
+      {tab === 'toc-do' && <SpeedTab lineId={lineId} isLine={isLine} machineType={line?.machine_type ?? m.machine_type} cfg={cfg} canPropose={cfg || can(me, 'machine', 'create')} meId={me.is_admin ? '' : me.id} canApprove={can(me, 'machine', 'approve')} back={here} />}
       {tab === 'bao-duong' && <MaintTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} />}
       {tab === 'nguoi' && <PeopleTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} canAssign={cfg || me.roles.includes('SX_TP')} canCertify={me.roles.includes('KT_TP') || me.roles.includes('ADMIN')} back={here} />}
       {tab === 'lich-su' && <HistoryTab lineId={lineId} machineId={id} isLine={isLine} />}

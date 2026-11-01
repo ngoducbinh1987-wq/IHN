@@ -99,11 +99,11 @@ select pg_temp.as_user('Q_BGD');
 select pg_temp.api(format($$select wf.submit('PLAN', %L, '', 'Thử')::text$$, pg_temp.v('kh_q2')));
 select pg_temp.as_user('Q_ADM');
 select pg_temp.api(format($$select wf.act(%L, 'APPROVE')$$, pg_temp.req(pg_temp.v('kh_q2'))));
-select pg_temp.blocked(format($$select wf.act(%L, 'APPROVE')$$, pg_temp.req(pg_temp.v('kh_q2'))), 'đã duyệt bước trước',
-  'Người đã duyệt bước 1 không duyệt tiếp bước 2 khi còn người khác');
-select pg_temp.as_user('Q_CT');
+-- Người thường đã duyệt bước 1 không duyệt tiếp bước 2 (kiểm ở test_admin_supreme); Quản trị được duyệt tiếp (migration 5700)
 select pg_temp.api(format($$select wf.act(%L, 'APPROVE')$$, pg_temp.req(pg_temp.v('kh_q2'))));
-select pg_temp.ok((select status from plan.production_plans where id = pg_temp.v('kh_q2')) = 'APPROVED', 'Người được giao bước 2 duyệt xong');
+select pg_temp.ok((select status from plan.production_plans where id = pg_temp.v('kh_q2')) = 'APPROVED'
+  and exists (select 1 from wf.approval_actions a where a.request_id in (select id from wf.approval_requests where doc_id = pg_temp.v('kh_q2')) and a.comment like '%[Quản trị duyệt tiếp bước sau]%'),
+  'Quản trị duyệt tiếp bước 2 của hồ sơ mình đã duyệt bước 1, lịch sử ghi rõ');
 -- Bước 2 chỉ còn đúng người đã duyệt bước 1 → được duyệt tiếp, lịch sử ghi rõ
 select pg_temp.as_user('Q_BGD');
 select pg_temp.api(format($$select wf.submit('PLAN', %L, '', 'Thử')::text$$, pg_temp.v('kh_q3')));
@@ -119,7 +119,7 @@ select pg_temp.ok((select status from plan.production_plans where id = pg_temp.v
 select pg_temp.as_user('Q_ADM');
 select pg_temp.api(format($$select wf.submit('PLAN', %L, '', 'Quản trị lập')::text$$, pg_temp.v('kh_q4')));
 insert into t select 'rq4', pg_temp.req(pg_temp.v('kh_q4'));
-select pg_temp.blocked(format($$select wf.act(%L, 'APPROVE')$$, pg_temp.v('rq4')), 'Người lập không tự duyệt', 'Quản trị vẫn không tự duyệt hồ sơ mình lập');
+-- Từ migration 5700 Quản trị được tự duyệt hồ sơ mình lập (kiểm ở test_admin_supreme)
 select pg_temp.api(format($$select app.admin_cancel_request(%L, 'Hồ sơ kẹt, lập lại')::text$$, pg_temp.v('rq4')));
 select pg_temp.ok((select status from wf.approval_requests where id = pg_temp.v('rq4')) = 'CANCELLED'
   and (select status from plan.production_plans where id = pg_temp.v('kh_q4')) = 'DRAFT',

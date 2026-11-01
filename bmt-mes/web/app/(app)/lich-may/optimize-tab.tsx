@@ -166,7 +166,7 @@ export function OptimizeTab({ kh, sp, roles, userId, ots, reqs }: { kh: Kh; sp: 
                     : o.status === 'APPROVED' && from > today ? <Pill tone="ok">Đã duyệt, từ {dd(from)}</Pill>
                     : <Pill tone={ST[o.status]?.[1] ?? 'mute'}>{ST[o.status]?.[0] ?? o.status}</Pill>}</td>
                   <td className="min-w-[260px]">
-                    {o.status === 'PROPOSED' && isGd && o.proposed_by !== userId && (
+                    {o.status === 'PROPOSED' && isGd && (o.proposed_by !== userId || roles.includes('ADMIN')) && (
                       <form action={reviewShifts} className="flex flex-wrap gap-1">
                         <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="id" value={o.id} />
                         <input className="inp min-w-[140px] flex-1 py-1" name="note" placeholder="Ý kiến (bắt buộc khi trả lại)" aria-label={`Ý kiến ${o.req_no}`} />

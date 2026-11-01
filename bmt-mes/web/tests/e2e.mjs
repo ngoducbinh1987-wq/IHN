@@ -1049,5 +1049,33 @@ await ctx.close();
   ok('Nhân sự xưởng: thêm người, lịch vắng, kiêm nhiệm tạm (ghi chưa có tay nghề), tổ đóng gói; lịch máy nhắc xếp lại, xếp lại theo người');
 }
 
+// 15. Quyền tối cao của Quản trị (migration 5700): sửa giá bình quân, nhật ký can thiệp; người khác không thấy khung sửa
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'admin@bmt.test', 'Admin@12345');
+  await p.goto(`${BASE}/kho/ton?kho=KNL`);
+  if (!(await p.locator('#admin-gia').count())) fail('Quản trị phải thấy khung sửa giá bình quân ở Tồn kho');
+  await p.click('#admin-gia summary');
+  const f = p.locator('#admin-gia form');
+  await f.locator('select[name=warehouse_id]').selectOption({ label: /^KNL/ }).catch(async () => {
+    const v = await f.locator('select[name=warehouse_id] option', { hasText: 'KNL' }).first().getAttribute('value');
+    await f.locator('select[name=warehouse_id]').selectOption(v);
+  });
+  await f.locator('input[name=material_code]').fill('CU-024');
+  await f.locator('input[name=cost]').fill('250000');
+  await f.locator('input[name=reason]').fill('E2E: đánh giá lại giá đồng');
+  await clickNav(p, '#admin-gia button:has-text("Lưu giá")');
+  await expectOk(p, 'Quản trị sửa giá bình quân vật tư');
+  await p.goto(`${BASE}/quan-tri`);
+  if (!(await p.innerText('main')).includes('Sửa giá')) fail('Nhật ký can thiệp của Quản trị phải ghi lần sửa giá');
+  await c.close();
+  const [c2, p2] = await ctxFor();
+  await login(p2, 'mua.tp@bmt.test');
+  await p2.goto(`${BASE}/kho/ton?kho=KNL`);
+  if (await p2.locator('#admin-gia').count()) fail('Người không phải Quản trị không được thấy khung sửa giá');
+  await c2.close();
+  ok('Quản trị sửa giá bình quân, nhật ký ghi lại; TP Mua không thấy khung sửa của Quản trị');
+}
+
 await browser.close();
 console.log(`==> ĐẠT ${n} kiểm tra end-to-end`);

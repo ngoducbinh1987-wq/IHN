@@ -51,7 +51,7 @@ export function RosterTab({ kh, rosters, sp, roles, userId, ops, opShifts, canEd
     ?? rosters.find((x) => x.week_start === week && x.status === 'APPROVED') ?? null;
   const isTp = roles.includes('SX_TP') || roles.includes('ADMIN');
   const isGd = roles.includes('BGD') || roles.includes('ADMIN');
-  const editable = Boolean(r && ((['DRAFT', 'RETURNED'].includes(r.status) && canEdit) || (r.status === 'PROPOSED' && isGd && r.submitted_by !== userId)));
+  const editable = Boolean(r && ((['DRAFT', 'RETURNED'].includes(r.status) && canEdit) || (r.status === 'PROPOSED' && isGd && (r.submitted_by !== userId || roles.includes('ADMIN')))));
   const s = r?.summary ?? {};
   const deadline = r?.deadline ?? null;
   const lateNow = !r || r.status !== 'APPROVED' ? new Date() > new Date(deadline ?? `${addDays(week, -2)}T05:00:00Z`) : false;
@@ -158,7 +158,7 @@ export function RosterTab({ kh, rosters, sp, roles, userId, ops, opShifts, canEd
                   <input name="note" className="inp w-[240px] py-1" placeholder="Ghi chú gửi Giám đốc" aria-label="Ghi chú gửi Giám đốc" defaultValue={r.note ?? ''} />
                   <SubmitButton className="btn btn-sm btn-pri">Duyệt và gửi Giám đốc</SubmitButton></form>
               )}
-              {r.status === 'PROPOSED' && isGd && r.submitted_by !== userId && (
+              {r.status === 'PROPOSED' && isGd && (r.submitted_by !== userId || roles.includes('ADMIN')) && (
                 <form action={reviewWeek} className="flex flex-wrap items-center gap-2" id="giam-doc-duyet">{base}{hid('id', r.id)}
                   <input name="note" className="inp w-[240px] py-1" placeholder="Ý kiến (bắt buộc khi trả lại)" aria-label="Ý kiến duyệt bảng ca" />
                   <SubmitButton className="btn btn-sm btn-pri" formAction={async (f: FormData) => { 'use server'; f.set('approve', '1'); await reviewWeek(f); }}>Duyệt và gửi công nhân</SubmitButton>

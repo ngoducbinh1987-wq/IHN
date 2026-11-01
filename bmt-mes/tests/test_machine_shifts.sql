@@ -171,7 +171,7 @@ select pg_temp.as_user('F_ADM');
 insert into t select 'r4', pg_temp.api_val(format($q$select app.kh_shift_propose(null, %L)::text$q$, jsonb_build_object('reason', 'Quản trị thử',
   'items', pg_temp.items(array['TWS-01'], 2, pg_temp.mon(0), pg_temp.mon(1)))))::uuid;
 select pg_temp.ok((select status = 'PROPOSED' from plan.shift_requests where id = (select v from t where k = 'r4')), 'Quản trị lập: vẫn chờ Giám đốc duyệt');
-select pg_temp.api_fails(format($q$select app.kh_shift_review(%L, true, null)$q$, (select v from t where k = 'r4')), 'không tự duyệt', 'Quản trị không tự duyệt đề xuất mình lập');
+-- Quản trị được tự duyệt đề xuất mình lập (quyền tối cao, migration 5700 – kiểm ở test_admin_supreme)
 select pg_temp.as_user('F_SXTP');
 select pg_temp.api_val(format($q$select app.kh_shift_end(%L, 'Không cần nữa')::text$q$, (select v from t where k = 'r4')));
 select pg_temp.ok((select status = 'CANCELLED' from plan.shift_requests where id = (select v from t where k = 'r4')), 'TP SX hủy đề xuất chưa duyệt');

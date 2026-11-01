@@ -11,6 +11,7 @@ import { df, nf, numIn } from '@/lib/format';
 import { PO_STATUS, isBuyer, type Po, type PoLine } from '@/lib/purchase';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { adminPoLine } from '../../quan-tri/data-actions';
 import { addSupplier, cancelPo, deletePoLine, movePoLines, savePoHeader, savePoLine, submitPo } from '../actions';
 
 export const metadata = { title: 'Đơn mua hàng' };
@@ -156,6 +157,19 @@ export default async function PoDetail({ params, searchParams }:
               {showPrice ? <label className="lbl">Đơn giá<input className="inp text-right" name="unit_price" inputMode="decimal" /></label> : <span />}
               <label className="lbl">Ngày về<input className="inp" type="date" name="expected_date" /></label>
               <SubmitButton className="btn btn-pri">+ Thêm dòng</SubmitButton>
+            </form>
+          )}
+          {me.is_admin && !['DRAFT', 'PENDING_APPROVAL', 'CANCELLED'].includes(po.status) && (lines ?? []).length > 0 && (
+            <form action={adminPoLine} className="grid gap-3 border-t border-line bg-sunk/50 p-4 md:grid-cols-[2fr_1fr_1fr_1fr_2fr_auto] md:items-end print:hidden" id="admin-don-mua">
+              <input type="hidden" name="back" value={`/don-mua/${id}`} />
+              <div className="text-[13px] font-medium md:col-span-6">Quản trị hệ thống: sửa dòng đơn mua đã duyệt (không nhỏ hơn số đã nhận; người lập nhận thông báo)</div>
+              <label className="lbl">Dòng<select className="inp" name="line_id" required>
+                {(lines ?? []).map((l) => <option key={l.id} value={l.id}>{l.line_no}. {l.material_code} · {nf(l.qty)} {l.uom}{l.unit_price !== null ? ` × ${nf(l.unit_price)} đ` : ''}</option>)}</select></label>
+              <label className="lbl"><span className="req">Số lượng mới</span><input className="inp text-right" name="qty" inputMode="decimal" required /></label>
+              <label className="lbl"><span className="req">Đơn giá mới</span><input className="inp text-right" name="price" inputMode="decimal" required /></label>
+              <label className="lbl">Ngày về<input className="inp" type="date" name="expected_date" /></label>
+              <label className="lbl"><span className="req">Lý do</span><input className="inp" name="reason" required /></label>
+              <SubmitButton className="btn btn-pri">Lưu</SubmitButton>
             </form>
           )}
         </section>

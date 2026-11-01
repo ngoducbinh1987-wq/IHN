@@ -68,7 +68,7 @@ export default async function DocsPage({ searchParams }: { searchParams: Promise
                   <td>{d.price_pending ? <Pill tone="warn">Chờ giá</Pill> : <StatusPill map={STOCK_DOC_STATUS} value={d.status} />}</td>
                   <td>{d.status === 'POSTED' ? <><StatusPill map={REVIEW_STATUS} value={d.review_status} />{late && <div className="text-[12px] text-bad">{late}</div>}</> : '—'}</td>
                   {tab === 'duyet' && kt && (
-                    <td>{d.created_by !== me.id && d.posted_by !== me.id && (
+                    <td>{(me.is_admin || (d.created_by !== me.id && d.posted_by !== me.id)) && (
                       <form action={confirmDoc}><input type="hidden" name="doc_id" value={d.id} /><input type="hidden" name="doc_no" value={d.doc_no} /><input type="hidden" name="next" value="list" />
                         <SubmitButton className="btn btn-sm btn-soft" pendingText="…">Xác nhận</SubmitButton></form>)}</td>
                   )}

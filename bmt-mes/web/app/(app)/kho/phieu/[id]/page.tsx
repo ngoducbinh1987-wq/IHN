@@ -7,6 +7,7 @@ import { df, nf } from '@/lib/format';
 import { DOC_TYPES, LoadErrors, QC_STATUS, REVIEW_STATUS, STOCK_DOC_STATUS, hasRole } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { adminLineCost } from '../../../quan-tri/data-actions';
 import { checkReceipt, confirmDoc, returnDoc, reverseDoc, setPrices } from '../actions';
 
 export const metadata = { title: 'Phiếu kho' };
@@ -35,7 +36,7 @@ export default async function DocDetail({ params, searchParams }: { params: Prom
   ]));
   const price = (lineId: string) => (prices ?? []).find((p: { line_id: string }) => p.line_id === lineId) as { unit_cost: number | null; amount: number | null } | undefined;
   const kt = hasRole(me, 'KT_KHO');
-  const mine = d.created_by === me.id || d.posted_by === me.id;
+  const mine = !me.is_admin && (d.created_by === me.id || d.posted_by === me.id);
   const canReview = kt && d.status === 'POSTED' && d.review_status === 'PENDING' && !mine;
   const canPrice = kt && d.price_pending && d.status === 'DRAFT';
   const canReverse = kt && d.status === 'POSTED' && !d.reversal_of && !d.reversed_by && REVERSIBLE.includes(d.doc_type);
@@ -83,6 +84,17 @@ export default async function DocDetail({ params, searchParams }: { params: Prom
           {canPrice && <form action={setPrices} id="price-form" className="border-t border-line p-3"><input type="hidden" name="doc_id" value={id} />
             <p className="mb-2 text-[12.5px] text-muted">Nhập đơn giá theo hóa đơn (một dòng mỗi lô là đủ, các đơn vị cùng lô dùng chung giá). Ghi sổ ngay sau khi lưu.</p>
             <SubmitButton className="btn btn-pri">Lưu giá và ghi sổ</SubmitButton></form>}
+          {me.is_admin && d.status !== 'CANCELLED' && (lines ?? []).length > 0 && (
+            <form action={adminLineCost} className="flex flex-wrap items-end gap-2 border-t border-line p-3" id="admin-gia-dong">
+              <input type="hidden" name="back" value={`/kho/phieu/${id}`} />
+              <div className="w-full text-[13px] font-medium">Quản trị hệ thống: sửa đơn giá dòng phiếu{d.status === 'POSTED' ? ' (đã ghi sổ: sổ cái và giá trị tồn cập nhật theo)' : ''}</div>
+              <label className="text-[13px]">Dòng<select className="inp block" name="line_id" required>
+                {(lines ?? []).map((l) => <option key={l.id} value={l.id}>{l.line_no}. {l.item_code} · {l.lot_no}</option>)}</select></label>
+              <label className="text-[13px]">Đơn giá mới (đ)<input className="inp block w-36" name="cost" inputMode="decimal" required /></label>
+              <label className="min-w-[220px] flex-1 text-[13px]">Lý do<input className="inp block w-full" name="reason" required /></label>
+              <SubmitButton className="btn btn-sm btn-pri">Lưu đơn giá</SubmitButton>
+            </form>
+          )}
         </section>
 
         <aside className="flex flex-col gap-4">

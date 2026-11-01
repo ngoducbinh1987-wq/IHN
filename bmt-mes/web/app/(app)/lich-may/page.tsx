@@ -84,7 +84,7 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
         <Alert tone="warn" title={`Lịch máy bản ${kh.proposal.version} chờ Giám đốc duyệt`}
           action={kh.viewingOther && kh.version?.id === kh.proposal.id ? undefined : <Link className="btn btn-sm" href={qs({ ver: kh.proposal.id })}>Xem bản đề xuất</Link>}>
           <div>{kh.proposal.created_by_name} xếp lúc {df(kh.proposal.created_at, true)}: {kh.proposal.reason}. Lịch đang dùng giữ nguyên đến khi Giám đốc duyệt; lệnh SX ngày phát theo lịch đã duyệt.</div>
-          {isGd && kh.proposal.created_by !== me.id && (
+          {isGd && (kh.proposal.created_by !== me.id || me.is_admin) && (
             <form action={reviewSchedule} className="mt-2 flex flex-wrap items-center gap-2" id="schedule-review">
               <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="version_id" value={kh.proposal.id} /><input type="hidden" name="tab" value={tab} />
               <input className="inp min-w-[260px] flex-1 py-1" name="note" placeholder="Ý kiến (bắt buộc khi trả lại)" aria-label="Ý kiến duyệt lịch" />
@@ -877,7 +877,7 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
           const cur = c.status === 'PENDING' ? c.steps.findIndex((s) => !s.done_at) : -1;
           const curStep = cur >= 0 ? c.steps[cur] : null;
           const mine = curStep && roles.includes(curStep.role) && (!curStep.user_ids?.length || curStep.user_ids.includes(userId) || roles.includes('ADMIN'));
-          const self = c.created_by === userId || c.steps.some((s) => s.done_by === userId);
+          const self = !roles.includes('ADMIN') && (c.created_by === userId || c.steps.some((s) => s.done_by === userId));
           const lastRole = c.steps[c.steps.length - 1].role;
           const canApply = ['READY', 'LINE_ADDED'].includes(c.status) && (hasRole(roles, ROLE.plan) || roles.includes(lastRole));
           return (
@@ -1042,7 +1042,7 @@ async function Maint({ kh, view, roles, userId }: { kh: Kh; view: View | null; r
             <tbody>
               {maint.map((w) => {
                 const sg = suggestMaint(kh, view, w.machine_code, w.planned_date ?? kh.now.date, Number(w.est_minutes ?? w.stop_minutes ?? 0), w.level);
-                const canOk = w.sched_status === 'PROPOSED' && w.status === 'OPEN' && w.sched_by !== userId && (w.in_frozen ? isBgd : isSx);
+                const canOk = w.sched_status === 'PROPOSED' && w.status === 'OPEN' && (w.sched_by !== userId || roles.includes('ADMIN')) && (w.in_frozen ? isBgd : isSx);
                 return (
                   <tr key={w.id}>
                     <td><b>{w.machine_code}</b>{w.unit_code !== w.machine_code && <div className="text-[12px] text-muted">{w.unit_code}</div>}</td>

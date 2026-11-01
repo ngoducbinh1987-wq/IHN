@@ -95,7 +95,7 @@ export default async function ApprovalDetail({ params, searchParams }:
                   </details>
                 </div>
                 <span className="text-[12.5px] text-muted">Bạn đang giữ bước này</span>
-                {a.doc_link && EDITABLE_BY_REVIEWER.includes(a.doc_type) && !a.i_submitted && (
+                {a.doc_link && EDITABLE_BY_REVIEWER.includes(a.doc_type) && (!a.i_submitted || me.is_admin) && (
                   <Link href={a.doc_link} className="btn btn-sm btn-soft" id="review-edit-link">Sửa nội dung trước khi duyệt</Link>
                 )}
               </div>
@@ -311,7 +311,7 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
         <Field label="Số SKU / tổng mét">{plan?.line_count} SKU · {nf(plan?.total_m)} m</Field>
         {canSeePrice && <Field label="Ngân sách vật tư">{run ? `${nf(run.budget_vnd)} đ` : '—'}{run?.missing_price_count ? ` (${run.missing_price_count} mã thiếu giá)` : ''}</Field>}
         {(edits ?? 0) > 0 && <Field label="Chỉnh khi duyệt"><Link className="text-brand hover:underline" href={`/ke-hoach/${a.doc_id}#chair-edits`}>{edits} lần sửa dòng</Link></Field>}
-        {a.status === 'PENDING' && a.my_turn && !a.i_submitted && (
+        {a.status === 'PENDING' && a.my_turn && (
           <div className="md:col-span-2 mt-2 rounded border-l-4 border-brand bg-brand-soft px-3 py-2 text-[14px]">
             {a.step_index === a.step_total ? 'Bước chốt' : 'Bước duyệt'}: bạn được sửa sản lượng, thêm, bỏ mã và đề nghị mua MRP trước khi {a.step_index === a.step_total ? 'chốt' : 'duyệt'}.{' '}
             <Link className="font-medium text-brand hover:underline" href={`/ke-hoach/${a.doc_id}`}>Mở kế hoạch để chỉnh</Link>
