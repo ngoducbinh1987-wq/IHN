@@ -8,6 +8,7 @@ import { Empty, Flash, InfoRow, Pill, StatusPill } from '@/components/ui';
 import { type Approval, stageLabel } from '@/lib/approvals';
 import { DOC_STATUS, SPEC_STATUS, df, nf, overdueText } from '@/lib/format';
 import { requireMe } from '@/lib/session';
+import { wireText } from '@/lib/spec';
 import { createClient } from '@/lib/supabase/server';
 import { approve, comment, reject } from './actions';
 
@@ -288,7 +289,8 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
       <div className="grid gap-x-8 gap-y-1 md:grid-cols-2">
         <Field label="Sản phẩm">{p?.code} · {p?.description}</Field>
         <Field label="Phiên bản">v{s.version} <StatusPill map={SPEC_STATUS} value={s.status} /></Field>
-        <Field label="Ruột dẫn">{s.wire_count}×{nf(s.wire_dia_mm, 2)} mm {s.conductor_mat} · bước bện {nf(s.pitch_mm, 1)} mm</Field>
+        <Field label="Ruột dẫn">{s.cores} lõi × ({wireText(s)}) {s.conductor_mat} · bước bện {nf(s.pitch_mm, 1)} mm</Field>
+        {s.core_colors && <Field label="Màu lõi">{(s.core_colors as (string | null)[]).map((c, i) => `Lõi ${i + 1}: ${c ?? '?'}`).join(' · ')}</Field>}
         <Field label="Cách điện / vỏ">{s.insulation} {nf(s.ins_thickness_mm, 2)} mm · {s.sheath} {s.sheath_thickness_mm ? nf(s.sheath_thickness_mm, 2) + ' mm' : ''}</Field>
         <Field label="Định mức tổng">{nf(r?.total_kgkm, 2)} kg/km (đồng {nf(r?.metal_kgkm, 3)})</Field>
         <Field label="Rdc tính / giới hạn">{nf(r?.rdc_calc, 3)} / {r?.rdc_limit === null ? 'chưa có' : nf(r?.rdc_limit, 2)} Ω/km</Field>

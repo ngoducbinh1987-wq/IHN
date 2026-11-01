@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { CopyPlus, Send, Trash2 } from 'lucide-react';
-import { SpecFields } from '@/components/spec-form';
+import { SpecFields, type SpecBomLine } from '@/components/spec-form';
 import { StageBar, type Stage } from '@/components/stage-bar';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
@@ -107,22 +107,13 @@ export default async function ProductDetail({ params, searchParams }:
             <form action={adminEdit ? adminUpdateSpec : updateSpec} className="card flex flex-col gap-4 p-4" id={adminEdit ? 'admin-sua-spec' : undefined}>{hidden}
               {reasonField}
               <label className="lbl">Quy cách<input className="inp" name="description" defaultValue={p.description} /></label>
-              <SpecFields s={{ ...spec, ...(res ?? {}) }} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} />
+              <SpecFields s={{ ...spec, ...(res ?? {}) }} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} bom={(bom ?? []) as SpecBomLine[]} />
               <div className="border-t border-line pt-3"><SubmitButton className="btn btn-pri">Lưu thông số</SubmitButton></div>
             </form>
           ) : (
-            <section className="card p-4">
-              <dl className="grid gap-x-6 gap-y-3 text-[14px] sm:grid-cols-2 lg:grid-cols-3">
-                {([
-                  ['Mã lõi', spec.core_code], ['Số lõi / cặp', `${spec.cores} / ${spec.pairs}`], ['Ruột dẫn', `${spec.wire_count}×${nf(spec.wire_dia_mm, 2)} mm ${spec.conductor_mat}`],
-                  ['Bước bện', `${nf(spec.pitch_mm, 1)} mm`], ['Cách điện', `${spec.insulation} · ${nf(spec.ins_thickness_mm, 2)} mm`],
-                  ['Vỏ', `${spec.sheath}${spec.sheath_thickness_mm ? ' · ' + nf(spec.sheath_thickness_mm, 2) + ' mm' : ''}`],
-                  ['Drain', spec.drain_mat ?? 'Không'], ['Màu vỏ / cách điện', `${spec.sheath_color ?? '—'} · ${spec.insulation_colors ?? '—'}`],
-                  ['Thương hiệu', spec.brand], ['Đóng gói', `${spec.pack_type} · ${nf(spec.m_per_pack)} m/kiện`],
-                ] as [string, string][]).map(([k, val]) => <div key={k}><dt className="text-[13px] text-muted">{k}</dt><dd className="font-medium">{val}</dd></div>)}
-              </dl>
-              {spec.config_note && <p className="mt-3 rounded bg-sunk px-3 py-2 text-[13px]">{spec.config_note}</p>}
-              {!editable && spec.status !== 'RELEASED' && <p className="mt-3 text-[13px] text-muted">Spec đang được duyệt nên không sửa được.</p>}
+            <section className="card flex flex-col gap-3 p-4">
+              <SpecFields s={{ ...spec, ...(res ?? {}) }} coreCodes={[spec.core_code]} bom={(bom ?? []) as SpecBomLine[]} ro />
+              {!editable && spec.status !== 'RELEASED' && <p className="text-[13px] text-muted">Spec đang được duyệt nên không sửa được.</p>}
             </section>
           ))}
 
