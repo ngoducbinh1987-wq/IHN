@@ -1148,7 +1148,7 @@ await ctx.close();
   await clickNav(p, 'button:has-text("Tạo tài khoản")');
   await expectOk(p, 'Tạo tài khoản để thử xóa');
   if (!(await del(p, 'xoa.thu@bmt.test', 'E2E: tạo nhầm')).includes('xóa hẳn')) fail('Tài khoản chưa có hoạt động phải được xóa hẳn');
-  if ((await p.innerText('main')).includes('xoa.thu@bmt.test')) fail('Tài khoản đã xóa hẳn không còn trong danh sách');
+  if ((await p.locator('table.tbl').first().innerText()).includes('xoa.thu@bmt.test')) fail('Tài khoản đã xóa hẳn không còn trong danh sách');
   const msg = await del(p, 'mua.nv@bmt.test', 'E2E: nghỉ việc');
   if (!msg.includes('khỏi danh sách')) fail(`NV mua đã lập chứng từ phải được khóa + ẩn (giữ tên): "${msg}"`);
   if ((await p.locator('table.tbl').first().innerText()).includes('mua.nv@bmt.test')) fail('Người đã xóa phải ẩn khỏi danh sách');
