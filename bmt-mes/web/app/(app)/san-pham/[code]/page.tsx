@@ -40,9 +40,10 @@ export default async function ProductDetail({ params, searchParams }:
     supabase.schema('master').from('core_types').select('code').order('code'),
   ]);
   if (!spec) notFound();
-  const [{ data: pallets }, { data: bomIss }] = await Promise.all([
+  const [{ data: pallets }, { data: bomIss }, { data: coreType }] = await Promise.all([
     supabase.schema('master').from('tech_params').select('code, value').eq('set_id', spec.param_set_id).in('code', ['palletW', 'palletC']),
     supabase.schema('master').rpc('bom_issues', { p_spec: specId }),
+    supabase.schema('master').from('core_types').select('rdc_source').eq('set_id', spec.param_set_id).eq('code', spec.core_code).maybeSingle(),
   ]);
   const perPallet = Number((pallets ?? []).find((x) => x.code === (spec.pack_type === 'Cuộn PE' ? 'palletC' : 'palletW'))?.value) || null;
   const { data: flow } = await supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code')
@@ -249,6 +250,7 @@ export default async function ProductDetail({ params, searchParams }:
                 <tr><td className="text-muted">Tổng</td><td className="num font-medium">{nf(res?.total_kgkm, 2)} kg/km</td></tr>
                 <tr><td className="text-muted">OD</td><td className="num">{nf(res?.od_mm, 2)} mm</td></tr>
                 <tr><td className="text-muted">Rdc tính / giới hạn</td><td className={`num ${res && res.rdc_limit !== null && res.rdc_calc > res.rdc_limit ? 'font-medium text-bad' : ''}`}>{nf(res?.rdc_calc, 3)} / {res?.rdc_limit === null ? '—' : nf(res?.rdc_limit, 2)}</td></tr>
+                {coreType?.rdc_source && <tr><td colSpan={2} className="text-[12px] text-muted">Giới hạn Rdc: {coreType.rdc_source}</td></tr>}
               </tbody>
             </table>
             {problems.length > 0 ? (
