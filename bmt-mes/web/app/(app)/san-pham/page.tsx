@@ -53,13 +53,12 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         add={can(me, 'spec', 'create') ? { href: '/san-pham/moi', label: 'Thêm spec mới' } : undefined} />
       <Tabs active={tab.key} items={TABS.map((t) => ({ key: t.key, label: t.label, href: href({ tab: t.key }) }))} />
       <Flash ok={sp.ok} err={sp.err ?? error?.message} />
-      <div className="mb-2 flex flex-wrap items-center gap-1.5" id="loc-san-pham">
-        <span className="mr-1 w-[92px] text-[13px] text-muted">Sản phẩm:</span>
+      <div className="mb-3 flex flex-wrap items-center gap-1.5" id="loc-san-pham">
+        <span className="mr-0.5 text-[13px] text-muted">Sản phẩm:</span>
         <Link className={`btn btn-sm ${!sp.th ? 'btn-pri' : ''}`} href={href({ th: null })}>Tất cả</Link>
         {BRANDS.map((b) => <Link key={b} className={`btn btn-sm ${sp.th === b ? 'btn-pri' : ''}`} href={href({ th: b })}>{b}</Link>)}
-      </div>
-      <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 w-[92px] text-[13px] text-muted">Nhóm:</span>
+        <span className="mx-2 h-5 w-px bg-line" aria-hidden />
+        <span className="mr-0.5 text-[13px] text-muted">Nhóm:</span>
         <Link className={`btn btn-sm ${!sp.nhom ? 'btn-pri' : ''}`} href={href({ nhom: null })}>Tất cả</Link>
         {GROUPS.map((g) => <Link key={g} className={`btn btn-sm ${sp.nhom === g ? 'btn-pri' : ''}`} href={href({ nhom: g })}>{g}</Link>)}
       </div>
@@ -71,9 +70,9 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
               {data.map((r) => (
                 <tr key={r.id}>
                   <td className="whitespace-nowrap"><Link className="mono text-[14px] font-medium text-brand hover:underline" href={`/san-pham/${encodeURIComponent(r.code)}`}>{r.code}</Link></td>
-                  <td className="min-w-[220px]">{r.description}</td>
+                  <td className="whitespace-nowrap">{r.description}</td>
                   <td className="whitespace-nowrap text-muted">{r.group_name}</td>
-                  <td>{r.default_brand}</td>
+                  <td className="whitespace-nowrap">{r.default_brand}</td>
                   <td className="num">{nf(r.total_kgkm, 2)}</td>
                   <td className="num">{nf(r.od_mm, 2)}</td>
                   <td className={`num ${r.rdc_over ? 'font-medium text-bad' : ''}`}>{nf(r.rdc_calc, 3)}</td>
