@@ -155,3 +155,16 @@ export async function adminRenameProduct(form: FormData) {
   revalidatePath('/', 'layout');
   back(String(data ?? next), 'ok', `Đã đổi mã ${code} → ${data ?? next}`, spec);
 }
+
+// Quản trị hệ thống lấy ruột dẫn của spec đang xem làm chuẩn cho mọi spec cùng mã lõi (database kiểm core.is_admin, ghi nhật ký)
+export async function adminApplyConductor(form: FormData) {
+  const code = String(form.get('code')); const spec = String(form.get('spec_id'));
+  const reason = String(form.get('reason') ?? '').trim();
+  if (!reason) back(code, 'err', 'Ghi lý do', spec);
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('app').rpc('admin_conductor_apply', { p_src: spec, p_reason: reason });
+  if (error) back(code, 'err', error.message, spec);
+  const r = (data ?? {}) as { count?: number; specs?: string };
+  revalidatePath('/san-pham', 'layout');
+  back(code, 'ok', r.count ? `Đã chuẩn hóa ruột dẫn ${r.count} spec: ${r.specs}` : 'Các mã cùng cỡ lõi đã đúng quy cách ruột dẫn này', spec);
+}

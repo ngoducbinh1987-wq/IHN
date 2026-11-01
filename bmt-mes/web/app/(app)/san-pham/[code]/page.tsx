@@ -8,8 +8,9 @@ import { Empty, Flash, Pill, StatusPill, Toolbar } from '@/components/ui';
 import type { Approval } from '@/lib/approvals';
 import { SPEC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
+import { wireText } from '@/lib/spec';
 import { createClient } from '@/lib/supabase/server';
-import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminRenameProduct, adminUpdateSpec, deleteBomLine, newVersion, previewSpec, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
+import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminApplyConductor, adminRenameProduct, adminUpdateSpec, deleteBomLine, newVersion, previewSpec, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
 
 const BASIS: Record<string, string> = { KM: '/km', PACK: '/kiện', PALLET: '/pallet', LOT: '/lô' };
 const INS_NAME: Record<string, string> = { SIL: 'Silicone', HDPE: 'HDPE', PVC: 'PVC' };
@@ -105,6 +106,16 @@ export default async function ProductDetail({ params, searchParams }:
             <SubmitButton className="btn btn-sm btn-bad-o"><Trash2 size={14} />Xóa phiên bản v{spec.version}</SubmitButton>
           </form>
           <p className="mt-2 text-[12.5px] text-muted">Xóa cả BOM của phiên bản. Không xóa được khi phiên bản đang được kế hoạch, lệnh SX, lô hàng dùng hoặc là bản duy nhất của mã. Xóa bản hiện hành thì mã chuyển sang bản đã phát hành gần nhất còn lại (bản cũ được phát hành lại).</p>
+        </details>
+      )}
+      {me.is_admin && spec.status !== 'OBSOLETE' && (
+        <details className="mb-4 rounded border border-line bg-surface px-4 py-2 text-[14px]" id="admin-chuan-ruot">
+          <summary className="cursor-pointer font-medium text-brand">Quản trị hệ thống: lấy ruột dẫn của {code} v{spec.version} làm chuẩn cho mọi mã lõi {spec.core_code}</summary>
+          <form action={adminApplyConductor} className="mt-2 flex flex-wrap items-end gap-2">{hidden}
+            <label className="min-w-[260px] flex-1 text-[13px]"><span className="req">Lý do</span><input className="inp block w-full" name="reason" required /></label>
+            <SubmitButton className="btn btn-sm btn-pri">Áp ruột dẫn cho mọi mã lõi {spec.core_code}</SubmitButton>
+          </form>
+          <p className="mt-2 text-[12.5px] text-muted">Mọi spec còn hiệu lực cùng mã lõi {spec.core_code}, cùng vật liệu {spec.conductor_mat} nhận các loại sợi ({wireText(spec)}) và bước bện của bản này; hệ số ghép K, trạng thái từng mã giữ nguyên. MES tính lại đồng, Rdc, BOM; kế hoạch dùng các mã đó cần chạy lại MRP; ghi nhật ký từng spec.</p>
         </details>
       )}
       {me.is_admin && (
