@@ -74,7 +74,7 @@ select (select sum(l.qty_per_basis) from master.bom_lines l join master.bom_head
          where h.spec_id = pg_temp.v('spec') and m.code = 'DCBP-50'), 0) r;
 
 -- (B) Lưu thông số mới → BOM tự theo định mức
-select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('spec'), '{"wire_mix":[{"n":16,"d":0.24},{"n":6,"d":0.3}],"ins_thickness_mm":"0.7","sheath_kgkm":"25.5"}')$q$);
+select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('spec'), '{"wire_mix":[{"n":22,"d":0.24}],"ins_thickness_mm":"0.7","sheath_kgkm":"25.5"}')$q$);
 create temp table g as
 select master.bom_group(m.code, m.group_code, l.operation_code) grp, sum(l.qty_per_basis) q
   from master.bom_lines l join master.bom_headers h on h.id = l.bom_id join master.materials m on m.id = l.material_id
@@ -102,14 +102,13 @@ select pg_temp.as_api($q$select app.save_bom_line(pg_temp.v('spec'), 'TCCA-020',
 select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('spec'))) x where x like 'BOM thừa vật tư Drain%'),
   'Thêm drain khi thông số không có drain: báo thừa');
 select pg_temp.as_api($q$select app.delete_bom_line((select l.id from master.bom_lines l join master.bom_headers h on h.id = l.bom_id join master.materials m on m.id = l.material_id where h.spec_id = pg_temp.v('spec') and m.code = 'TCCA-020'))$q$);
-select pg_temp.as_api($q$select app.save_bom_line(pg_temp.v('spec'), 'SI-C2', 'KM', 0.05, null, 0, 'CD0')$q$);
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('spec'), '{"core_colors":["Trắng","Nâu"]}')$q$);
+select pg_temp.as_api($q$select app.save_bom_line(pg_temp.v('spec'), 'SI-C2', 'KM', 0.05, null, 0, 'CD0')$q$);
 select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('spec'))) x where x like 'BOM có màu không có trên lõi%Đen%'),
-  'Màu silicone Đen trong BOM mà lõi Trắng + Nâu: báo thừa màu');
+  'Thêm tay màu silicone Đen khi lõi Trắng + Nâu: báo thừa màu');
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('spec'), '{"core_colors":["Đỏ","Nâu"]}')$q$);
-select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('spec'))) x where x like 'Lõi màu đỏ chưa có vật tư màu%'),
-  'Lõi màu Đỏ chưa có vật tư màu: báo thiếu');
-select pg_temp.as_api($q$select app.delete_bom_line((select l.id from master.bom_lines l join master.bom_headers h on h.id = l.bom_id join master.materials m on m.id = l.material_id where h.spec_id = pg_temp.v('spec') and m.code = 'SI-C2'))$q$);
+select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('spec'))) x where x like 'Màu lõi đỏ chưa có vật tư màu SIL%'),
+  'Lõi màu Đỏ chưa có vật tư màu silicone: báo thiếu');
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('spec'), '{"core_colors":["Trắng","Nâu"],"brand":"HEIZKA"}')$q$);
 select pg_temp.ok((select count(*) = 0 from master.bom_lines l join master.bom_headers h on h.id = l.bom_id join master.materials m on m.id = l.material_id
                     where h.spec_id = pg_temp.v('spec') and m.code = 'LABEL-K')

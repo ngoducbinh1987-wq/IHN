@@ -9,7 +9,8 @@ export type SpecBomLine = {
   basis: string; qty_per_basis: number; loss_rate: number; startup_per_lot?: number | null;
 };
 
-const COLORS = ['Trắng', 'Nâu', 'Đen', 'Xám', 'Xanh dương', 'Đỏ', 'Vàng', 'Xanh lá', 'Vàng-xanh lá', 'Cam', 'Tím', 'Hồng'];
+// Màu lõi có vật tư hạt màu (bảng master.pigment_rules); màu khác MES báo chưa có vật tư
+const COLORS = ['Trắng', 'Nâu', 'Đen', 'Xám', 'Xanh dương', 'Vàng-xanh lá'];
 const R = { textAlign: 'right' as const };
 const G4 = 'grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4';
 
@@ -145,7 +146,7 @@ function BomSummary({ lines, mPerPack, perPallet, issues }: { lines: SpecBomLine
           ? <p className="rounded border-l-4 border-brand bg-brand-soft px-3 py-2 text-[13px] text-brand-dark">Đối chiếu BOM với thông số: khớp (đồng, cách điện, vỏ, độn, băng, drain đúng định mức MES tính; vật liệu, màu lõi, nhãn, bobin đúng sản phẩm; không có dòng thừa).</p>
           : <div className="rounded border-l-4 border-bad bg-bad/10 px-3 py-2 text-[13px]"><b>BOM chưa khớp sản phẩm:</b>
               <ul className="mt-1 list-disc pl-5">{issues.map((x) => <li key={x}>{x}</li>)}</ul></div>}
-        <p className="text-[12.5px] text-muted">Định mức đồng, cách điện, vỏ, độn, băng, drain trong BOM tự theo thông số mỗi lần lưu (giữ tỷ lệ giữa các dòng, ví dụ silicone : màu : phụ gia). Bao bì tính theo kiện quy ra km bằng mét/kiện{perPallet ? `, pallet ${nf(perPallet)} kiện/pallet` : ''}. Vật tư khởi động tính theo mỗi lần chạy lô, không cộng vào định mức/km.</p>
+        <p className="text-[12.5px] text-muted">Mỗi lần lưu thông số, BOM tự theo: đồng chia theo từng cỡ sợi (n·d²); cách điện = vật liệu nền + phụ gia (giữ tỷ lệ, DCBP 1,5 % silicone) + hạt màu theo màu từng lõi; vỏ = hạt vỏ + hạt màu vỏ 2 % theo màu vỏ; độn, băng, drain theo định mức MES. Bao bì tính theo kiện quy ra km bằng mét/kiện{perPallet ? `, pallet ${nf(perPallet)} kiện/pallet` : ''}. Vật tư khởi động tính theo mỗi lần chạy lô, không cộng vào định mức/km.</p>
       </div>
     </section>
   );
@@ -227,7 +228,8 @@ export function SpecFields({ s, coreCodes, bom = [], ro = false, perPallet = nul
               </tr>
             ))}</tbody>
           </table>
-          {colors.length === 0 && s.insulation_colors ? <p className="mt-1 text-[12.5px] text-muted">Màu đang ghi chung: “{String(s.insulation_colors)}” – khai lại theo từng lõi.</p> : null}
+          {colors.length === 0 && <p className="mt-1 rounded border-l-4 border-warn bg-warn-soft px-3 py-1.5 text-[12.5px]">Chưa khai màu từng lõi{s.insulation_colors ? ` (đang ghi chung: “${String(s.insulation_colors)}”)` : ''}: hạt màu trong BOM đang giữ theo file Excel. Khai màu từng lõi rồi Lưu để MES tính hạt màu theo lõi.</p>}
+          <p className="mt-1 text-[12.5px] text-muted">Hạt màu cách điện = {s.insulation === 'SIL' ? '1 %' : '2 %'} khối lượng {s.insulation === 'SIL' ? 'silicone' : String(s.insulation ?? '')} của các lõi màu đó{s.insulation === 'SIL' ? '; lõi Trắng dùng silicone tự nhiên, không pha màu' : ''}.</p>
           {!ro && <p className="mt-1 text-[12.5px] text-muted">Đổi số lõi thì bấm Tạm tính (hoặc Lưu), bảng màu sẽ đủ dòng theo số lõi mới.</p>}
         </div>
         <BomRows lines={bom} ops={['CD0', 'CD2']} mPerPack={mPerPack} perPallet={perPallet} />
