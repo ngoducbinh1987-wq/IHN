@@ -854,10 +854,16 @@ for (const [email, pw] of [['admin@bmt.test', 'Admin@12345'], ['sx.tp@bmt.test',
     let tb = await page.innerText('main');
     if (/Application error|PGRST/i.test(tb) || !tb.includes('Tính lại sau ca')) fail('Thẻ Tiến độ phải có khung Tính lại sau ca');
     await clickNav(page, '#tinh-lai button:has-text("Tính lại tiến độ ngay")');
-    { const m = await flash(page); if (!m.includes('Đã tính lại sau ca')) fail(`Tính lại tiến độ ngay: ${m}`); ok(`Giám đốc bấm tính lại tiến độ sau ca → ${m}`); }
-    tb = await page.innerText('#tinh-lai');
-    if (!tb.includes('Bấm tay') || !tb.includes('Đã tính') || !/lịch bản \d+/.test(tb)) fail('Nhật ký tính lại phải ghi lần bấm tay, đã tính, lịch bản mới');
-    if (!tb.includes('chưa có phiếu')) fail('Máy có việc trong ca mà chưa có phiếu hoàn thành phải ghi "chưa có phiếu"');
+    // Ngày nghỉ (Chủ nhật) hoặc trước giờ hết ca đầu tiên thì chưa có ca nào để tính lại: ghi nhận và bỏ qua phần nhật ký
+    const rm = await flash(page);
+    const noShift = rm.includes('Chưa có ca nào đã hết');
+    if (!noShift && !rm.includes('Đã tính lại sau ca')) fail(`Tính lại tiến độ ngay: ${rm}`);
+    ok(noShift ? `Hôm nay chưa có ca nào đã hết (ngày nghỉ / đầu ngày) → bỏ qua kiểm tra nhật ký tính lại: ${rm}` : `Giám đốc bấm tính lại tiến độ sau ca → ${rm}`);
+    if (!noShift) {
+      tb = await page.innerText('#tinh-lai');
+      if (!tb.includes('Bấm tay') || !tb.includes('Đã tính') || !/lịch bản \d+/.test(tb)) fail('Nhật ký tính lại phải ghi lần bấm tay, đã tính, lịch bản mới');
+      if (!tb.includes('chưa có phiếu')) fail('Máy có việc trong ca mà chưa có phiếu hoàn thành phải ghi "chưa có phiếu"');
+    }
     const cr = await page.evaluate(async (u) => { const a = await fetch(u); const b = await fetch(u, { headers: { authorization: 'Bearer sai' } }); return [a.status, b.status]; }, `${BASE}/api/cron/replan`);
     if (cr[0] !== 401 || cr[1] !== 401) fail(`Job tính lại phải cần CRON_SECRET: ${cr}`);
     { const r = await fetch(`${BASE}/api/cron/replan`, { headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } }); const j = await r.json().catch(() => ({}));
