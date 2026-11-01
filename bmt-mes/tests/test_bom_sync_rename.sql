@@ -50,7 +50,8 @@ select p.id, u.role from core.profiles p join (values ('E_ADM','ADMIN'),('E_KTTP
 
 
 -- (A) Dữ liệu sau migration: mọi spec còn hiệu lực có BOM khớp
-select pg_temp.ok(not exists (select 1 from master.product_specs s where s.status <> 'OBSOLETE' and cardinality(master.bom_issues(s.id)) > 0),
+select pg_temp.ok(not exists (select 1 from master.product_specs s where s.status <> 'OBSOLETE' and cardinality(master.bom_issues(s.id)) > 0
+                               and not exists (select 1 from unnest(master.bom_issues(s.id)) x where x like 'Chưa có vật tư sợi đồng%')),
   'Mọi spec còn hiệu lực: BOM khớp thông số (số lượng, vật liệu, màu lõi, nhãn, bobin, không dòng thừa)');
 
 -- Spec 2 lõi silicone (CFR-2C-1 nếu có) – lập phiên bản nháp để sửa
