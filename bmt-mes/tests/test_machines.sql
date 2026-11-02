@@ -287,7 +287,8 @@ reset role;
 insert into master.machine_speeds (machine_id, op_code, std_mpm, setup_min, status)
 select m.id, o.op, 60, 10, 'APPROVED' from master.machines m
   join (values ('EXTRUDER_TP', 'CD2'), ('EXTRUDER_TP', 'CD5'), ('TWISTER', 'CD3'), ('EXTRUDER_SI', 'CD2')) o(t, op) on o.t = m.machine_type
- where m.inline_with is null and m.active;
+ where m.inline_with is null and m.active
+on conflict do nothing;
 set local role authenticated;
 create temp table _cap as select app.check_capacity(null, current_date, current_date + 27, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('pvc'), 'qty_m', 5000))) as j;
