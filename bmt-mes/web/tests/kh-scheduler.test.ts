@@ -228,4 +228,22 @@ if (off.slots.some((s) => s.machine === 'EXT-SI-02')) bad('máy ngừng dùng v�
   const fm = finishInfo(gm, calM, ordM).get(sifM.id)!;
   console.log('trộn + đóng gói: SIF trộn', mixRun.toFixed(0), 'phút; xong', fm.finDate, '; lý do trộn:', gm.slots.find((s) => s.op === 'CD0')!.reason);
 }
+// Không còn tốc độ giả định (02/11/2026): rates trống, chỉ tốc độ khai báo của máy; máy chưa khai thì không xếp + cảnh báo;
+// xoắn cáp chống nhiễu khi máy chưa khai riêng quấn AL/PET (CD4) chạy theo tốc độ xoắn
+{
+  const spd = (m: string, op: string, v: number, core: string | null = null): SpeedCfg => ({ machine_code: m, op_code: op, product_id: null, group_code: null, core_code: core, std_mpm: v, rated_mpm: null, max_mpm: null, status: 'APPROVED' });
+  const cfgS: Config = { ...cfg, rates: [], speeds: [spd('BUN-01', 'CD1', 150), spd('EXT-SI-01', 'CD2', 70), spd('EXT-TP-01', 'CD2', 90), spd('EXT-TP-01', 'CD5', 55), spd('TWS-01', 'CD3', 45)] };
+  const calS = makeCalendar(cfgS, '2026-11-02');
+  const gs = schedule(orders, { cfg: cfgS, cal: calS, machines, operators });
+  if (gs.unplaced.length) bad(`chỉ tốc độ máy: chưa xếp ${gs.unplaced.length}`);
+  for (const m of ['EXT-SI-02', 'EXT-TP-02']) if (gs.slots.some((x) => x.machine === m)) bad(`máy ${m} chưa khai tốc độ mà vẫn được xếp`);
+  if (!(gs.warnings ?? []).some((w) => w.includes('EXT-SI-02') && w.includes('Hồ sơ máy → Tốc độ'))) bad('thiếu cảnh báo máy chưa khai tốc độ');
+  const tw = gs.slots.find((x) => x.lineId === 'L2' && x.op === 'CD3');
+  if (!tw || Math.abs(tw.speed - 45) > 1e-6) bad(`xoắn CTL (chống nhiễu, chưa khai CD4) phải chạy 45 m/ph, được ${tw?.speed}`);
+  if (Math.abs(buildTasks(orders, cfgS).find((t) => t.op === 'CD1')!.rate - 150) > 1e-6) bad('tốc độ ước lượng việc phải lấy từ máy khi không có bảng công đoạn');
+  // Không máy nào khai: không xếp, không đoán số
+  const g0 = schedule(orders, { cfg: { ...cfg, rates: [], speeds: [] }, cal: calS, machines, operators });
+  if (g0.slots.some((x) => x.meters > 0)) bad('không có tốc độ máy nào mà vẫn xếp việc');
+  console.log('chỉ tốc độ máy: đạt;', (gs.warnings ?? []).filter((w) => w.includes('Chưa có tốc độ')).length, 'cảnh báo thiếu tốc độ');
+}
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

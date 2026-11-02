@@ -66,17 +66,6 @@ export async function saveShifts(form: FormData) {
   done(n);
 }
 
-export async function saveRates(form: FormData) {
-  const e = 'rates';
-  const rows = String(form.get('ops') ?? '').split(',').filter(Boolean).map((op) => ({
-    op_code: op, rate_small: num(form, `small_${op}`, `${op} cỡ nhỏ`, e), rate_large: num(form, `large_${op}`, `${op} cỡ lớn`, e),
-  }));
-  const db = await createClient();
-  const { data, error } = await db.schema('app').rpc('kh_save_rates', { p: rows, p_reason: String(form.get('reason') ?? '') });
-  if (error) go('err', error.message, e);
-  done(Number(data), ' · tốc độ chuyển sang “đã ban hành”');
-}
-
 export async function saveChangeovers(form: FormData) {
   const e = 'setup';
   const codes = String(form.get('codes') ?? '').split(',').filter(Boolean);

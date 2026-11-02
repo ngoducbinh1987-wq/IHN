@@ -1,3 +1,4 @@
+import { AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { Empty, Flash, Kpi, Pill, StatusPill, Toolbar } from '@/components/ui';
 import { MStatus } from '@/components/machine-ui';
@@ -15,14 +16,18 @@ export default async function MachinesPage({ searchParams }: { searchParams: Pro
   const me = await requirePerm('machine', 'view');
   const supabase = await createClient();
   const today = vnToday();
-  const [{ data: machines, error }, { data: plans }, { data: checks }, { data: speeds }, { data: low }, { data: wos }] = await Promise.all([
+  const [{ data: machines, error }, { data: plans }, { data: checks }, { data: speeds }, { data: low }, { data: wos }, { data: gapRows }] = await Promise.all([
     supabase.schema('app').from('v_machines').select('*').order('code'),
     supabase.schema('app').from('v_maint_plans').select('id, name, machine_code, line_id, line_code, state, days_left, trigger, every_days, every_hours, every_km, used_days, used_hours, used_km, open_wo, level').eq('active', true),
     supabase.schema('app').from('v_maint_checks').select('machine_id, has_issue, checked_at, note').eq('check_date', today),
     supabase.schema('app').from('v_machine_speeds').select('id, machine_code, label, op_name, std_mpm, wait_days').eq('status', 'PENDING'),
     supabase.schema('app').from('v_machine_components').select('id, machine_id, name, stock, min_stock').eq('low_stock', true),
     supabase.schema('app').from('v_maint_wos').select('id, wo_no, wo_type, machine_code, title, status, eta').in('status', ['OPEN', 'IN_PROGRESS']),
+    supabase.schema('app').rpc('machine_param_gaps'),
   ]);
+  // Máy thiếu thông số tốc độ (Alarm): lịch máy không xếp việc lên máy / cỡ đó
+  const gaps = (gapRows ?? []) as { machine_id: string; message: string }[];
+  const gapOf = (id: string) => gaps.filter((g) => g.machine_id === id);
   const all = machines ?? [];
   const lines = all.filter((m) => !m.line_id && m.active);
   const inactive = all.filter((m) => !m.line_id && !m.active);
@@ -94,7 +99,8 @@ export default async function MachinesPage({ searchParams }: { searchParams: Pro
                 return (
                   <tr key={l.id}>
                     <td className="py-3"><Link href={`/may/${l.id}`} className="text-[15px] font-medium text-brand hover:underline">{l.code}</Link>
-                      <div className="text-[13px] text-muted">{l.name}</div></td>
+                      <div className="text-[13px] text-muted">{l.name}</div>
+                      {gapOf(l.id).map((g, i) => <Link key={i} href={`/may/${l.id}?tab=toc-do`} className="menu-alarm mt-1 flex items-start gap-1 text-[12.5px] font-medium text-bad hover:underline"><AlertTriangle size={13} className="mt-0.5 shrink-0" />Alarm: {g.message}</Link>)}</td>
                     <td>{l.op_name ?? '—'}</td>
                     <td className="text-[13px]">{l.operators ?? <span className="text-warn">Chưa giao</span>}</td>
                     <td><MStatus value={l.status} since={l.status_since} eta={l.status_eta} /></td>

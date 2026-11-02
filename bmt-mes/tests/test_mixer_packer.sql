@@ -28,8 +28,7 @@ select pg_temp.ok((select machine_type = 'PACKER' and op_code = 'CD6' and active
 select pg_temp.ok((select count(*) = 2 from app.v_kh_machines where code in ('SIL-MIX', 'PACK-01')), 'Lịch máy thấy máy trộn và máy đóng gói');
 select pg_temp.ok((select operators @> array['NV3', 'NV4'] from app.v_kh_machines where code = 'PACK-01')
   and (select operators @> array['NV1'] from app.v_kh_machines where code = 'SIL-MIX'), 'Người đứng máy: NV3, NV4 đóng gói; NV1 trộn');
-select pg_temp.ok((select unit = 'kg/giờ' and rate_small between 10 and 50 from master.machine_rates where op_code = 'CD0')
-  and (select rate_small between 50 and 200 from master.machine_rates where op_code = 'CD6'), 'Tốc độ mặc định: trộn kg/giờ (10–50), đóng gói 50–200 m/phút');
+select pg_temp.ok((select count(*) = 0 from master.machine_rates), 'Không còn tốc độ mặc định giả định (migration 8200): trộn, đóng gói lấy từ tốc độ khai báo của máy');
 select pg_temp.ok((select count(*) = 2 from master.changeover_rules where code in ('MIX_CODE', 'PK_CODE')), 'Phút đổi máy trộn, đóng gói');
 select pg_temp.ok((select count(*) >= 4 from master.machine_specs s join master.machines m on m.id = s.machine_id where m.code = 'PACK-01' and s.grp = 'Công nghệ' and s.value is not null)
   and (select value = '10–50' from master.machine_specs s join master.machines m on m.id = s.machine_id where m.code = 'SIL-MIX' and s.label = 'Công suất trộn'),
@@ -48,20 +47,23 @@ select pg_temp.ok(plan.mix_kg_km((select current_spec_id from master.products wh
 insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom)
 select id, 'SIZE_MM2', 'Thử dải nhầm', 10, 35, 'mm²' from master.machines where code in ('SIL-MIX', 'PACK-01');
 select pg_temp.as_user('X_SXTP');
--- Dữ liệu thật có thể đã khai báo tốc độ riêng máy trộn, máy đóng gói (SIL-MIX 50 kg/giờ, PACK-01 200 m/ph từ 28/10/2026): thử theo tốc độ mặc định
+-- Tốc độ chỉ lấy từ máy (migration 8200): đặt trong giao dịch SIL-MIX 30 kg/giờ, PACK-01 120 m/ph (dữ liệu thật có số khác)
 delete from master.machine_speeds where op_code in ('CD0', 'CD6');
+insert into master.machine_speeds (machine_id, op_code, std_mpm, setup_min, status)
+select id, case code when 'SIL-MIX' then 'CD0' else 'CD6' end, case code when 'SIL-MIX' then 30 else 120 end, 0, 'APPROVED'
+  from master.machines where code in ('SIL-MIX', 'PACK-01');
 set local role authenticated;
 create temp table cap as select app.check_capacity(null, pg_temp.today(), pg_temp.today() + 6, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', (select v from t where k = 'sif'), 'qty_m', 10000))) as j;
 reset role;
 select pg_temp.ok((select (o ->> 'req_min')::numeric between
-      (select 10000 * plan.mix_kg_km(p.current_spec_id) / 1000 / (r.rate_small / 60) from master.products p, master.machine_rates r where p.id = (select v from t where k = 'sif') and r.op_code = 'CD0') - 1
-  and (select 10000 * plan.mix_kg_km(p.current_spec_id) / 1000 / (r.rate_small / 60) from master.products p, master.machine_rates r where p.id = (select v from t where k = 'sif') and r.op_code = 'CD0') + 1
+      (select 10000 * plan.mix_kg_km(p.current_spec_id) / 1000 / (30 / 60.0) from master.products p where p.id = (select v from t where k = 'sif')) - 1
+  and (select 10000 * plan.mix_kg_km(p.current_spec_id) / 1000 / (30 / 60.0) from master.products p where p.id = (select v from t where k = 'sif')) + 1
     from cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'MIXER'),
   'Phút trộn = mét cáp × kg/km ÷ kg/giờ × 60');
 select pg_temp.ok((select (o ->> 'req_min')::numeric between 10000 / 120.0 - 1 and 10000 / 120.0 + 1 from cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'PACKER'),
   'Phút đóng gói = mét cáp ÷ tốc độ cuốn');
-select pg_temp.ok((select (j -> 'issues')::text not like '%Chưa có tốc độ chuẩn%' from cap), 'Không còn báo thiếu tốc độ chuẩn cho trộn / đóng gói');
+select pg_temp.ok((select (j -> 'issues')::text not like '%Chưa có tốc độ chuẩn (Trộn%' and (j -> 'issues')::text not like '%Chưa có tốc độ chuẩn (%óng gói%' from cap), 'Không còn báo thiếu tốc độ chuẩn cho trộn / đóng gói (đã khai ở máy)');
 select pg_temp.ok((select (j -> 'issues')::text not like '%ngoài dải%' from cap), 'Dải tiết diện không áp cho máy trộn, máy đóng gói');
 select pg_temp.ok((select (o ->> 'name') like 'Trộn silicone%' from cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'MIXER'), 'Nhãn nhóm máy trộn');
 

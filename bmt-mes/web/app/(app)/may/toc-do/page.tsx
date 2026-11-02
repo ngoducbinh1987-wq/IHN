@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AlertTriangle } from 'lucide-react';
 import { Empty, Flash, Pill, StatusPill, Tabs, Toolbar } from '@/components/ui';
 import { SubmitButton } from '@/components/submit-button';
 import { SPEED_STATUS } from '@/lib/machine';
@@ -24,10 +25,11 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
   let q = supabase.schema('app').from('v_machine_speeds').select('*').order('op_code').order('machine_code').order('core_code', { nullsFirst: true });
   if (tab.st) q = q.in('status', tab.st);
   const { data, error } = await q;
-  const [{ count: pending }, { data: defaults }] = await Promise.all([
+  const [{ count: pending }, { data: gapRows }] = await Promise.all([
     supabase.schema('app').from('v_machine_speeds').select('id', { count: 'exact', head: true }).eq('status', 'PENDING'),
-    supabase.schema('app').rpc('machine_rate_defaults'),
+    supabase.schema('app').rpc('machine_param_gaps'),
   ]);
+  const gaps = (gapRows ?? []) as { machine_id: string; machine_code: string; message: string }[];
   const rows = data ?? [];
   const ops = [...new Map(rows.map((r) => [r.op_code, r.op_name])).entries()];
   const canApprove = can(me, 'machine', 'approve');
@@ -45,24 +47,17 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
         </form>
       )}
       <p className="mb-4 max-w-4xl text-[13.5px] text-muted">
-        Lịch máy chọn tốc độ: riêng mã SP → theo cỡ ruột → mặc định của máy → mặc định công đoạn (bảng dưới). Khai báo trong Hồ sơ máy → Tốc độ & dải hoạt động; người khác duyệt.
+        Lịch máy chỉ dùng tốc độ khai báo của từng máy (không còn tốc độ giả định theo công đoạn), chọn: riêng mã SP → theo cỡ ruột → chung của máy. Khai báo trong Hồ sơ máy → Tốc độ & dải hoạt động; người khác duyệt; đã duyệt thì chỉ Quản trị hệ thống sửa.
         Đổi tốc độ xong, Quản lý SX bấm Xếp lại lịch để áp dụng.
       </p>
-      <section className="card mb-4 max-w-4xl overflow-x-auto">
-        <div className="card-h">Tốc độ mặc định theo công đoạn<span className="text-[13px] font-normal text-muted">dùng khi máy chưa khai báo tốc độ riêng</span></div>
-        {(defaults ?? []).length ? (
-          <table className="tbl">
-            <thead><tr><th>Công đoạn</th><th className="num">Ruột &lt; 2,5 mm²</th><th className="num">Ruột ≥ 2,5 mm²</th><th>Đơn vị</th><th>Tình trạng</th></tr></thead>
-            <tbody>
-              {(defaults ?? []).map((r: { op_code: string; label: string; unit: string; rate_small: number; rate_large: number; confirmed: boolean }) => (
-                <tr key={r.op_code}><td><span className="mono">{r.op_code}</span> · {r.label}</td><td className="num">{nf(r.rate_small)}</td><td className="num">{nf(r.rate_large)}</td>
-                  <td>{r.unit.includes('/') ? r.unit : `${r.unit}/phút`}</td><td>{r.confirmed ? <Pill tone="ok">Đã xác nhận</Pill> : <Pill tone="warn">Giả định</Pill>}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        ) : <Empty>Chưa có tốc độ mặc định.</Empty>}
-        <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">TP Kỹ thuật/QA sửa ở <Link className="link" href="/tham-so">Tham số xếp lịch</Link>. Số “Giả định” cần thay bằng số chạy thật.</p>
-      </section>
+      {gaps.length > 0 && (
+        <section className="card mb-4 max-w-4xl" id="may-thieu-thong-so">
+          <div className="card-h"><span className="inline-flex items-center gap-1.5 text-bad"><AlertTriangle size={16} />Alarm: máy thiếu thông số tốc độ</span><span className="text-[13px] font-normal text-muted">lịch máy không xếp việc lên máy / cỡ này</span></div>
+          <ul className="px-4 py-3 text-[13.5px]">{gaps.map((g, i) => (
+            <li key={i}><Link className="font-medium text-brand hover:underline" href={`/may/${g.machine_id}?tab=toc-do`}>{g.machine_code}</Link>: {g.message}</li>
+          ))}</ul>
+        </section>
+      )}
       {ops.length === 0 && <div className="card"><Empty>Chưa có tốc độ nào. Mở <Link className="link" href="/may">Danh sách máy</Link> → hồ sơ dây chuyền → tab Tốc độ & dải hoạt động.</Empty></div>}
       {ops.map(([op, name]) => (
         <section key={op} className="card mb-4 overflow-x-auto">

@@ -27,7 +27,7 @@ end $$;
 select pg_temp.as_user('Dương Thu Hương');
 select pg_temp.expect('Hương xem tham số', 'do $x$ begin if (select count(*) from app.v_kh_config) <> 1 then raise exception ''không thấy''; end if; end $x$', true);
 select pg_temp.expect('Hương sửa tham số → chặn', $q$select app.kh_save_config('{"fill_pct":80}', 'thử')$q$, false, 'Chỉ Giám đốc');
-select pg_temp.expect('Hương sửa tốc độ → chặn', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":90,"rate_large":80}]', 'thử')$q$, false, 'TP Kỹ thuật');
+select pg_temp.expect('Hương sửa tốc độ mặc định → chặn (đã bỏ, migration 8200)', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":90,"rate_large":80}]', 'thử')$q$, false, 'Đã bỏ tốc độ mặc định');
 select pg_temp.expect('Hương xếp lịch → chặn', $q$select app.kh_save_schedule((select id from plan.production_plans limit 1), date '2026-11-02', '{}', '[]', '[]', 'x')$q$, false, 'TP SX');
 
 -- Minh (Giám đốc + Quản lý SX kế hoạch)
@@ -37,7 +37,7 @@ select pg_temp.expect('Minh sửa tham số ngoài khoảng → chặn', $q$sele
 select pg_temp.expect('Minh sửa tỷ lệ 80%', $q$select app.kh_save_config('{"fill_pct":80,"frozen_days":3}', 'Chạy thử tháng đầu')$q$, true);
 select pg_temp.expect('Minh bật ca B', $q$select app.kh_save_shifts('[{"code":"B","start_time":"14:00","end_time":"22:00","break_min":30,"active":true}]', 'Tăng ca')$q$, true);
 select pg_temp.expect('Minh tắt ca A → chặn', $q$select app.kh_save_shifts('[{"code":"A","start_time":"06:00","end_time":"14:00","break_min":30,"active":false}]', 'x')$q$, false, 'Ca A');
-select pg_temp.expect('Minh sửa tốc độ → chặn (việc của TP KT)', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":95,"rate_large":80}]', 'x')$q$, false, 'TP Kỹ thuật');
+select pg_temp.expect('Minh sửa tốc độ mặc định → chặn (đã bỏ)', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":95,"rate_large":80}]', 'x')$q$, false, 'Đã bỏ tốc độ mặc định');
 select pg_temp.expect('Minh chuyển máy sang PLC khi chưa có tag → chặn', $q$select app.kh_set_machine_mode('EXT-SI-01', 'BOTH', 'thử')$q$, false, 'tag PLC');
 select pg_temp.expect('Minh đặt hạn giao', $q$select app.kh_set_line((select id from plan.plan_lines limit 1), date '2026-11-20', 0::smallint)$q$, true);
 select pg_temp.expect('Minh phát lệnh khi KH chưa duyệt → chặn', $q$select app.kh_release_day((select id from plan.production_plans limit 1), date '2026-11-02', null, '[]', '[]')$q$, false, 'chưa được duyệt');
@@ -55,9 +55,9 @@ select pg_temp.expect('Minh nhập báo cáo ca → chặn', $q$select app.kh_sa
 -- Lực (TP Kỹ thuật/QA + QC)
 select pg_temp.as_user('Nguyễn Văn Lực');
 select pg_temp.expect('Lực sửa tham số chung → chặn', $q$select app.kh_save_config('{"fill_pct":80}', 'x')$q$, false, 'Chỉ Giám đốc');
-select pg_temp.expect('Lực sửa tốc độ CD1', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":95,"rate_large":80}]', 'Chạy thử đạt 95')$q$, true);
+select pg_temp.expect('Lực sửa tốc độ mặc định CD1 → chặn (khai ở Hồ sơ máy)', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":95,"rate_large":80}]', 'Chạy thử đạt 95')$q$, false, 'Hồ sơ máy');
 select pg_temp.expect('Lực sửa phút đổi máy', $q$select app.kh_save_changeovers('[{"code":"INS_DOWN","minutes":40}]', 'Purge lâu hơn')$q$, true);
-select pg_temp.expect('Lực sửa tốc độ ngoài khoảng → chặn', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":500,"rate_large":80}]', 'x')$q$, false, 'từ 5 đến 300');
+select pg_temp.expect('Lực sửa tốc độ mặc định ngoài khoảng → chặn (đã bỏ)', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":500,"rate_large":80}]', 'x')$q$, false, 'Đã bỏ tốc độ mặc định');
 select pg_temp.expect('Nhật ký có 4 dòng', 'do $x$ begin if (select count(*) from app.v_kh_param_log where at >= now()) <> 4 then raise exception ''sai số dòng %'', (select count(*) from app.v_kh_param_log where at >= now()); end if; end $x$', true);
 select pg_temp.expect('Lực cho ý kiến KT', $q$select app.kh_change_step((select id from plan.change_requests limit 1), 'approve', 'Đồng ý, cần purge')$q$, true);
 select pg_temp.expect('Lực duyệt mẫu đầu ca: đạt', $q$select app.kh_sample(date '2026-11-02', 'EXT-SI-01', 'A', '[{"kind":"Đầu ca","product_code":"PFR-2C-1","status":"PENDING"}]', 0, 'OK')$q$, true);

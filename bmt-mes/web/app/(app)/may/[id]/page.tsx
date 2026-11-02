@@ -338,7 +338,7 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
                   {isAdmin && <AdminSpeedTools s={s} unit={U} back={back} />}</td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={multiOp ? 6 : 5}><Empty>Chưa khai tốc độ. Lịch máy tạm dùng tốc độ mặc định của công đoạn (Tham số xếp lịch).</Empty></td></tr>}
+            {rows.length === 0 && <tr><td colSpan={multiOp ? 6 : 5}><Empty><span className="font-medium text-bad">Alarm: chưa khai tốc độ.</span> Lịch máy không xếp việc lên máy này đến khi có tốc độ (không còn tốc độ giả định).</Empty></td></tr>}
           </tbody>
         </table>
         {canPropose && myOps.length > 0 && (

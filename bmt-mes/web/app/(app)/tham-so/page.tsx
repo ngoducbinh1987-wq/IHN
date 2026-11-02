@@ -1,15 +1,15 @@
 import Link from 'next/link';
-import { Pencil } from 'lucide-react';
+import { AlertTriangle, Pencil } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Alert, LockNote } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Flash, Pill, Toolbar } from '@/components/ui';
 import { QC_LEARN_MIN_SAMPLES, ROLE, hasRole, loadConfig } from '@/lib/kh/load';
-import { DEFAULT_WD, OP_SHORT, type Op, flowOf, nightHours, peopleOf, shiftRun, toMin } from '@/lib/kh/scheduler';
+import { DEFAULT_WD, MACHINE_OPS, OP_SHORT, type Op, flowOf, nightHours, peopleOf, shiftRun, toMin } from '@/lib/kh/scheduler';
 import { df, nf, numIn } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { availExclude, saveBalance, saveChangeovers, saveConfig, saveFlow, savePeople, saveRates, saveShifts, setMode } from './actions';
+import { availExclude, saveBalance, saveChangeovers, saveConfig, saveFlow, savePeople, saveShifts, setMode } from './actions';
 
 export const metadata = { title: 'Tham số xếp lịch' };
 
@@ -26,6 +26,7 @@ const PARAMS: [key: string, label: string, unit: string, range: string][] = [
   ['group_days', 'Khung gom lô cùng cỡ ruột, cùng màu (0 = không gom)', 'ngày', '0 – 30'],
 ];
 const MODE: Record<string, string> = { MANUAL: 'Nhập tay', BOTH: 'Song song', PLC: 'Tự động (PLC)' };
+const OP_TEXT: Record<string, string> = { CD0: 'Trộn silicone (kg/giờ)', CD1: 'Bện ruột dẫn', CD2: 'Bọc cách điện', CD3: 'Xoắn + quấn AL/PET', CD5: 'Bọc vỏ', CD6: 'Đóng gói' };
 const OPNAME: Record<string, string> = { MIXER: 'Trộn silicone (CD0, kg/giờ)', PACKER: 'Kiểm tra + đóng gói bobin gỗ (CD6)', BUNCHER: 'Bện ruột dẫn (CD1)', EXTRUDER_SI: 'Bọc cách điện silicone (CD2)', TWISTER: 'Xoắn + quấn AL/PET (CD3 + CD4)', EXTRUDER_TP: 'Bọc vỏ (CD5); bọc cách điện HDPE/PVC (CD2)' };
 
 export default async function ThamSo({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -46,11 +47,22 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
     evOf.set(a.machine_code, (data ?? []) as AvailEvent[]);
   }));
   const avCfg = av[0] ?? null;
+  // Tốc độ lấy từ máy: máy thiếu thông số (Alarm), mã máy → id để mở Hồ sơ máy, tiết diện mã lõi để sắp xếp
+  const [{ data: gapRows }, { data: mRows }, { data: cRows }] = await Promise.all([
+    db.schema('app').rpc('machine_param_gaps'),
+    db.schema('app').from('v_machines').select('id, code').is('line_id', null),
+    db.schema('master').from('core_types').select('code, nominal_mm2'),
+  ]);
+  const gaps = (gapRows ?? []) as { machine_code: string; op_code: string; message: string }[];
+  const gapMachines = new Set(gaps.map((x) => x.machine_code));
+  const idOf = new Map(((mRows ?? []) as { id: string; code: string }[]).map((x) => [x.code, x.id]));
+  const mm2 = new Map(((cRows ?? []) as { code: string; nominal_mm2: number }[]).map((x) => [x.code, Number(x.nominal_mm2)]));
+  const mm2Of = (c: string | null) => (c ? mm2.get(c) ?? 0 : -1);
   const isGd = me.roles.includes('BGD') || me.roles.includes('ADMIN');
   const isBgd = hasRole(me.roles, ROLE.params), isKt = hasRole(me.roles, ROLE.rates);
   const edit = sp.sua ?? null;
   const E = (s: string, ok: boolean) => ok && edit === s;
-  const mine = [isBgd && 'ca làm việc, tham số xếp lịch, cách nhập dữ liệu máy, giờ làm và làm thêm, tỷ lệ xếp lịch riêng', isKt && 'tốc độ chuẩn, phút đổi máy, thông số dòng chảy (QC, mét/bobin, hạn dùng silicone)', (isBgd || isKt) && 'thông số người đứng máy'].filter(Boolean).join('; ');
+  const mine = [isBgd && 'ca làm việc, tham số xếp lịch, cách nhập dữ liệu máy, giờ làm và làm thêm, tỷ lệ xếp lịch riêng', isKt && 'phút đổi máy, thông số dòng chảy (QC, mét/bobin, hạn dùng silicone)', (isBgd || isKt) && 'thông số người đứng máy'].filter(Boolean).join('; ');
   const head = (sec: string, title: string, ok: boolean, owner: string) => (
     <div className="card-h"><h2>{title}</h2>
       {E(sec, ok) ? <Pill tone="info">Đang sửa</Pill>
@@ -84,7 +96,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
       <Toolbar title="Tham số xếp lịch" reload="/tham-so" />
       <div className="mt-3"><Flash ok={sp.ok} err={sp.err} /></div>
       <Alert tone={mine ? 'ok' : 'info'} title={mine ? `Tài khoản của bạn được sửa: ${mine}` : 'Tài khoản của bạn chỉ xem'}>
-        Tốc độ chuẩn, phút đổi máy: TP Kỹ thuật/QA. Ca, ngày làm việc, tham số xếp lịch, cách nhập dữ liệu máy: Giám đốc (chỉ sửa ở trang này). Quản lý SX đề xuất, không sửa trực tiếp. Mọi thay đổi phải ghi lý do và được lưu nhật ký. Người đứng máy, lịch vắng, kiêm nhiệm tạm, tổ đóng gói: <Link href="/nhan-su-xuong" className="link">Nhân sự xưởng</Link> (TP SX); tay nghề từng máy: <Link href="/may" className="link">Quản lý máy → hồ sơ máy → Người đứng máy</Link>.
+        Tốc độ: lấy từ thông số từng máy (Hồ sơ máy → Tốc độ & dải hoạt động; đã duyệt thì chỉ Quản trị hệ thống sửa). Phút đổi máy: TP Kỹ thuật/QA. Ca, ngày làm việc, tham số xếp lịch, cách nhập dữ liệu máy: Giám đốc (chỉ sửa ở trang này). Quản lý SX đề xuất, không sửa trực tiếp. Mọi thay đổi phải ghi lý do và được lưu nhật ký. Người đứng máy, lịch vắng, kiêm nhiệm tạm, tổ đóng gói: <Link href="/nhan-su-xuong" className="link">Nhân sự xưởng</Link> (TP SX); tay nghề từng máy: <Link href="/may" className="link">Quản lý máy → hồ sơ máy → Người đứng máy</Link>.
       </Alert>
 
       <div className="flex flex-col gap-4">
@@ -158,24 +170,32 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
             </form>
           </section>
 
-          <section className="card">
-            {head('rates', 'Tốc độ mặc định theo công đoạn', isKt, 'TP Kỹ thuật/QA')}
-            <form action={saveRates}>
-              <input type="hidden" name="ops" value={cfg.rates.map((r) => r.op_code).join(',')} />
-              <div className="overflow-x-auto"><table className="tbl">
-                <thead><tr><th>Công đoạn</th><th className="num">Cỡ &lt; {nf(F.size_large_mm2, 2)} mm²</th><th className="num">Cỡ ≥ {nf(F.size_large_mm2, 2)} mm²</th><th>Đơn vị</th></tr></thead>
-                <tbody>{cfg.rates.map((r) => (
-                  <tr key={r.op_code}><td>{r.label}</td>
-                    {(['small', 'large'] as const).map((j) => <td key={j} className="num">{E('rates', isKt)
-                      ? <input name={`${j}_${r.op_code}`} defaultValue={numIn(j === 'small' ? r.rate_small : r.rate_large)} className="inp inline-block w-[80px] py-1 text-right" aria-label={`${r.label} ${j === 'small' ? 'cỡ nhỏ' : 'cỡ lớn'}`} />
-                      : nf(j === 'small' ? r.rate_small : r.rate_large)}</td>)}
-                    <td className="text-[12.5px] text-muted">{r.unit.includes('/') ? r.unit : `${r.unit}/phút`}</td></tr>
-                ))}</tbody>
-              </table></div>
-              {E('rates', isKt) ? foot('rates', 'Ví dụ: Theo kết quả chạy thử tuần 44, line silicone chạy ổn định 85 m/phút.')
-                : <p className="px-4 py-3 text-[12.5px] text-muted">{cfg.rates.some((r) => !r.confirmed) ? <><Pill tone="warn">Giả định · chờ TP Kỹ thuật/QA ban hành</Pill> </> : <><Pill tone="ok">Đã ban hành</Pill> </>}Cáp chống nhiễu chạy xoắn và quấn AL/PET cùng lượt nên lấy tốc độ chậm hơn của hai bước.</p>}
-              <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Xếp lịch dùng <b>tốc độ khai báo của từng máy</b> ở <Link href="/may/toc-do" className="link">Quản lý máy → Tốc độ</Link> ({(cfg.speeds ?? []).length ? `${machines.filter((m) => (cfg.speeds ?? []).some((x) => x.machine_code === m.code)).map((m) => m.code).join(', ')} đã khai báo` : 'chưa máy nào khai báo'}); máy hoặc công đoạn chưa khai báo thì dùng bảng này.</p>
-            </form>
+          <section className="card" id="toc-do-may">
+            <div className="card-h"><h2>Tốc độ theo công đoạn (lấy từ máy)</h2>
+              {gapMachines.size ? <span className="menu-alarm inline-flex items-center gap-1 rounded bg-bad px-2 py-0.5 text-[12px] font-semibold uppercase text-white"><AlertTriangle size={13} />Alarm {gapMachines.size} máy</span>
+                : <Pill tone="ok">Đủ thông số</Pill>}</div>
+            <div className="overflow-x-auto"><table className="tbl">
+              <thead><tr><th>Máy</th><th>Công đoạn</th><th>Tốc độ khai báo</th><th>Tình trạng</th>{me.is_admin && <th />}</tr></thead>
+              <tbody>{machines.flatMap((m) => (MACHINE_OPS[m.machine_type] ?? []).map((op, k) => {
+                const rows = (cfg.speeds ?? []).filter((x) => x.machine_code === m.code && x.op_code === op)
+                  .sort((a, b) => Number(Boolean(a.product_id)) - Number(Boolean(b.product_id)) || (mm2Of(a.core_code) - mm2Of(b.core_code)));
+                const g = gaps.filter((x) => x.machine_code === m.code && x.op_code === op);
+                const unit = op === 'CD0' ? 'kg/giờ' : 'm/ph';
+                return (
+                  <tr key={`${m.code}-${op}`}>
+                    {k === 0 && <td rowSpan={(MACHINE_OPS[m.machine_type] ?? []).length}><b>{m.code}</b><div className="text-[12px] text-muted">{m.name}</div></td>}
+                    <td className="text-[12.5px]">{OP_TEXT[op] ?? op}</td>
+                    <td className="text-[12.5px]">{rows.length ? <div className="flex flex-wrap gap-x-3 gap-y-0.5">{rows.map((x, i) => (
+                      <span key={i} className="whitespace-nowrap">{x.product_id ? 'riêng mã' : x.core_code ? `cỡ ${x.core_code}` : x.group_code ? `nhóm ${x.group_code}` : 'chung'}: <b className="tabular-nums">{nf(Number(x.std_mpm), 1)}</b> {unit}{x.status !== 'APPROVED' && <span className="text-warn"> (chờ duyệt)</span>}</span>
+                    ))}</div> : <span className="text-muted">Chưa khai</span>}</td>
+                    <td className="text-[12.5px]">{g.length ? <div className="flex flex-col gap-0.5">{g.map((x, i) => <span key={i} className="font-medium text-bad"><AlertTriangle size={12} className="mr-1 inline" />Alarm: {x.message}</span>)}</div>
+                      : rows.some((x) => x.status !== 'APPROVED') ? <Pill tone="warn">Có dòng chờ TP KT/QA duyệt</Pill> : <Pill tone="ok">Đủ</Pill>}</td>
+                    {me.is_admin && <td>{idOf.get(m.code) && <Link href={`/may/${idOf.get(m.code)}?tab=toc-do`} className="btn btn-sm"><Pencil size={14} />Sửa</Link>}</td>}
+                  </tr>
+                );
+              }))}</tbody>
+            </table></div>
+            <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Không còn tốc độ giả định: lịch máy chỉ dùng tốc độ khai báo của từng máy (TP KT/QA nhập ở <Link href="/may/toc-do" className="link">Quản lý máy → Tốc độ</Link>, người khác duyệt) hoặc tốc độ đo từ PLC. Máy / cỡ ruột chưa khai thì lịch không xếp việc lên máy đó và menu chính báo <b className="text-bad">Alarm</b>. Thứ tự chọn: riêng mã SP → nhóm + cỡ ruột → cỡ ruột → nhóm → chung của máy. Cáp chống nhiễu xoắn và quấn AL/PET cùng lượt. {me.is_admin ? 'Quản trị hệ thống bấm Sửa để sửa, xóa, duyệt tốc độ đã khai của máy.' : 'Tốc độ đã duyệt chỉ Quản trị hệ thống sửa lại.'}</p>
           </section>
 
           <section className="card">
@@ -221,7 +241,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
                     <tr key={op}><td>Đệm: {OP_SHORT[op].toLowerCase()} đi trước công đoạn sau</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt)
                       ? <input name={`safety_${op}`} defaultValue={F.safety_min[op] ? numIn(F.safety_min[op]!) : ''} placeholder="0" className="inp inline-block w-[80px] py-1 text-right" aria-label={`Đệm an toàn ${op}`} /> : <b>{nf(F.safety_min[op] ?? 0)}</b>} phút</td></tr>
                   ))}
-                  <tr><td>Ngưỡng cỡ lớn (tốc độ mặc định)</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt) ? <input name="size_large_mm2" defaultValue={numIn(F.size_large_mm2)} className="inp inline-block w-[80px] py-1 text-right" aria-label="Ngưỡng cỡ lớn" /> : <b>{nf(F.size_large_mm2, 2)}</b>} mm²</td></tr>
+                  {E('flow', isBgd || isKt) && <tr hidden><td colSpan={2}><input type="hidden" name="size_large_mm2" value={numIn(F.size_large_mm2)} /></td></tr>}
                   <tr><td>Phút chạy tối thiểu để tin tốc độ PLC</td><td className="num whitespace-nowrap">{E('flow', isBgd || isKt) ? <input name="plc_min_run" defaultValue={numIn(F.plc_min_run)} className="inp inline-block w-[80px] py-1 text-right" aria-label="Phút chạy PLC tối thiểu" /> : <b>{nf(F.plc_min_run)}</b>} phút</td></tr>
                 </tbody></table>
               </div>

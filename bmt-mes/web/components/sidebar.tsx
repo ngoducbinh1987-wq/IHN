@@ -4,12 +4,21 @@ import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
-  BarChart3, Bell, BookOpen, Boxes, CalendarRange, CheckSquare, ChevronDown, ClipboardCheck, ClipboardList, Cog, Factory, FileBarChart, FileText, Gauge,
+  AlertTriangle, BarChart3, Bell, BookOpen, Boxes, CalendarRange, CheckSquare, ChevronDown, ClipboardCheck, ClipboardList, Cog, Factory, FileBarChart, FileText, Gauge,
   History, Loader2, Monitor, PackageCheck, PackageMinus, ScanLine, Search, Settings, ShoppingCart, SlidersHorizontal, Timer, Truck, Users, Warehouse,
   Workflow, Wrench,
 } from 'lucide-react';
 
-export type NavItem = { href: string; label: string; icon: string; group: string; badge?: number; static?: boolean };
+// alarm: số máy thiếu thông số (hiện nhãn đỏ "Alarm"), title: lời nhắc khi rê chuột
+export type NavItem = { href: string; label: string; icon: string; group: string; badge?: number; alarm?: number; alarmTitle?: string; static?: boolean };
+
+function AlarmTag({ n, title }: { n: number; title?: string }) {
+  return (
+    <span className="menu-alarm inline-flex shrink-0 items-center gap-1 rounded bg-bad px-1.5 py-0.5 text-[11.5px] font-semibold uppercase leading-none text-white" title={title} role="status" aria-label={`Alarm: ${n} máy thiếu thông số`}>
+      <AlertTriangle size={12} />Alarm {n}
+    </span>
+  );
+}
 
 const ICONS = {
   gauge: Gauge, check: CheckSquare, bell: Bell, plan: ClipboardList, spec: FileText, mat: Boxes,
@@ -67,6 +76,7 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
           // Đang tìm kiếm thì mở mọi nhóm có kết quả
           const expanded = !!q || open.includes(g);
           const total = list.reduce((s, i) => s + (i.badge ?? 0), 0);
+          const alarm = Math.max(0, ...list.map((i) => i.alarm ?? 0));
           const GIcon = ICONS[GROUP_ICONS[g] ?? 'spec'];
           const id = `menu-nhom-${gi}`;
           const here = g === current;
@@ -77,6 +87,7 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
                 className={`flex items-center gap-3 border-l-4 px-4 py-3 text-left text-[15px] font-medium ${here && !expanded ? 'border-brand bg-side-2 text-white' : 'border-transparent text-white/90 hover:bg-white/5 hover:text-white'}`}>
                 <GIcon size={18} className="shrink-0" />
                 <span className="flex-1">{g}</span>
+                {!expanded && alarm > 0 && <AlarmTag n={alarm} title={list.find((i) => i.alarm)?.alarmTitle} />}
                 {!expanded && total > 0 && <span className="rounded-full bg-bad px-2 text-[12px] font-medium text-white">{total}</span>}
                 <ChevronDown size={16} className={`shrink-0 text-side-ink/70 transition-transform ${expanded ? 'rotate-180' : ''}`} />
               </button>
@@ -91,6 +102,7 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
                       <Icon size={16} className="shrink-0" />
                       <span className="flex-1">{i.label}</span>
                       {!i.static && <LinkPending />}
+                      {!!i.alarm && <AlarmTag n={i.alarm} title={i.alarmTitle} />}
                       {!!i.badge && <span className="rounded-full bg-bad px-2 text-[12px] font-medium text-white">{i.badge}</span>}
                     </>
                   );

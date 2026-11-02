@@ -80,7 +80,7 @@ reset role;
 select pg_temp.as_user('M_VH');
 set local role authenticated;
 select pg_temp.fails($$select app.set_operator_skill('$$ || pg_temp.v('line') || $$', 'NV5', 'LEARNING')$$, 'Chỉ Quản lý SX', 'Vận hành không giao người đứng máy');
-select pg_temp.ok((select count(*) from app.machine_rate_defaults()) = 7, 'Vận hành xem được tốc độ mặc định theo công đoạn');
+select pg_temp.ok((select count(*) from app.machine_rate_defaults()) = 0, 'Không còn tốc độ mặc định giả định theo công đoạn (migration 8200)');
 reset role;
 select pg_temp.as_user('M_SXTP');
 set local role authenticated;
@@ -266,8 +266,8 @@ create temp table _cap as select app.check_capacity(null, current_date, current_
 select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'EXTRUDER_SI'), 'Tính giờ cần cho line silicone (bọc cách điện silicone)');
 select pg_temp.ok((select jsonb_array_length(j -> 'ops') >= 1 from _cap), 'Có năng lực từng công đoạn');
 select pg_temp.ok((select (j -> 'issues')::text like '%chưa có người đứng máy chính%' from _cap), 'Cảnh báo dây chuyền chưa có người đứng máy');
-select pg_temp.ok((select (j -> 'issues')::text like '%tốc độ mặc định%' from _cap), 'Máy bện chưa có tốc độ riêng: dùng tốc độ mặc định của công đoạn');
-select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'BUNCHER'), 'Máy bện vẫn tính được giờ cần theo tốc độ mặc định');
+select pg_temp.ok((select (j -> 'issues')::text like '%Chưa có tốc độ chuẩn (Bện%' and (j -> 'issues')::text like '%Hồ sơ máy → Tốc độ%' from _cap), 'Máy bện chưa khai tốc độ: báo thiếu tốc độ chuẩn, không dùng số giả định (migration 8200)');
+select pg_temp.ok((select coalesce((o ->> 'req_min')::numeric, 0) = 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'BUNCHER'), 'Máy bện chưa khai tốc độ: không đoán giờ cần');
 select pg_temp.ok((select (j -> 'issues')::text like '%Thay nước máng%' from _cap) is false, 'Phiếu đang mở thì không báo quá hạn nữa');
 drop table _cap;
 insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom)
@@ -276,6 +276,13 @@ create temp table _cap as select app.check_capacity(null, current_date, current_
   jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('p6'), 'qty_m', 1000))) as j;
 select pg_temp.ok((select (j -> 'issues')::text like '%ngoài dải%' from _cap), 'Sản phẩm ngoài dải tiết diện của máy bị chặn');
 drop table _cap;
+-- Tốc độ chỉ lấy từ máy (migration 8200): khai tốc độ chung cho line vỏ, xoắn, line silicone trong giao dịch
+reset role;
+insert into master.machine_speeds (machine_id, op_code, std_mpm, setup_min, status)
+select m.id, o.op, 60, 10, 'APPROVED' from master.machines m
+  join (values ('EXTRUDER_TP', 'CD2'), ('EXTRUDER_TP', 'CD5'), ('TWISTER', 'CD3'), ('EXTRUDER_SI', 'CD2')) o(t, op) on o.t = m.machine_type
+ where m.inline_with is null and m.active;
+set local role authenticated;
 create temp table _cap as select app.check_capacity(null, current_date, current_date + 27, 1, 0,
   jsonb_build_array(jsonb_build_object('product_id', pg_temp.v('pvc'), 'qty_m', 5000))) as j;
 select pg_temp.ok((select (o ->> 'req_min')::numeric > 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'EXTRUDER_TP')

@@ -4,7 +4,7 @@
 // gối đầu công đoạn ≥ 1 ca; chỉ xếp khi có người đủ tay nghề rảnh; xếp lại giữ nguyên phần trước mốc (đã chạy + vùng khóa).
 // Tốc độ: máy chế độ Tự động (PLC) dùng tốc độ thực tế đo từ PLC (30 ngày, đủ ≥ PLC_MIN_RUN phút chạy);
 // chế độ Nhập tay/Song song (hoặc PLC chưa đủ dữ liệu) dùng bảng tốc độ tự nhập của máy (master.machine_speeds);
-// máy chưa khai báo dùng tốc độ mặc định theo công đoạn.
+// máy chưa khai báo tốc độ thì không xếp việc lên máy và báo thiếu thông số (từ 02/11/2026 không còn tốc độ mặc định giả định).
 // Trộn silicone (CD0, máy trộn trong phòng lạnh) khai báo năng lực theo kg/giờ: đổi ra mét cáp/phút theo kg hỗn hợp/km cáp (BOM CD0);
 // trộn chỉ là tiền đề của bọc cách điện, bện không phải chờ trộn. Đóng gói (CD6) trên máy cuốn bobin gỗ là công đoạn cuối.
 // Người đứng máy (anh Bình duyệt 28/10/2026): máy tự chạy (bện, đùn, xoắn) chỉ cần người lúc đổi máy + khởi động và mỗi lần thay bobin;
@@ -344,18 +344,27 @@ export function canRun(machineType: string, t: Pick<Task, 'op' | 'order'>): bool
   return (MACHINE_OPS[machineType] ?? []).includes(t.op);
 }
 
-// Tốc độ mặc định theo công đoạn (Tham số xếp lịch): cỡ nhỏ và cỡ lớn (ngưỡng flow.size_large_mm2).
-// Chưa khai báo tốc độ công đoạn → 0: không xếp, báo thiếu thông số (không đoán số)
+// Bảng tốc độ theo công đoạn (cfg.rates): database không còn cấp (anh Bình 02/11/2026: chỉ dùng tốc độ khai báo của máy),
+// chỉ còn cho bộ kiểm thử dựng cấu hình giả. Trống → 0: không xếp, báo thiếu thông số (không đoán số)
 const defRate = (cfg: Pick<Config, 'rates' | 'flow'>, code: string, o: Pick<Order, 'size'>) => {
   const x = cfg.rates.find((y) => y.op_code === code);
   if (!x) return 0;
   const v = Number(o.size >= flowOf(cfg).size_large_mm2 ? x.rate_large : x.rate_small);
   return v > 0 ? v : 0;
 };
-export function speedOf(cfg: Pick<Config, 'rates' | 'flow'>, op: Op, o: Pick<Order, 'size' | 'shield' | 'mix'>): number {
-  if (op === 'CD3' && o.shield) return Math.min(defRate(cfg, 'CD3', o), defRate(cfg, 'CD4', o));
-  if (op === 'CD0') return mixMpm(defRate(cfg, 'CD0', o), o);
-  return defRate(cfg, op, o);
+// Tốc độ ước lượng một việc (chưa chọn máy): bảng công đoạn nếu có, không thì tốc độ khai báo nhanh nhất của các máy
+// phủ được mã này (tốc độ chạy thật lấy theo từng máy ở rateOn)
+const anySpeed = (cfg: Partial<Pick<Config, 'speeds'>>, code: string, o: Partial<Pick<Order, 'product_id' | 'group' | 'core'>>) => {
+  const ms = [...new Set((cfg.speeds ?? []).filter((x) => x.op_code === code).map((x) => x.machine_code))];
+  return Math.max(0, ...ms.map((m) => machineSpeed({ speeds: cfg.speeds ?? [] }, m, code, { product_id: o.product_id ?? null, group: o.group ?? '', core: o.core ?? null })?.v ?? 0));
+};
+const estRate = (cfg: Pick<Config, 'rates' | 'flow'> & Partial<Pick<Config, 'speeds'>>, code: string, o: Pick<Order, 'size'> & Partial<Pick<Order, 'product_id' | 'group' | 'core'>>) =>
+  defRate(cfg, code, o) || anySpeed(cfg, code, o);
+export function speedOf(cfg: Pick<Config, 'rates' | 'flow'> & Partial<Pick<Config, 'speeds'>>, op: Op,
+  o: Pick<Order, 'size' | 'shield' | 'mix'> & Partial<Pick<Order, 'product_id' | 'group' | 'core'>>): number {
+  if (op === 'CD3' && o.shield) { const a = estRate(cfg, 'CD3', o), b = estRate(cfg, 'CD4', o); return b > 0 ? Math.min(a, b) : a; }
+  if (op === 'CD0') return mixMpm(estRate(cfg, 'CD0', o), o);
+  return estRate(cfg, op, o);
 }
 
 // Tốc độ khai báo của một máy cho một công đoạn (giống app.check_capacity):
@@ -394,7 +403,8 @@ export function plcSpeed(cfg: Pick<Config, 'plc_speeds' | 'flow'>, machine: stri
   return null;
 }
 // Tốc độ chạy một công đoạn trên một máy theo chế độ nhập dữ liệu của máy.
-// Bảng tự nhập: xoắn có quấn AL/PET liền dây lấy tốc độ chậm hơn của hai bước.
+// Bảng tự nhập: xoắn có quấn AL/PET liền dây lấy tốc độ chậm hơn của hai bước (máy chưa khai riêng quấn AL/PET: theo tốc độ xoắn).
+// Máy chưa khai tốc độ → 0 (không xếp lên máy, báo thiếu thông số).
 export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds' | 'flow'>, machine: string, op: Op,
   o: Pick<Order, 'size' | 'shield' | 'product_id' | 'group' | 'core' | 'mix'>, mode = 'MANUAL'): Speed {
   if (op === 'CD0') {
@@ -411,19 +421,19 @@ export function rateOn(cfg: Pick<Config, 'rates' | 'speeds' | 'plc_speeds' | 'fl
   let r: Speed;
   if (op === 'CD3' && o.shield) {
     const a = one('CD3'), b = one('CD4');
-    r = { v: Math.min(a.v, b.v), src: a.src === 'MAY' || b.src === 'MAY' ? 'MAY' : 'MD', pending: a.pending || b.pending };
+    r = b.v > 0 ? { v: Math.min(a.v, b.v), src: a.src === 'MAY' || b.src === 'MAY' ? 'MAY' : 'MD', pending: a.pending || b.pending } : a;
   } else r = one(op);
   if (mode === 'PLC') r.note = 'máy chế độ tự động nhưng PLC chưa đủ dữ liệu';
   return r;
 }
 
-// Năng lực một máy trộn (kg/giờ): bảng khai báo của máy (dòng chung, không riêng mã) → mặc định công đoạn CD0
+// Năng lực một máy trộn (kg/giờ): bảng khai báo của máy (dòng chung, không riêng mã); chưa khai → 0 (báo thiếu)
 export function mixerKgh(cfg: Pick<Config, 'rates' | 'speeds' | 'flow'>, machine: string): number {
   const s = machineSpeed(cfg, machine, 'CD0', { product_id: null, group: '', core: null });
   return s ? s.v : defRate(cfg, 'CD0', { size: 0 });
 }
 
-export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates' | 'flow'>): Task[] {
+export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates' | 'flow'> & Partial<Pick<Config, 'speeds'>>): Task[] {
   const tasks: Task[] = [];
   orders.forEach((o, oi) => {
     o.route.forEach((op, k) => {
@@ -1417,7 +1427,7 @@ export function schedule(
         const t = tasks[id];
         if (!canRun(m.machine_type, t)) continue;
         const sp = spOf(m.code, t);
-        if (!(sp.v > 0)) { warnings.add(`Chưa có tốc độ ${OP_NAME[t.op].toLowerCase()} cho máy ${m.code} (Hồ sơ máy → Tốc độ hoặc Tham số xếp lịch): không xếp việc này lên máy`); continue; }
+        if (!(sp.v > 0)) { warnings.add(`Chưa có tốc độ ${OP_NAME[t.op].toLowerCase()} cho máy ${m.code} (Hồ sơ máy → Tốc độ & dải hoạt động): không xếp việc này lên máy`); continue; }
         const run = t.m / sp.v;
         const r = ready(t, run, sp.v, m.code);
         if (r === null || !Number.isFinite(r)) continue;

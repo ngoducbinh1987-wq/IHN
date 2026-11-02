@@ -217,7 +217,7 @@ export function OptimizeTab({ kh, sp, roles, userId, ots, reqs }: { kh: Kh; sp: 
           <tr><td>Đệm an toàn</td><td>{Object.entries(F.safety_min).filter(([, v]) => Number(v) > 0).map(([k, v]) => `${k} ${nf(Number(v))} phút`).join(' · ') || 'không'}</td></tr>
           <tr><td>Máy trộn</td><td>{mixers.map((m) => `${m.code} ${h1(mixerKgh(kh.cfg, m.code))} kg/giờ`).join(' · ') || 'không có'} · hạn dùng silicone {h1(F.pot_life_h)} giờ · mẻ {nf(F.mix_batch_kg)} kg · 1 người đứng riêng</td></tr>
           <tr><td>Gom lô</td><td>{kh.cfg.group_days ?? 0} ngày · việc bắt đầu cách nhau ≤ {F.pick_window_min == null ? 'nửa ca' : `${F.pick_window_min} phút`} coi như cùng lúc</td></tr>
-          <tr><td>Tốc độ mặc định</td><td>cỡ từ {nf(F.size_large_mm2, 2)} mm² dùng tốc độ cỡ lớn · tin tốc độ PLC khi đủ {nf(F.plc_min_run)} phút chạy</td></tr>
+          <tr><td>Tốc độ</td><td>tốc độ khai báo của từng máy (Hồ sơ máy → Tốc độ) · tin tốc độ PLC khi đủ {nf(F.plc_min_run)} phút chạy</td></tr>
         </tbody></table></div>
       </section>
     </div>

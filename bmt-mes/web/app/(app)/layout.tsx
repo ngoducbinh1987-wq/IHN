@@ -11,7 +11,7 @@ import { replanDue } from '@/lib/kh/replan';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   // Hồ sơ người dùng và các số đếm trên menu chạy song song (một lượt hỏi database thay vì hai)
-  const [me, { count: myTurn }, { count: unread }, { count: maintAll }, { count: qcWait }, { data: safetyBelow }, { count: poDraft }] = await Promise.all([
+  const [me, { count: myTurn }, { count: unread }, { count: maintAll }, { count: qcWait }, { data: safetyBelow }, { count: poDraft }, { data: paramAlarm }] = await Promise.all([
     requireMe(),
     supabase.schema('app').from('v_approvals').select('id', { count: 'exact', head: true }).eq('my_turn', true),
     supabase.schema('app').from('v_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
@@ -23,6 +23,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     supabase.schema('app').rpc('safety_below_count'),
     // Đơn mua MES tự sinh chờ NV mua kiểm tra (RLS: người xem được mua hàng)
     supabase.schema('purchase').from('purchase_orders').select('id', { count: 'exact', head: true }).eq('status', 'DRAFT'),
+    // Máy xếp lịch còn thiếu thông số tốc độ (Alarm; hàm tự kiểm quyền xem máy / kế hoạch SX)
+    supabase.schema('app').rpc('machine_param_alarm_count'),
   ]);
   // Tính lại tiến độ sau ca: 1 giờ sau khi hết ca, lần đầu TP SX / Kế hoạch SX / Giám đốc mở MES thì MES tính (sau khi trả trang,
   // không làm chậm trang); job máy chủ bmt_replan làm việc này khi đã cấu hình CRON_SECRET + khóa máy chủ
@@ -76,6 +78,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { key: 'may-cai-dat', href: '/may/cai-dat', label: 'Cài đặt máy', icon: 'settings', group: 'Hệ thống & cài đặt' },
   ];
   for (const { key, ...it } of PAGES) if (canPage(me, key)) items.push(it);
+  // Alarm máy thiếu thông số (tốc độ khai báo của máy): Danh sách máy, Tốc độ sản xuất, Tham số xếp lịch
+  const nAlarm = Number(paramAlarm ?? 0);
+  if (nAlarm > 0) for (const it of items) if (['/may', '/may/toc-do', '/tham-so'].includes(it.href)) {
+    it.alarm = nAlarm; it.alarmTitle = `${nAlarm} máy chưa khai đủ tốc độ: lịch máy không xếp việc lên máy đó. Khai ở Hồ sơ máy → Tốc độ & dải hoạt động`;
+  }
   // Ô tick phân quyền: chỉ Quản trị hệ thống thấy
   if (me.is_admin) items.push({ href: '/quan-tri/phan-quyen', label: 'Phân quyền', icon: 'users', group: 'Hệ thống & cài đặt' });
   const menu = items;
