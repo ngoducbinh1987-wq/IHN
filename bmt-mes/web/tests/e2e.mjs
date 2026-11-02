@@ -464,7 +464,7 @@ await clickNav(page, 'a:has-text("Thêm spec mới")');
 await page.selectOption('select[name=mau]', 'PFR-2C-1P5');
 await clickNav(page, 'button:has-text("Sao chép thông số")');
 await page.fill('input[name=new_code]', 'PFR-2C-1P0');
-await page.fill('input[name=wire_count]', '32');
+await page.fill('input[name=wire_n_0]', '32');
 await clickNav(page, 'button:has-text("Tạo spec nháp")');
 await expectOk(page, 'Tạo spec mới PFR-2C-1P0 từ mẫu PFR-2C-1P5');
 { const u = new URL(page.url()); u.searchParams.delete('ok'); u.searchParams.set('tab', 'bom'); await page.goto(u.href); }

@@ -70,6 +70,10 @@ select pg_temp.ok(pg_temp.api_val($q$select app.kh_save_config('{"group_days": 0
 select pg_temp.ok((select group_days = 0 from master.planning_config where id = 1), 'Khung gom lô lưu 0 ngày (chạy đúng thứ tự hạn giao)');
 
 -- ================================================================ 2. Tốc độ theo máy trong app.v_kh_config
+-- Dữ liệu thật có thể đã duyệt tốc độ mặc định của EXT-SI-01: tạm cho hết hiệu lực trong giao dịch
+update master.machine_speeds set status = 'OBSOLETE'
+ where status = 'APPROVED' and op_code = 'CD2' and product_id is null and core_code is null and group_code is null
+   and machine_id = (select id from master.machines where code = 'EXT-SI-01');
 insert into master.machine_speeds (machine_id, op_code, std_mpm, rated_mpm, status, label)
 select id, 'CD2', 95, 90, 'APPROVED', 'Thử G1' from master.machines where code = 'EXT-SI-01';
 insert into master.machine_speeds (machine_id, op_code, std_mpm, status, label)
