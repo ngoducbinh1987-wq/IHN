@@ -14,7 +14,7 @@ import { MACHINE_OPS } from '@/lib/kh/scheduler';
 import { can, canPage, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import {
-  addComponent, addDoc, addSpeed, approveSpeed, deleteRow, removeOperatorSkill, saveRange, saveSpecs, setOperatorSkill, signOperatorSkill, updateMachine,
+  addComponent, addDoc, addSpeed, adminDeleteSpeed, adminEditSpeed, approveAllSpeeds, approveSpeed, deleteRow, removeOperatorSkill, saveRange, saveSpecs, setOperatorSkill, signOperatorSkill, updateMachine,
 } from '../actions';
 
 const TABS: [string, string][] = [
@@ -107,7 +107,7 @@ export default async function MachineProfile({ params, searchParams }:
 
       <SubTabs base={base} items={tabs} active={tab} />
       {tab === 'thong-so' && <SpecsTab id={id} cfg={cfg} back={here} />}
-      {tab === 'toc-do' && <SpeedTab lineId={lineId} isLine={isLine} machineType={line?.machine_type ?? m.machine_type} cfg={cfg} canPropose={cfg || can(me, 'machine', 'create')} meId={me.is_admin ? '' : me.id} canApprove={can(me, 'machine', 'approve')} back={here} />}
+      {tab === 'toc-do' && <SpeedTab lineId={lineId} isLine={isLine} machineType={line?.machine_type ?? m.machine_type} cfg={cfg} canPropose={cfg || can(me, 'machine', 'create')} meId={me.is_admin ? '' : me.id} canApprove={can(me, 'machine', 'approve')} isAdmin={me.is_admin === true} back={here} />}
       {tab === 'bao-duong' && <MaintTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} />}
       {tab === 'nguoi' && <PeopleTab id={id} lineId={lineId} isLine={isLine} cfg={cfg} canAssign={cfg || me.roles.includes('SX_TP')} canCertify={me.roles.includes('KT_TP') || me.roles.includes('ADMIN')} back={here} />}
       {tab === 'lich-su' && <HistoryTab lineId={lineId} machineId={id} isLine={isLine} />}
@@ -235,8 +235,33 @@ function DeleteBtn({ table, id, back, label = 'Xóa' }: { table: string; id: str
 // ---------------------------------------------------------------- Tốc độ + dải hoạt động
 // Dải hoạt động = tiết diện ruột dẫn (mm²) máy làm được; kiểm tra kế hoạch so với tiết diện trong spec, mọi loại máy
 
-async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, canApprove, back }:
-  { lineId: string; isLine: boolean; machineType: string | null; cfg: boolean; canPropose: boolean; meId: string; canApprove: boolean; back: string }) {
+// Quản trị hệ thống: sửa tốc độ, phút đổi máy (dòng chờ duyệt hoặc đã duyệt; tích để duyệt luôn), xóa dòng; bắt buộc lý do
+function AdminSpeedTools({ s, unit, back }: { s: { id: string; status: string; std_mpm: number; setup_min: number }; unit: string; back: string }) {
+  return (
+    <details className="admin-toc-do mt-1 text-right">
+      <summary className="cursor-pointer text-[12.5px] font-medium text-brand">Quản trị: sửa / xóa</summary>
+      <form action={adminEditSpeed} className="mt-2 flex flex-col items-stretch gap-2 rounded border border-line bg-surface p-2 text-left text-[12.5px]">
+        <input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={back} />
+        <div className="flex gap-2">
+          <label className="lbl w-[110px]">Chuẩn ({unit})<input name="std_mpm" className="inp" inputMode="decimal" defaultValue={numIn(s.std_mpm)} required /></label>
+          <label className="lbl w-[110px]">Đổi máy (phút)<input name="setup_min" className="inp" inputMode="decimal" defaultValue={numIn(s.setup_min)} /></label>
+        </div>
+        <label className="lbl">Lý do<input name="reason" className="inp" required /></label>
+        {s.status === 'PENDING' && <label className="flex items-center gap-2"><input type="checkbox" name="approve" defaultChecked />Duyệt luôn</label>}
+        <SubmitButton className="btn btn-sm btn-pri" pendingText="…">{s.status === 'PENDING' ? 'Lưu' : 'Lưu (giữ đã duyệt)'}</SubmitButton>
+      </form>
+      <form action={adminDeleteSpeed} className="mt-2 flex flex-col items-stretch gap-2 rounded border border-line bg-surface p-2 text-left text-[12.5px]">
+        <input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={back} />
+        <label className="lbl">Lý do xóa<input name="reason" className="inp" required /></label>
+        <label className="flex items-center gap-2"><input type="checkbox" name="confirm" />Xóa dòng tốc độ này</label>
+        <SubmitButton className="btn btn-sm btn-bad-o" pendingText="…">Xóa</SubmitButton>
+      </form>
+    </details>
+  );
+}
+
+async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, canApprove, isAdmin, back }:
+  { lineId: string; isLine: boolean; machineType: string | null; cfg: boolean; canPropose: boolean; meId: string; canApprove: boolean; isAdmin: boolean; back: string }) {
   if (!isLine) {
     return <section className="card"><Empty>Tốc độ và dải hoạt động khai theo dây chuyền. <Link className="link" href={`/may/${lineId}?tab=toc-do`}>Mở dây chuyền</Link>.</Empty></section>;
   }
@@ -261,6 +286,7 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
   const U = machineType === 'MIXER' ? 'kg/giờ' : 'm/ph'; // máy trộn khai báo năng lực theo kg hỗn hợp/giờ
   const rg = ranges?.[0];
   const sizeText = (core: string | null) => core ? `Cỡ ${nf(mm2.get(core) ?? 0, 2)} mm² (${core})` : null;
+  const pendingMine = (speeds ?? []).filter((s) => s.status === 'PENDING' && s.created_by !== meId).length;
   const rows = [...(speeds ?? [])].sort((x, y) => String(x.op_code).localeCompare(String(y.op_code))
     || Number(Boolean(x.product_id)) - Number(Boolean(y.product_id)) || (mm2.get(x.core_code) ?? 0) - (mm2.get(y.core_code) ?? 0));
   return (
@@ -283,6 +309,13 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
 
       <section className="card overflow-x-auto">
         <div className="card-h">Tốc độ chuẩn ({U})<span className="text-[13px] font-normal text-muted">Lịch máy chọn: riêng mã SP → theo cỡ ruột → mặc định của máy</span></div>
+        {canApprove && pendingMine > 0 && (
+          <form action={approveAllSpeeds} className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2.5" id="duyet-tat-ca-toc-do">
+            <input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="back" value={back} />
+            <SubmitButton className="btn btn-sm btn-pri" pendingText="Đang duyệt…">Duyệt tất cả ({pendingMine})</SubmitButton>
+            <span className="text-[12.5px] text-muted">duyệt mọi dòng chờ duyệt của máy này{isAdmin ? '' : ' (trừ dòng bạn nhập)'}</span>
+          </form>
+        )}
         <table className="tbl">
           <thead><tr>{multiOp && <th>Công đoạn</th>}<th>Áp dụng cho</th><th className="num">Chuẩn ({U})</th><th className="num">Đổi máy (phút/lô)</th><th>Tình trạng</th><th /></tr></thead>
           <tbody>
@@ -300,8 +333,9 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
                   </div></td>
                 <td><div className="flex justify-end gap-1.5">
                   {s.status === 'PENDING' && canApprove && s.created_by !== meId && <form action={approveSpeed}><input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={back} /><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt</SubmitButton></form>}
-                  {s.status === 'PENDING' && cfg && <DeleteBtn table="speed" id={s.id} back={back} />}
-                </div></td>
+                  {s.status === 'PENDING' && cfg && !isAdmin && <DeleteBtn table="speed" id={s.id} back={back} />}
+                </div>
+                  {isAdmin && <AdminSpeedTools s={s} unit={U} back={back} />}</td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={multiOp ? 6 : 5}><Empty>Chưa khai tốc độ. Lịch máy tạm dùng tốc độ mặc định của công đoạn (Tham số xếp lịch).</Empty></td></tr>}

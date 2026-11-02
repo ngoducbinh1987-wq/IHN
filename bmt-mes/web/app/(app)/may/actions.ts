@@ -172,6 +172,34 @@ export async function approveSpeed(form: FormData) {
   done(form, 'Đã duyệt tốc độ chuẩn');
 }
 
+// Duyệt mọi dòng tốc độ chờ duyệt của một máy (không có machine_id = mọi máy); bỏ qua dòng mình nhập (trừ Quản trị)
+export async function approveAllSpeeds(form: FormData) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('app').rpc('approve_machine_speeds', { p_machine: opt(form, 'machine_id') });
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, Number(data) > 0 ? `Đã duyệt ${data} dòng tốc độ` : 'Không còn dòng nào bạn duyệt được');
+}
+
+// Quản trị hệ thống: sửa tốc độ chuẩn, phút đổi máy ở dòng chờ duyệt / đã duyệt (duyệt luôn nếu tích), xóa mọi dòng
+export async function adminEditSpeed(form: FormData) {
+  const supabase = await createClient();
+  const std = num(form, 'std_mpm');
+  if (!std || std <= 0) back(form, 'err', 'Nhập tốc độ chuẩn lớn hơn 0');
+  const { data, error } = await supabase.schema('app').rpc('admin_speed_edit', {
+    p_id: txt(form, 'id'), p_std: std, p_setup: num(form, 'setup_min'), p_approve: form.get('approve') === 'on', p_reason: txt(form, 'reason'),
+  });
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, data === 'APPROVED' ? 'Đã sửa tốc độ (đã duyệt). Quản lý SX bấm Xếp lại lịch để áp dụng.' : 'Đã sửa tốc độ, vẫn chờ duyệt');
+}
+
+export async function adminDeleteSpeed(form: FormData) {
+  const supabase = await createClient();
+  if (form.get('confirm') !== 'on') back(form, 'err', 'Tích ô xác nhận trước khi xóa tốc độ');
+  const { error } = await supabase.schema('app').rpc('admin_speed_delete', { p_id: txt(form, 'id'), p_reason: txt(form, 'reason') });
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, 'Đã xóa dòng tốc độ');
+}
+
 // Người đứng máy: dùng chung NV1–NV5 với Lịch máy (master.operator_skills)
 export async function setOperatorSkill(form: FormData) {
   const supabase = await createClient();

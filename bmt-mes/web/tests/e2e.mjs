@@ -1167,5 +1167,64 @@ await ctx.close();
   ok('Quản trị xóa người dùng: tài khoản mới xóa hẳn; NV mua đã có chứng từ bị khóa + ẩn, giữ tên; cả hai không đăng nhập được; Giám đốc không thấy khung xóa');
 }
 
+// 18. Quản trị sửa, duyệt, xóa tốc độ máy; TP KT/QA không thấy khung của Quản trị
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'admin@bmt.test', 'Admin@12345');
+  await p.goto(`${BASE}/may`);
+  const bun = await p.locator('a[href^="/may/"]', { hasText: 'BUN-01' }).first().getAttribute('href');
+  if (!bun) fail('Không tìm thấy BUN-01 trong danh sách máy');
+  const url = `${BASE}${bun.split('?')[0]}?tab=toc-do`;
+  await p.goto(url);
+  const add = p.locator('form:has(button:has-text("Thêm tốc độ"))');
+  await add.locator('select[name=product_id]').selectOption({ label: 'PFR-2C-1P5' });
+  await add.locator('input[name=std_mpm]').fill('111');
+  await clickNav(p, 'button:has-text("Thêm tốc độ")');
+  await expectOk(p, 'Quản trị thêm tốc độ riêng PFR-2C-1P5 cho BUN-01');
+  const row = () => p.locator('tr', { hasText: 'PFR-2C-1P5' }).first();
+  await row().locator('.admin-toc-do summary').click();
+  const f = row().locator('.admin-toc-do form').first();
+  await f.locator('input[name=std_mpm]').fill('123,5');
+  await f.locator('input[name=setup_min]').fill('15');
+  await f.locator('input[name=reason]').fill('E2E: đo lại thực tế');
+  await Promise.all([p.waitForURL((u) => u.href !== url), f.locator('button[type=submit]').click()]);
+  await p.waitForLoadState('networkidle');
+  await expectOk(p, 'Quản trị sửa và duyệt luôn tốc độ');
+  const t1 = await row().innerText();
+  if (!t1.includes('123,5') || !t1.includes('Đã duyệt')) fail(`Dòng tốc độ phải là 123,5 và Đã duyệt: ${t1}`);
+  // Sửa tiếp dòng đã duyệt
+  await row().locator('.admin-toc-do summary').click();
+  const f2 = row().locator('.admin-toc-do form').first();
+  await f2.locator('input[name=std_mpm]').fill('130');
+  await f2.locator('input[name=reason]').fill('E2E: máy nâng cấp');
+  const u2 = p.url();
+  await Promise.all([p.waitForURL((u) => u.href !== u2), f2.locator('button[type=submit]').click()]);
+  await p.waitForLoadState('networkidle');
+  await expectOk(p, 'Quản trị sửa tốc độ đã duyệt');
+  if (!(await row().innerText()).includes('130')) fail('Tốc độ đã duyệt phải đổi thành 130');
+  await c.close();
+  const [c2, p2] = await ctxFor();
+  await login(p2, 'kt.tp@bmt.test');
+  await p2.goto(url);
+  if (await p2.locator('.admin-toc-do').count()) fail('TP KT/QA không được thấy khung sửa của Quản trị');
+  await c2.close();
+  const [c3, p3] = await ctxFor();
+  await login(p3, 'admin@bmt.test', 'Admin@12345');
+  await p3.goto(url);
+  const r3 = p3.locator('tr', { hasText: 'PFR-2C-1P5' }).first();
+  await r3.locator('.admin-toc-do summary').click();
+  const fd = r3.locator('.admin-toc-do form').nth(1);
+  await fd.locator('input[name=reason]').fill('E2E: xóa dòng thử');
+  await fd.locator('input[name=confirm]').check();
+  await Promise.all([p3.waitForURL((u) => u.href !== url), fd.locator('button[type=submit]').click()]);
+  await p3.waitForLoadState('networkidle');
+  await expectOk(p3, 'Quản trị xóa tốc độ đã duyệt');
+  if (await p3.locator('tr', { hasText: 'PFR-2C-1P5' }).count()) fail('Dòng tốc độ đã xóa vẫn còn');
+  await p3.goto(`${BASE}/quan-tri`);
+  if (!(await p3.innerText('main')).includes('Sửa tốc độ máy')) fail('Nhật ký can thiệp phải ghi Sửa tốc độ máy');
+  await c3.close();
+  ok('Quản trị sửa + duyệt luôn, sửa dòng đã duyệt, xóa tốc độ BUN-01; TP KT/QA không thấy khung Quản trị; nhật ký ghi lại');
+}
+
 await browser.close();
 console.log(`==> ĐẠT ${n} kiểm tra end-to-end`);

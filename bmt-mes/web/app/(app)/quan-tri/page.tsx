@@ -16,7 +16,7 @@ type C = { role_a: string; role_b: string; reason: string };
 type R = { at: string; by_name: string; signout: boolean; sessions_ended: number };
 type O = { at: string; actor: string; action: string; doc_type: string | null; doc_no: string | null; reason: string | null };
 const OVERRIDE: Record<string, string> = { ADMIN_CANCEL: 'Hủy quy trình', ADMIN_REOPEN: 'Mở lại để sửa', ADMIN_DELETE: 'Xóa chứng từ', ADMIN_STOCK: 'Sửa số tồn', ADMIN_COST: 'Sửa giá', ADMIN_PO: 'Sửa đơn mua đã duyệt',
-  ADMIN_SPEC: 'Sửa spec', ADMIN_USER_DELETE: 'Xóa người dùng' };
+  ADMIN_SPEC: 'Sửa spec', ADMIN_USER_DELETE: 'Xóa người dùng', ADMIN_RENAME: 'Đổi mã sản phẩm', ADMIN_SPEED: 'Sửa tốc độ máy' };
 
 const DEPTS: [string, string][] = [['BGD', 'Ban giám đốc'], ['KD', 'Kinh doanh'], ['KT', 'Kỹ thuật/QA'], ['KHO', 'Kho'],
   ['MUA', 'Mua hàng'], ['KTOAN', 'Kế toán'], ['SX', 'Sản xuất'], ['IT', 'Quản trị hệ thống']];

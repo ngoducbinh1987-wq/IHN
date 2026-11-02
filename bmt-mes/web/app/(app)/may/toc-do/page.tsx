@@ -5,7 +5,7 @@ import { SPEED_STATUS } from '@/lib/machine';
 import { df, nf } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { approveSpeed } from '../actions';
+import { approveAllSpeeds, approveSpeed } from '../actions';
 
 export const metadata = { title: 'Tốc độ sản xuất' };
 
@@ -37,6 +37,13 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
       <Toolbar title="Tốc độ sản xuất" reload={back} />
       <Tabs active={tab.key} items={TABS.map((t) => ({ key: t.key, label: t.label, href: `/may/toc-do?tab=${t.key}`, count: t.key === 'cho-duyet' ? pending ?? 0 : undefined }))} />
       <Flash ok={sp.ok} err={sp.err ?? error?.message} />
+      {canApprove && (pending ?? 0) > 0 && (
+        <form action={approveAllSpeeds} className="mb-4 flex flex-wrap items-center gap-3" id="duyet-tat-ca-toc-do">
+          <input type="hidden" name="back" value={back} />
+          <SubmitButton className="btn btn-sm btn-pri" pendingText="Đang duyệt…">Duyệt tất cả tốc độ chờ duyệt ({pending})</SubmitButton>
+          <span className="text-[12.5px] text-muted">mọi máy{me.is_admin ? '' : ', trừ dòng bạn nhập'}. Quản trị sửa / xóa từng dòng ở Hồ sơ máy → Tốc độ & dải hoạt động.</span>
+        </form>
+      )}
       <p className="mb-4 max-w-4xl text-[13.5px] text-muted">
         Lịch máy chọn tốc độ: riêng mã SP → theo cỡ ruột → mặc định của máy → mặc định công đoạn (bảng dưới). Khai báo trong Hồ sơ máy → Tốc độ & dải hoạt động; người khác duyệt.
         Đổi tốc độ xong, Quản lý SX bấm Xếp lại lịch để áp dụng.
