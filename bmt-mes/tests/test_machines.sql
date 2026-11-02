@@ -253,6 +253,8 @@ select pg_temp.fails($$select app.save_daily_check('$$ || pg_temp.v('line') || $
 reset role;
 
 -- ============================================================ 7. Kiểm tra năng lực
+-- Dữ liệu thật đã khai tốc độ máy bện (từ 02/11/2026): bỏ trong giao dịch để thử máy chưa khai tốc độ
+delete from master.machine_speeds where machine_id in (select id from master.machines where machine_type = 'BUNCHER');
 select pg_temp.as_user('M_KTTP');
 set local role authenticated;
 insert into t select 'p15', id from master.products where code = 'SIF-1C-1P5';
@@ -270,6 +272,10 @@ select pg_temp.ok((select (j -> 'issues')::text like '%Chưa có tốc độ chu
 select pg_temp.ok((select coalesce((o ->> 'req_min')::numeric, 0) = 0 from _cap, jsonb_array_elements(j -> 'ops') o where o ->> 'op_code' = 'BUNCHER'), 'Máy bện chưa khai tốc độ: không đoán giờ cần');
 select pg_temp.ok((select (j -> 'issues')::text like '%Thay nước máng%' from _cap) is false, 'Phiếu đang mở thì không báo quá hạn nữa');
 drop table _cap;
+reset role;
+-- Dữ liệu thật đã có dải tiết diện ở máy CD2: thay trong giao dịch
+delete from master.machine_ranges where param = 'SIZE_MM2' and machine_id in (select id from master.machines where op_code = 'CD2' and id <> pg_temp.v('line'));
+set local role authenticated;
 insert into master.machine_ranges (machine_id, param, label, min_value, max_value, uom)
 select id, 'SIZE_MM2', 'Tiết diện ruột', 0.75, 4, 'mm²' from master.machines where op_code = 'CD2' and id <> pg_temp.v('line');
 create temp table _cap as select app.check_capacity(null, current_date, current_date + 27, 1, 0,
