@@ -58,6 +58,8 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
   const idOf = new Map(((mRows ?? []) as { id: string; code: string }[]).map((x) => [x.code, x.id]));
   const mm2 = new Map(((cRows ?? []) as { code: string; nominal_mm2: number }[]).map((x) => [x.code, Number(x.nominal_mm2)]));
   const mm2Of = (c: string | null) => (c ? mm2.get(c) ?? 0 : -1);
+  // Dòng riêng (mã, cỡ, nhóm) trước, dòng chung cuối: dòng chung chỉ dùng cho cỡ không khai riêng
+  const rankOf = (x: { product_id: string | null; core_code: string | null; group_code: string | null }) => (x.product_id ? 0 : x.core_code ? 1 : x.group_code ? 2 : 3);
   const isGd = me.roles.includes('BGD') || me.roles.includes('ADMIN');
   const isBgd = hasRole(me.roles, ROLE.params), isKt = hasRole(me.roles, ROLE.rates);
   const edit = sp.sua ?? null;
@@ -178,7 +180,8 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
               <thead><tr><th>Máy</th><th>Công đoạn</th><th>Tốc độ khai báo</th><th>Tình trạng</th>{me.is_admin && <th />}</tr></thead>
               <tbody>{machines.flatMap((m) => (MACHINE_OPS[m.machine_type] ?? []).map((op, k) => {
                 const rows = (cfg.speeds ?? []).filter((x) => x.machine_code === m.code && x.op_code === op)
-                  .sort((a, b) => Number(Boolean(a.product_id)) - Number(Boolean(b.product_id)) || (mm2Of(a.core_code) - mm2Of(b.core_code)));
+                  .sort((a, b) => rankOf(a) - rankOf(b) || (mm2Of(a.core_code) - mm2Of(b.core_code)));
+                const hasSpecific = rows.some((x) => x.core_code || x.group_code || x.product_id);
                 const g = gaps.filter((x) => x.machine_code === m.code && x.op_code === op);
                 const unit = op === 'CD0' ? 'kg/giờ' : 'm/ph';
                 return (
@@ -186,7 +189,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
                     {k === 0 && <td rowSpan={(MACHINE_OPS[m.machine_type] ?? []).length}><b>{m.code}</b><div className="text-[12px] text-muted">{m.name}</div></td>}
                     <td className="text-[12.5px]">{OP_TEXT[op] ?? op}</td>
                     <td className="text-[12.5px]">{rows.length ? <div className="flex flex-wrap gap-x-3 gap-y-0.5">{rows.map((x, i) => (
-                      <span key={i} className="whitespace-nowrap">{x.product_id ? 'riêng mã' : x.core_code ? `cỡ ${x.core_code}` : x.group_code ? `nhóm ${x.group_code}` : 'chung'}: <b className="tabular-nums">{nf(Number(x.std_mpm), 1)}</b> {unit}{x.status !== 'APPROVED' && <span className="text-warn"> (chờ duyệt)</span>}</span>
+                      <span key={i} className="whitespace-nowrap">{x.product_id ? 'riêng mã' : x.core_code ? `cỡ ${x.core_code}` : x.group_code ? `nhóm ${x.group_code}` : hasSpecific ? 'các cỡ khác (chung)' : 'chung mọi cỡ'}: <b className="tabular-nums">{nf(Number(x.std_mpm), 1)}</b> {unit}{x.status !== 'APPROVED' && <span className="text-warn"> (chờ duyệt)</span>}</span>
                     ))}</div> : <span className="text-muted">Chưa khai</span>}</td>
                     <td className="text-[12.5px]">{g.length ? <div className="flex flex-col gap-0.5">{g.map((x, i) => <span key={i} className="font-medium text-bad"><AlertTriangle size={12} className="mr-1 inline" />Alarm: {x.message}</span>)}</div>
                       : rows.some((x) => x.status !== 'APPROVED') ? <Pill tone="warn">Có dòng chờ TP KT/QA duyệt</Pill> : <Pill tone="ok">Đủ</Pill>}</td>
@@ -195,7 +198,7 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
                 );
               }))}</tbody>
             </table></div>
-            <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Không còn tốc độ giả định: lịch máy chỉ dùng tốc độ khai báo của từng máy (TP KT/QA nhập ở <Link href="/may/toc-do" className="link">Quản lý máy → Tốc độ</Link>, người khác duyệt) hoặc tốc độ đo từ PLC. Máy / cỡ ruột chưa khai thì lịch không xếp việc lên máy đó và menu chính báo <b className="text-bad">Alarm</b>. Thứ tự chọn: riêng mã SP → nhóm + cỡ ruột → cỡ ruột → nhóm → chung của máy. Cáp chống nhiễu xoắn và quấn AL/PET cùng lượt. {me.is_admin ? 'Quản trị hệ thống bấm Sửa để sửa, xóa, duyệt tốc độ đã khai của máy.' : 'Tốc độ đã duyệt chỉ Quản trị hệ thống sửa lại.'}</p>
+            <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">Không còn tốc độ giả định: lịch máy chỉ dùng tốc độ khai báo của từng máy (TP KT/QA nhập ở <Link href="/may/toc-do" className="link">Quản lý máy → Tốc độ</Link>, người khác duyệt) hoặc tốc độ đo từ PLC. Máy / cỡ ruột chưa khai thì lịch không xếp việc lên máy đó và menu chính báo <b className="text-bad">Alarm</b>. Máy khai cả tốc độ chung và theo cỡ: cỡ có khai dùng tốc độ theo cỡ, cỡ không khai dùng tốc độ chung (áp cho mọi máy; thứ tự chọn: riêng mã SP → nhóm + cỡ ruột → cỡ ruột → nhóm → chung của máy). Cáp chống nhiễu xoắn và quấn AL/PET cùng lượt. {me.is_admin ? 'Quản trị hệ thống bấm Sửa để sửa, xóa, duyệt tốc độ đã khai của máy.' : 'Tốc độ đã duyệt chỉ Quản trị hệ thống sửa lại.'}</p>
           </section>
 
           <section className="card">

@@ -246,4 +246,21 @@ if (off.slots.some((s) => s.machine === 'EXT-SI-02')) bad('máy ngừng dùng v�
   if (g0.slots.some((x) => x.meters > 0)) bad('không có tốc độ máy nào mà vẫn xếp việc');
   console.log('chỉ tốc độ máy: đạt;', (gs.warnings ?? []).filter((w) => w.includes('Chưa có tốc độ')).length, 'cảnh báo thiếu tốc độ');
 }
+// Máy khai cả chung và theo cỡ (như BUN-01 thật 02/11/2026: chung 60, A20 70, M0.75 70, M1 65, M1.5 60, M2.5 60, M4 100):
+// cỡ có khai dùng tốc độ theo cỡ, cỡ không khai (A14, M6) dùng tốc độ chung; áp cho mọi máy
+{
+  const row = (core: string | null, v: number): SpeedCfg => ({ machine_code: 'BUN-01', op_code: 'CD1', product_id: null, group_code: null, core_code: core, std_mpm: v, rated_mpm: null, max_mpm: null, status: 'APPROVED' });
+  const cfgB = { speeds: [row(null, 60), row('A20', 70), row('M0.75', 70), row('M1', 65), row('M1.5', 60), row('M2.5', 60), row('M4', 100)] };
+  const at = (core: string) => machineSpeed(cfgB, 'BUN-01', 'CD1', { product_id: 'x', group: 'CFR', core })!.v;
+  eq(at('M1'), 65, 'cỡ M1 khai riêng: 65');
+  eq(at('M4'), 100, 'cỡ M4 khai riêng 100 (nhanh hơn chung vẫn dùng theo cỡ)');
+  eq(at('A20'), 70, 'cỡ A20 khai riêng: 70');
+  eq(at('A14'), 60, 'cỡ A14 không khai: dùng chung 60');
+  eq(at('M6'), 60, 'cỡ M6 không khai: dùng chung 60');
+  // Dòng theo cỡ khai sau hay trước dòng chung đều thắng dòng chung
+  eq(machineSpeed({ speeds: [row('M1', 65), row(null, 60)].reverse() }, 'BUN-01', 'CD1', { product_id: 'x', group: 'CFR', core: 'M1' })!.v, 65, 'thứ tự dòng không ảnh hưởng');
+  // Chế độ PLC chưa đủ dữ liệu: vẫn theo bảng tự nhập, đúng nguyên tắc cỡ → chung
+  eq(rateOn({ ...cfg, ...cfgB, plc_speeds: [] }, 'BUN-01', 'CD1', { size: 1, shield: false, product_id: 'x', group: 'CFR', core: 'M1', mix: null }, 'PLC').v, 65, 'PLC thiếu dữ liệu: theo cỡ');
+  console.log('tốc độ theo cỡ → chung: đạt');
+}
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');
