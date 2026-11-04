@@ -77,7 +77,7 @@ export async function submitPo(f: FormData) {
   const { error } = await submitForApproval('PO', id, txt(f, 'po_no'), txt(f, 'summary'));
   if (error) back(id, 'err', friendly(error.message));
   revalidatePath('/', 'layout');
-  back(id, 'ok', 'Đã duyệt, gửi TP Mua. TP Mua duyệt xong chuyển Giám đốc và báo Kế toán.');
+  back(id, 'ok', 'Đã gửi TP Mua duyệt (1 ngày làm việc), sau đó Giám đốc duyệt. Giám đốc duyệt xong MES báo NV mua và Kế toán.');
 }
 
 // NCC mới ngay trên đơn mua: tạo rồi chọn luôn cho đơn
@@ -107,8 +107,7 @@ export async function poFromPr(f: FormData) {
   const ids = ((data as { po_ids?: string[] })?.po_ids ?? []);
   const nos = ((data as { po_nos?: string[] })?.po_nos ?? []).join(', ');
   revalidatePath('/don-mua');
-  if (ids.length === 1) redirect(`/don-mua/${ids[0]}?ok=` + encodeURIComponent(`Đã lập ${nos}. Kiểm tra NCC, giá rồi bấm "Duyệt, gửi TP Mua".`));
-  redirect(`/don-mua?ok=` + encodeURIComponent(`Đã lập ${ids.length} đơn mua (${nos}) theo NCC. Kiểm tra từng đơn rồi gửi TP Mua.`));
+  redirect(`/don-mua/${ids[0]}?ok=` + encodeURIComponent(`Đã lập đơn mua tổng ${nos}: chốt NCC, giá, điều khoản, ngày giao từng dòng rồi gom hợp đồng.`));
 }
 
 // Phần MRP còn thiếu của kế hoạch tháng đã chốt (MES đã tự sinh khi Chủ tịch chốt; dùng khi lỡ hủy đơn)
@@ -119,5 +118,60 @@ export async function poFromMrp(f: FormData) {
   if (error) redirect(`/ke-hoach/${planId}?err=` + encodeURIComponent(friendly(error.message)));
   after(async () => { await flushEmailOutbox(); });
   revalidatePath('/don-mua');
-  redirect(`/ke-hoach/${planId}?ok=` + encodeURIComponent(`Đã lập ${(data as { count?: number })?.count ?? 0} đơn mua cho phần còn thiếu, NV mua đã nhận thông báo`) + '#don-mua');
+  redirect(`/ke-hoach/${planId}?ok=` + encodeURIComponent(`Đã lập đơn mua tổng cho phần còn thiếu, NV mua đã nhận thông báo`) + '#don-mua');
+}
+
+// Đơn mua tổng / hợp đồng: chốt một dòng (NCC, giá, điều khoản thanh toán, ngày giao, số lượng)
+export async function setPoLine(f: FormData) {
+  const id = txt(f, 'po_id');
+  const qty = txt(f, 'qty') ? parseNum(f.get('qty')) : null;
+  const rawPrice = txt(f, 'unit_price');
+  const price = rawPrice ? parseNum(rawPrice) : null;
+  if (qty !== null && (Number.isNaN(qty) || qty <= 0)) back(id, 'err', 'Số lượng phải lớn hơn 0');
+  if (price !== null && (Number.isNaN(price) || price < 0)) back(id, 'err', 'Đơn giá không hợp lệ');
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('po_line_set', {
+    p_line: txt(f, 'line_id'), p_supplier: txt(f, 'supplier_id') || null, p_price: price, p_terms: txt(f, 'payment_terms') || null,
+    p_date: txt(f, 'expected_date') || null, p_qty: qty, p_note: txt(f, 'note') || null,
+  });
+  if (error) back(id, 'err', friendly(error.message));
+  revalidatePath(`/don-mua/${id}`);
+  back(id, 'ok', 'Đã lưu dòng');
+}
+
+// Gom dòng đã chốt của đơn tổng thành hợp đồng (mỗi NCC một hợp đồng); "Gom và gửi" thì đệ trình TP Mua luôn
+export async function makeContracts(f: FormData) {
+  const id = txt(f, 'po_id');
+  const lines = f.getAll('line').map(String).filter(Boolean);
+  const submit = txt(f, 'submit') === '1';
+  const db = await createClient();
+  const { data, error } = await db.schema('app').rpc('po_make_contracts', { p_tong: id, p_lines: lines.length ? lines : null, p_submit: submit });
+  if (error) back(id, 'err', friendly(error.message));
+  if (submit) after(async () => { await flushEmailOutbox(); });
+  const r = data as { contracts?: { po_no: string; supplier: string }[]; left?: number };
+  const list = (r?.contracts ?? []).map((c) => `${c.po_no} (${c.supplier})`).join(', ');
+  revalidatePath('/', 'layout');
+  back(id, 'ok', `Đã lập ${r?.contracts?.length ?? 0} hợp đồng: ${list}${submit ? ', đã gửi TP Mua' : ''}.${r?.left ? ` Còn ${r.left} dòng chưa gom.` : ' Đã gom hết dòng.'}`);
+}
+
+// Hợp đồng nháp / bị trả lại: trả mọi dòng về đơn tổng (đổi NCC, gom lại)
+export async function returnToTong(f: FormData) {
+  const id = txt(f, 'po_id');
+  const db = await createClient();
+  const { data, error } = await db.schema('app').rpc('po_return_to_tong', { p_po: id, p_reason: txt(f, 'reason') || null });
+  if (error) back(id, 'err', friendly(error.message));
+  revalidatePath('/don-mua');
+  redirect(`/don-mua/${data}?ok=` + encodeURIComponent('Đã trả các dòng về đơn mua tổng: sửa rồi gom lại hợp đồng'));
+}
+
+// Đơn tổng: thêm NCC mới (chọn ở từng dòng)
+export async function addSupplierOnly(f: FormData) {
+  const id = txt(f, 'po_id');
+  const db = await createClient();
+  const { error } = await db.schema('app').rpc('save_supplier', {
+    p_name: txt(f, 'name'), p_tax_code: txt(f, 'tax_code') || null, p_contact: txt(f, 'contact') || null, p_address: txt(f, 'address') || null,
+  });
+  if (error) back(id, 'err', friendly(error.message));
+  revalidatePath(`/don-mua/${id}`);
+  back(id, 'ok', `Đã thêm NCC "${txt(f, 'name')}": chọn ở cột Nhà cung cấp của dòng`);
 }

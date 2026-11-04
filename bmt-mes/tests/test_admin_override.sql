@@ -83,6 +83,12 @@ select pg_temp.ok((select status = 'APPROVED' from purchase.purchase_requests wh
 select pg_temp.blocked($q$select app.admin_doc('PR', (select v from t where k = 'PR-A2'), 'reopen', 'sửa số lượng')$q$, 'Chỉ Quản trị',
   'Giám đốc (không phải Quản trị) không mở lại được chứng từ');
 select pg_temp.as_user('A_ADM');
+-- Migration 9500: Giám đốc duyệt đề xuất → MES tự lập đơn mua tổng; mở lại đề xuất thì xử lý (xóa) đơn tổng trước
+select pg_temp.blocked($q$select app.admin_doc('PR', (select v from t where k = 'PR-A2'), 'reopen', 'sửa')$q$, 'xử lý PO trước',
+  'Đề xuất đã có đơn mua tổng: không mở lại khi chưa xử lý đơn');
+select pg_temp.as_api($q$select app.admin_doc('PO', (select id from purchase.purchase_orders where pr_id = (select v from t where k = 'PR-A2') and kind = 'TONG'), 'delete', 'Lập lại theo đề xuất sửa')$q$);
+select pg_temp.ok((select bool_and(ordered_qty = 0) from purchase.pr_lines where pr_id = (select v from t where k = 'PR-A2')),
+  'Quản trị xóa đơn mua tổng: đề xuất trả lại số đã lên đơn');
 select pg_temp.as_api($q$select app.admin_doc('PR', (select v from t where k = 'PR-A2'), 'reopen', 'Sửa số lượng theo tồn thực tế')$q$);
 select pg_temp.ok((select status = 'DRAFT' from purchase.purchase_requests where pr_no = 'PR-A2')
   and (select old_data #>> '{doc,status}' = 'APPROVED' from core.audit_log where action = 'ADMIN_REOPEN' and row_id = (select v from t where k = 'PR-A2')::text),

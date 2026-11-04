@@ -13,7 +13,7 @@ import { createClient } from '@/lib/supabase/server';
 import { approve } from '../../duyet/[id]/actions';
 import { adjustMrp, chairRemoveLine, chairSaveLine, createAdj, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
 import { poFromMrp } from '../../don-mua/actions';
-import { PO_STATUS, isBuyer } from '@/lib/purchase';
+import { PO_STATUS, isBuyer, tongState, type Po } from '@/lib/purchase';
 
 const ADJ_STATUS: Record<string, [string, 'ok' | 'warn' | 'bad' | 'mute' | 'info']> = {
   DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ duyệt (Giám đốc → Chủ tịch)', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
@@ -57,7 +57,7 @@ export default async function PlanDetail({ params, searchParams }:
       : Promise.resolve({ data: [] as Record<string, never>[] }),
     supabase.schema('app').from('v_plan_adjustments').select('*').eq('plan_id', id).neq('status', 'CANCELLED').order('created_at', { ascending: false }),
     // Đơn mua MES tự sinh khi Chủ tịch chốt kế hoạch / khi hiệu chỉnh được duyệt (và đơn từ đề xuất của kế hoạch)
-    supabase.schema('app').from('v_pos').select('id, po_no, status, source_label, supplier_name, line_count, amount, adj_no, mrp_run_id, expected_date')
+    supabase.schema('app').from('v_pos').select('id, po_no, status, source_label, supplier_name, line_count, amount, adj_no, mrp_run_id, expected_date, kind, done_at, all_submitted_at, overdue')
       .eq('plan_id', id).order('created_at'),
   ]);
   const { data: chairEdits } = await supabase.schema('app').from('v_plan_chair_edits').select('*').eq('plan_id', id).order('edited_at', { ascending: false });
@@ -263,18 +263,18 @@ export default async function PlanDetail({ params, searchParams }:
 
       {(plan.status === 'APPROVED' || (pos ?? []).length > 0) && (
         <section className="card mt-4 overflow-x-auto" id="don-mua">
-          <div className="card-h"><span>Đơn mua hàng theo kế hoạch</span><span className="text-[12.5px] font-normal text-muted">Chủ tịch chốt kế hoạch (hoặc duyệt hiệu chỉnh) thì MES tự sinh đơn mua từ MRP → NV mua kiểm tra → TP Mua → Giám đốc</span></div>
+          <div className="card-h"><span>Đơn mua hàng theo kế hoạch</span><span className="text-[12.5px] font-normal text-muted">Chủ tịch chốt kế hoạch (hoặc duyệt hiệu chỉnh) thì MES lập đơn mua tổng từ MRP → NV mua chốt NCC, giá từng dòng, gom hợp đồng → TP Mua → Giám đốc</span></div>
           {(pos ?? []).length > 0 ? (
             <table className="tbl">
-              <thead><tr><th>Đơn mua</th><th>Nguồn</th><th>Nhà cung cấp</th><th>Ngày về</th><th className="num">Dòng</th>{showPrice && <th className="num">Giá trị (đ)</th>}<th>Trạng thái</th></tr></thead>
+              <thead><tr><th>Đơn mua tổng / hợp đồng</th><th>Nguồn</th><th>Nhà cung cấp</th><th>Ngày về</th><th className="num">Dòng</th>{showPrice && <th className="num">Giá trị (đ)</th>}<th>Trạng thái</th></tr></thead>
               <tbody>{(pos ?? []).map((o) => (
                 <tr key={o.id}>
                   <td><Link className="link mono font-medium" href={`/don-mua/${o.id}`}>{o.po_no}</Link></td>
                   <td>{o.source_label}{o.adj_no ? ` · ${o.adj_no}` : ''}</td>
-                  <td>{o.supplier_name ?? <span className="text-warn">Chưa chọn NCC</span>}</td>
+                  <td>{o.kind === 'TONG' ? <span className="text-muted">Đơn tổng · NCC theo từng dòng</span> : o.supplier_name ?? <span className="text-warn">Chưa chọn NCC</span>}</td>
                   <td>{df(o.expected_date)}</td><td className="num">{o.line_count}</td>
                   {showPrice && <td className="num">{o.amount === null ? '—' : nf(o.amount)}</td>}
-                  <td><StatusPill map={PO_STATUS} value={o.status} /></td>
+                  <td>{o.kind === 'TONG' ? <Pill tone={tongState(o as Po)[1]}>{tongState(o as Po)[0]}</Pill> : <StatusPill map={PO_STATUS} value={o.status} />}</td>
                 </tr>
               ))}</tbody>
             </table>
