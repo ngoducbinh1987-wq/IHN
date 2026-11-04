@@ -14,7 +14,7 @@ begin
   select pl.id into v_line from plan.plan_lines pl
     join plan.production_plans pp on pp.id = pl.plan_id and pp.plan_no = 'KH-2611-02' and pp.status = 'APPROVED'
     join master.products p on p.id = pl.product_id and p.code = 'HER15U2LZ'
-   where pl.qty_m > 0 order by pl.created_at limit 1;
+   where pl.qty_m > 0 order by pl.id limit 1;
   if v_admin is null or v_line is null then raise notice 'Không có KH-2611-02 / HER15U2LZ hoặc Quản trị: bỏ qua'; return; end if;
   perform set_config('request.jwt.claim.sub', v_admin::text, true);
 
