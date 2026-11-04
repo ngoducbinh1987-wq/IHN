@@ -15,6 +15,8 @@ delete from inv.stock_docs d where d.doc_type = 'OPENING';
 update purchase.purchase_orders set status = 'CANCELLED' where status in ('DRAFT', 'PENDING_APPROVAL');
 update purchase.purchase_requests set status = 'CANCELLED' where status in ('DRAFT', 'PENDING_APPROVAL');
 delete from integ.sync_queue where entity = 'STOCK_DOC';   -- hàng đợi MISA của phiếu tồn thật
+-- Dữ liệu thật đã duyệt tồn dự phòng (phiếu DP 04/11/2026): kịch bản giả định dự phòng 0 → tạm đặt 0 trong giao dịch (rollback)
+update master.materials set safety_stock = 0 where safety_stock > 0;
 create temp table r (n serial, msg text);
 grant all on r to authenticated;
 grant usage on sequence r_n_seq to authenticated;
