@@ -54,7 +54,7 @@ begin
   if v_od_in is not null and v_od_in is distinct from v_od0 then
     v_od1 := v_od_in;                                         -- người dùng sửa OD
   elsif v_t1 is distinct from v_t0 and v_od0 > 0 and v_t0 > 0 and v_t1 > 0 then
-    v_od1 := round(v_od0 + 2 * (v_t1 - v_t0), 3);              -- giữ đường kính dưới vỏ
+    v_od1 := v_od0 + 2 * (v_t1 - v_t0);            -- giữ đường kính dưới vỏ
   else
     v_od1 := coalesce(v_od_in, v_od0);
   end if;
