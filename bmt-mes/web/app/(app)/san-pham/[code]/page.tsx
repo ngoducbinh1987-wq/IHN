@@ -258,6 +258,12 @@ export default async function ProductDetail({ params, searchParams }:
                 <b>Chưa đủ điều kiện phát hành:</b>
                 <ul className="mt-1 list-disc pl-5">{problems.map((x) => <li key={x}>{x}</li>)}</ul>
               </div>
+            ) : res && res.rdc_limit !== null && res.rdc_calc > res.rdc_limit && !(res.pilot_rdc !== null && res.pilot_rdc <= res.rdc_limit) ? (
+              <div id="canh-bao-rdc" className="mt-3 rounded border-l-4 border-bad bg-bad-soft px-3 py-2 text-[13px]">
+                <b className="text-bad">Cảnh báo: Rdc tính {nf(res.rdc_calc, 3)} vượt giới hạn {nf(res.rdc_limit, 2)} Ω/km.</b>
+                {spec.rdc_deviation_note && <div className="mt-1">Chấp nhận sai lệch: {spec.rdc_deviation_note}</div>}
+                <div className="mt-1 text-muted">Cần đo Rdc mẫu pilot (thẻ Pilot) để xác nhận.</div>
+              </div>
             ) : <div className="mt-3 rounded border-l-4 border-brand bg-brand-soft px-3 py-2 text-[13px] text-brand-dark">Đạt kiểm tra tự động.</div>}
           </section>
           <section className="card p-4 text-[14px]">
