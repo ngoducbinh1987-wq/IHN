@@ -2,6 +2,18 @@
 -- Kết quả trả về dưới dạng "lỗi" KET_QUA_OK để buộc ROLLBACK: không để lại dữ liệu. Có dòng FAIL nghĩa là có kiểm tra hỏng.
 set client_min_messages = warning;
 begin;
+-- Kho thật đã có tồn khởi tạo (migration 8900, 04/11/2026): kịch bản giả định kho trống → ẩn tồn khởi tạo trong giao dịch (rollback)
+delete from inv.stock_moves m using inv.stock_docs d where d.id = m.doc_id and d.doc_type = 'OPENING';
+delete from cost.item_valuation v where v.material_id in (select l.material_id from inv.lots l where l.attrs ->> 'opening' = 'true');
+delete from inv.stock_balances b using inv.lots l where l.id = b.lot_id and l.attrs ->> 'opening' = 'true';
+delete from inv.stock_doc_lines dl using inv.stock_docs d where d.id = dl.doc_id and d.doc_type = 'OPENING';
+update inv.carriers c set current_hu_id = null from inv.handling_units h join inv.lots l on l.id = h.lot_id where h.id = c.current_hu_id and l.attrs ->> 'opening' = 'true';
+delete from inv.handling_units h using inv.lots l where l.id = h.lot_id and l.attrs ->> 'opening' = 'true';
+delete from inv.lots l where l.attrs ->> 'opening' = 'true';
+delete from inv.stock_docs d where d.doc_type = 'OPENING';
+-- Dữ liệu thật có đơn mua/đề xuất mua chưa duyệt (vd PO-2611-0004 của KH-2611-01): MRP coi là đã đề xuất → tạm hủy trong giao dịch
+update purchase.purchase_orders set status = 'CANCELLED' where status in ('DRAFT', 'PENDING_APPROVAL');
+update purchase.purchase_requests set status = 'CANCELLED' where status in ('DRAFT', 'PENDING_APPROVAL');
 create temp table r (n serial, msg text);
 grant all on r to authenticated;
 grant usage on sequence r_n_seq to authenticated;
