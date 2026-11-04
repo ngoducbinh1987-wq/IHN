@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { FileSpreadsheet } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
@@ -123,9 +124,10 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
       )}
 
       <section className="card overflow-x-auto" id="mrp-hieu-chinh">
-        <div className="card-h"><span>Bảng MRP hiệu chỉnh</span><span className="text-[12.5px] font-normal text-muted">{rv.applied
+        <div className="card-h"><span>Bảng MRP hiệu chỉnh</span><span className="flex flex-wrap items-center justify-end gap-3"><span className="text-[12.5px] font-normal text-muted">{rv.applied
           ? `đã áp khi duyệt${rv.at ? ` ${df(rv.at, true)}` : ''}`
-          : 'xem trước: MES chạy thử với các dòng đề xuất (chưa đổi gì), so với lần chạy MRP gần nhất của kế hoạch'}</span></div>
+          : 'xem trước: MES chạy thử với các dòng đề xuất (chưa đổi gì), so với lần chạy MRP gần nhất của kế hoạch'}</span>
+          {!rv.error && mrpRows.length > 0 && <a href={`/ke-hoach/dieu-chinh/${id}/excel`} className="btn btn-sm" id="xuat-excel-mrp" download><FileSpreadsheet size={14} />Xuất Excel</a>}</span></div>
         {rv.error ? <p className="px-4 py-3 text-[13.5px] text-muted">Chưa tính được: {rv.error}</p> : mrpRows.length === 0 ? <Empty>Không đổi nhu cầu vật tư (đổi hạn giao, hoặc chưa có dòng).</Empty> : (
           <table className="tbl">
             <thead><tr><th>Vật tư</th><th className="num">Nhu cầu cũ</th><th className="num">Nhu cầu mới</th><th className="num">Tăng/giảm</th>
