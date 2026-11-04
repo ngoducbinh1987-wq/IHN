@@ -13,7 +13,8 @@ select p.code, p.group_code, p.default_brand, p.description, s.status, s.brand, 
  where p.code in ('HER15S2LZ','HER18S2LZ','HER16S2LZ','HEW18S2PC','HER15U2LZ','HEW16S2PC','HER10S2LZ','HER25U2LZ');
 
 select pg_temp.ok((select count(*) = 8 and bool_and(default_brand = 'HEIZKA' and brand = 'HEIZKA' and status in ('DRAFT', 'RELEASED')) from hz), '8 mã Heizka, thương hiệu HEIZKA, spec Nháp (từ 04/11/2026 đã phát hành, migration 8400)');
-select pg_temp.ok((select bool_and(abs(core_dia_mm - v.core) < 0.002 and od_mm = v.od and abs(a_total_mm2 - v.a) < 0.001)
+-- Số gốc lúc tạo (migration 6700): chỉ so với bản Nháp; bản đã phát hành anh Bình chỉnh tay thông số từ 04/11/2026
+select pg_temp.ok((select coalesce(bool_and(abs(core_dia_mm - v.core) < 0.002 and od_mm = v.od and abs(a_total_mm2 - v.a) < 0.001) filter (where status = 'DRAFT'), true)
                      from hz join (values ('HER15S2LZ', 2.6, 6.8, 1.357), ('HER18S2LZ', 2.2, 5.9, 0.736), ('HER16S2LZ', 2.6, 6.8, 1.227),
                                           ('HEW18S2PC', 2.15, 6.0, 0.785), ('HER15U2LZ', 2.6, 6.7, 1.357), ('HEW16S2PC', 2.5, 6.7, 1.276),
                                           ('HER10S2LZ', 2.1, 5.7, 0.724), ('HER25U2LZ', 3.1, 7.9, 2.217)) v(code, core, od, a) using (code)),
