@@ -167,6 +167,7 @@ export const GUIDES: Guide[] = [
     notes: [
       'Đổi kế hoạch đã duyệt (thêm mã, tăng/giảm, đổi hạn, bỏ mã): dùng "Đề xuất hiệu chỉnh kế hoạch tháng".',
       'Có chỉnh sửa khi duyệt thì MES chạy lại MRP, giữ các số TP Mua đã sửa nếu nhu cầu không đổi.',
+      'Kết quả MRP, Dự trù nhiều tầng, Lịch sử điều chỉnh MRP: nút Xuất Excel trên trang kế hoạch (một tệp nhiều trang).',
     ],
   },
   {

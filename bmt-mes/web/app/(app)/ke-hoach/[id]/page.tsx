@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Pencil, Printer } from 'lucide-react';
+import { FileSpreadsheet, Pencil, Printer } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { PackFields, type PackOption } from '@/components/pack-fields';
 import { SubmitButton } from '@/components/submit-button';
@@ -202,7 +202,8 @@ export default async function PlanDetail({ params, searchParams }:
       <section className="card overflow-x-auto" id="mrp">
         <div className="card-h flex-wrap">
           <div>Kết quả MRP · đề nghị mua</div>
-          {run && <div className="text-[12px] text-muted">Chạy lúc {df(run.run_at, true)} · {toBuy} vật tư cần mua{showPrice && <> · ngân sách {nf(run.budget_vnd)} đ</>}{run.missing_price_count ? <> · <Pill tone="warn">{run.missing_price_count} mã thiếu giá</Pill></> : null}</div>}
+          {run && <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted"><span>Chạy lúc {df(run.run_at, true)} · {toBuy} vật tư cần mua{showPrice && <> · ngân sách {nf(run.budget_vnd)} đ</>}{run.missing_price_count ? <> · <Pill tone="warn">{run.missing_price_count} mã thiếu giá</Pill></> : null}</span>
+            {mrp && mrp.length > 0 && <a href={`/ke-hoach/${id}/excel`} className="btn btn-sm" id="xuat-excel-mrp" download title="Kết quả MRP, dự trù nhiều tầng, lịch sử điều chỉnh MRP"><FileSpreadsheet size={14} />Xuất Excel</a>}</div>}
         </div>
         {canAdjust && mrp && mrp.length > 0 && (
           <p className="px-4 pt-2 text-[12.5px] text-muted">
@@ -243,7 +244,8 @@ export default async function PlanDetail({ params, searchParams }:
 
       {levels && levels.length > 0 && (
         <section className="card mt-4 overflow-x-auto">
-          <div className="card-h"><span>Dự trù nhiều tầng: thành phẩm → bán thành phẩm → NVL</span><span className="text-[12.5px] font-normal text-muted">mét cáp còn phải làm ở từng công đoạn sau khi trừ tồn</span></div>
+          <div className="card-h"><span>Dự trù nhiều tầng: thành phẩm → bán thành phẩm → NVL</span><span className="flex flex-wrap items-center gap-2 text-[12.5px] font-normal text-muted">mét cáp còn phải làm ở từng công đoạn sau khi trừ tồn
+            <a href={`/ke-hoach/${id}/excel`} className="btn btn-sm" id="xuat-excel-du-tru" download><FileSpreadsheet size={14} />Xuất Excel</a></span></div>
           <table className="tbl">
             <thead><tr><th>Mã</th><th className="num">Kế hoạch</th><th className="num">TP sẵn có</th><th className="num">Đóng gói</th><th className="num">Cáp CV có</th><th className="num">Bọc vỏ</th><th className="num">Cáp xoắn có</th><th className="num">Xoắn, băng</th><th className="num">Lõi có (quy cáp)</th><th className="num">Bọc cách điện</th><th className="num">Ruột có (quy cáp)</th><th className="num">Bện</th></tr></thead>
             <tbody>{levels.map((x) => (
@@ -305,7 +307,7 @@ export default async function PlanDetail({ params, searchParams }:
 
       {edits && edits.length > 0 && (
         <section className="card mt-4 overflow-x-auto">
-          <div className="card-h">Lịch sử điều chỉnh MRP</div>
+          <div className="card-h"><span>Lịch sử điều chỉnh MRP</span>{plan.last_run_id && <a href={`/ke-hoach/${id}/excel`} className="btn btn-sm" download><FileSpreadsheet size={14} />Xuất Excel</a>}</div>
           <table className="tbl">
             <thead><tr><th>Thời điểm</th><th>Người sửa</th><th>Vật tư</th><th className="num">Số lượng</th><th>Ngày cần</th><th>Ghi chú</th><th>Lý do</th></tr></thead>
             <tbody>

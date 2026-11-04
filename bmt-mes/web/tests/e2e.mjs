@@ -170,6 +170,14 @@ if (cuCells[3] !== '86,53' || cuCells[4] !== '87,85' || cuCells[11] !== '100' ||
   fail(`Dòng MRP CU-024 sai: ${cuCells.join(' | ')}`);
 }
 ok('MRP CU-024: lý thuyết 86,53 kg → cấp SX 87,85 kg → đề nghị mua 100 kg (khớp Excel)');
+{
+  // Xuất Excel kết quả MRP (trang Kết quả MRP + Dự trù nhiều tầng)
+  const href = await page.getAttribute('#xuat-excel-mrp', 'href');
+  const r = await page.request.get(BASE + href);
+  const buf = await r.body();
+  if (r.status() !== 200 || !String(r.headers()['content-type']).includes('spreadsheetml') || buf.subarray(0, 2).toString() !== 'PK' || !buf.includes('CU-024')) fail('Xuất Excel kết quả MRP lỗi: ' + r.status());
+  ok('Xuất Excel kết quả MRP');
+}
 if ((await page.textContent('body')).includes('Thành tiền') || (await page.textContent('body')).includes('ngân sách')) fail('Kế hoạch SX không được thấy giá/ngân sách');
 ok('Kế hoạch SX không thấy cột thành tiền và ngân sách (không có quyền xem giá)');
 await page.screenshot({ path: `${SHOTS}/05-ke-hoach-mrp.png`, fullPage: true });
@@ -574,7 +582,7 @@ await ctx.close();
   await grp.click();
   if ((await grp.getAttribute('aria-expanded')) !== 'true' || !(await page.locator('aside nav a', { hasText: 'Lịch máy' }).isVisible())) fail('Bấm nhóm Sản xuất phải hiện các mục con');
   await grp.click();
-  const sums = await page.$$eval('aside nav [data-group]', (gs) => gs.map((g) => {
+  const sums = await page.$$eval('aside nav div[data-group]', (gs) => gs.map((g) => {
     const b = g.querySelector('button'); const kids = [...g.querySelectorAll('a span.bg-bad:not(.menu-alarm)')].reduce((s, x) => s + Number(x.textContent), 0);
     return { g: g.getAttribute('data-group'), open: b.getAttribute('aria-expanded'), head: Number(b.querySelector('span.bg-bad:not(.menu-alarm)')?.textContent ?? 0), kids };
   }));

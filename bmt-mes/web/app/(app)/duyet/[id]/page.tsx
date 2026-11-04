@@ -311,6 +311,8 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
         <Field label="Kỳ kế hoạch">{plan?.period_label}</Field>
         <Field label="Ngày cần vật tư">{df(plan?.material_need_date)}</Field>
         <Field label="Số SKU / tổng mét">{plan?.line_count} SKU · {nf(plan?.total_m)} m</Field>
+        {plan?.last_run_id && <Field label="Kết quả MRP"><a className="text-brand hover:underline" href={`/ke-hoach/${a.doc_id}/excel`} download>Xuất Excel</a>
+          {' · '}<Link className="text-brand hover:underline" href={`/ke-hoach/${a.doc_id}#mrp`}>Xem trên kế hoạch</Link></Field>}
         {canSeePrice && <Field label="Ngân sách vật tư">{run ? `${nf(run.budget_vnd)} đ` : '—'}{run?.missing_price_count ? ` (${run.missing_price_count} mã thiếu giá)` : ''}</Field>}
         {(edits ?? 0) > 0 && <Field label="Chỉnh khi duyệt"><Link className="text-brand hover:underline" href={`/ke-hoach/${a.doc_id}#chair-edits`}>{edits} lần sửa dòng</Link></Field>}
         {a.status === 'PENDING' && a.my_turn && (
@@ -375,7 +377,8 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
             <span className={buy.length ? 'text-bad' : ''}>{buy.length ? `Mua thêm: ${buy.map((x) => `${x.code} ${nf(x.buy_more, 1)} ${x.uom}`).join(', ')}` : 'Không phải mua thêm'}</span>
             {(rv.reductions ?? []).length > 0 && <span>{rv.applied ? 'Đã giảm' : 'Giảm khi duyệt'} đề xuất mua chưa duyệt: {(rv.reductions ?? []).map((c) => `${c.pr_no} ${c.material_code} ${nf(c.old, 1)} → ${nf(c.new, 1)} ${c.uom}`).join('; ')}</span>}
             {keep.length > 0 && <span className="text-muted">Giữ nguyên (Giám đốc đã duyệt mua): {keep.map((x) => x.code).join(', ')}</span>}
-            <Link className="link" href={`/ke-hoach/dieu-chinh/${a.doc_id}#mrp-hieu-chinh`}>Xem bảng MRP hiệu chỉnh</Link>
+            <span><Link className="link" href={`/ke-hoach/dieu-chinh/${a.doc_id}#mrp-hieu-chinh`}>Xem bảng MRP hiệu chỉnh</Link>
+              {(rv.rows ?? []).length > 0 && <> · <a className="link" href={`/ke-hoach/dieu-chinh/${a.doc_id}/excel`} download>Xuất Excel</a></>}</span>
           </div>)}</Field>
       </div>
     );
