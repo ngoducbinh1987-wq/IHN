@@ -564,8 +564,8 @@ await ctx.close();
   if ((await grp.getAttribute('aria-expanded')) !== 'true' || !(await page.locator('aside nav a', { hasText: 'Lịch máy' }).isVisible())) fail('Bấm nhóm Sản xuất phải hiện các mục con');
   await grp.click();
   const sums = await page.$$eval('aside nav [data-group]', (gs) => gs.map((g) => {
-    const b = g.querySelector('button'); const kids = [...g.querySelectorAll('a span.bg-bad')].reduce((s, x) => s + Number(x.textContent), 0);
-    return { g: g.getAttribute('data-group'), open: b.getAttribute('aria-expanded'), head: Number(b.querySelector('span.bg-bad')?.textContent ?? 0), kids };
+    const b = g.querySelector('button'); const kids = [...g.querySelectorAll('a span.bg-bad:not(.menu-alarm)')].reduce((s, x) => s + Number(x.textContent), 0);
+    return { g: g.getAttribute('data-group'), open: b.getAttribute('aria-expanded'), head: Number(b.querySelector('span.bg-bad:not(.menu-alarm)')?.textContent ?? 0), kids };
   }));
   const wrong = sums.filter((x) => (x.open === 'false' ? x.head !== x.kids : x.head !== 0));
   if (wrong.length) fail(`Số trên nhóm thu gọn phải bằng tổng số của mục con: ${JSON.stringify(wrong)}`);
