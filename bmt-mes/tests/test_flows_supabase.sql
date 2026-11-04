@@ -14,6 +14,7 @@ delete from inv.stock_docs d where d.doc_type = 'OPENING';
 -- Dữ liệu thật có đơn mua/đề xuất mua chưa duyệt (vd PO-2611-0004 của KH-2611-01): MRP coi là đã đề xuất → tạm hủy trong giao dịch
 update purchase.purchase_orders set status = 'CANCELLED' where status in ('DRAFT', 'PENDING_APPROVAL');
 update purchase.purchase_requests set status = 'CANCELLED' where status in ('DRAFT', 'PENDING_APPROVAL');
+delete from integ.sync_queue where entity = 'STOCK_DOC';   -- hàng đợi MISA của phiếu tồn thật
 create temp table r (n serial, msg text);
 grant all on r to authenticated;
 grant usage on sequence r_n_seq to authenticated;
