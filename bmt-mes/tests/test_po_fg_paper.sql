@@ -15,6 +15,9 @@ update inv.carriers c set current_hu_id = null from inv.handling_units h join in
 delete from inv.handling_units h using inv.lots l where l.id = h.lot_id and l.attrs ->> 'opening' = 'true';
 delete from inv.lots l where l.attrs ->> 'opening' = 'true';
 delete from inv.stock_docs d where d.doc_type = 'OPENING';
+-- Dữ liệu thật có đơn mua/đề xuất mua chưa duyệt (vd PO-2611-0004 của KH-2611-01): MRP coi là đã đề xuất → tạm hủy trong giao dịch
+update purchase.purchase_orders set status = 'CANCELLED' where status in ('DRAFT', 'PENDING_APPROVAL');
+update purchase.purchase_requests set status = 'CANCELLED' where status in ('DRAFT', 'PENDING_APPROVAL');
 create temp table r (n serial, msg text);
 create temp table t (k text primary key, v uuid);
 grant all on r, t to authenticated;

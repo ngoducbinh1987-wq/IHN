@@ -90,24 +90,24 @@ select pg_temp.fails($$select inv.receive_goods((select id from purchase.purchas
 select pg_temp.as_user('QLSX');
 select pg_temp.fails(format($$select inv.receive_goods(%L, null, null, null, %L)$$,
   (select id from purchase.purchase_orders where po_no = 'PO-K1'),
-  jsonb_build_array(jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join master.materials m on m.id = pl.material_id where m.code = 'SIL-9710G'),
+  jsonb_build_array(jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join purchase.purchase_orders po on po.id = pl.po_id join master.materials m on m.id = pl.material_id where po.po_no = 'PO-K1' and m.code = 'SIL-9710G'),
     'units', jsonb_build_array(jsonb_build_object('qty', 25))))), 'bắt buộc nhập HSD', 'Silicone có hạn dùng: bắt buộc HSD');
 select pg_temp.fails(format($$select inv.receive_goods(%L, null, null, null, %L)$$,
   (select id from purchase.purchase_orders where po_no = 'PO-K1'),
-  jsonb_build_array(jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join master.materials m on m.id = pl.material_id where m.code = 'CU-024'),
+  jsonb_build_array(jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join purchase.purchase_orders po on po.id = pl.po_id join master.materials m on m.id = pl.material_id where po.po_no = 'PO-K1' and m.code = 'CU-024'),
     'units', jsonb_build_array(jsonb_build_object('qty', 200), jsonb_build_object('qty', 120))))), 'vượt PO quá dung sai', 'Nhận vượt PO + 5% bị chặn');
 insert into t select 'gr1', inv.receive_goods((select id from purchase.purchase_orders where po_no = 'PO-K1'), null, null, 'PGH-001',
   jsonb_build_array(
-    jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join master.materials m on m.id = pl.material_id where m.code = 'CU-024'),
+    jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join purchase.purchase_orders po on po.id = pl.po_id join master.materials m on m.id = pl.material_id where po.po_no = 'PO-K1' and m.code = 'CU-024'),
       'supplier_lot', 'CU-A', 'package_type_id', (select id from master.package_types where code = 'ONG-CU-T'),
       'units', jsonb_build_array(jsonb_build_object('gross_kg', 152.4), jsonb_build_object('gross_kg', 152.4))),
-    jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join master.materials m on m.id = pl.material_id where m.code = 'SIL-9710G'),
+    jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join purchase.purchase_orders po on po.id = pl.po_id join master.materials m on m.id = pl.material_id where po.po_no = 'PO-K1' and m.code = 'SIL-9710G'),
       'supplier_lot', 'SIL-A', 'exp_date', pg_temp.today() + 120, 'units', jsonb_build_array(jsonb_build_object('qty', 50), jsonb_build_object('qty', 50)))));
 select pg_temp.ok((select status = 'POSTED' and review_status = 'PENDING' from inv.stock_docs where id = (select v from t where k = 'gr1')),
   'Phiếu nhập theo PO ghi sổ ngay, chờ Kế toán SX duyệt');
 select pg_temp.ok((select count(*) = 2 and min(qty) = 140 and max(tare_kg) = 12.4 from inv.handling_units h join inv.lots l on l.id = h.lot_id
   join master.materials m on m.id = l.material_id where m.code = 'CU-024'), 'Đồng: 2 ống, kg tịnh = 152,4 − bì 12,4 = 140 kg/ống');
-select pg_temp.ok((select received_qty = 280 from purchase.po_lines pl join master.materials m on m.id = pl.material_id where m.code = 'CU-024')
+select pg_temp.ok((select received_qty = 280 from purchase.po_lines pl join purchase.purchase_orders po on po.id = pl.po_id join master.materials m on m.id = pl.material_id where po.po_no = 'PO-K1' and m.code = 'CU-024')
   and (select status = 'PARTIAL_RECEIVED' from purchase.purchase_orders where po_no = 'PO-K1'), 'PO cập nhật số đã nhận, trạng thái nhận một phần');
 select pg_temp.ok((select avg_cost = 268000 and qty = 280 from cost.item_valuation v join master.materials m on m.id = v.material_id where m.code = 'CU-024'),
   'Giá bình quân theo giá PO');
@@ -173,7 +173,7 @@ select pg_temp.fails($$select inv.issue_pick((select v from t where k='req'), js
   jsonb_build_object('hu_id', (select v from t where k='hu2'))), pg_temp.uid('NV1'))$$, 'xuất vượt phiếu lĩnh', 'Không xuất vượt phiếu lĩnh (2 ống khi cần 25 kg)');
 -- Hai ống cùng lô, cùng ngày nhập → không có ống nào "đáng xuất trước"; tạo lô cũ hơn để thử FEFO/FIFO
 insert into t select 'gr3', inv.receive_goods((select id from purchase.purchase_orders where po_no = 'PO-K1'), null, null, null,
-  jsonb_build_array(jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join master.materials m on m.id = pl.material_id where m.code = 'CU-024'),
+  jsonb_build_array(jsonb_build_object('po_line_id', (select pl.id from purchase.po_lines pl join purchase.purchase_orders po on po.id = pl.po_id join master.materials m on m.id = pl.material_id where po.po_no = 'PO-K1' and m.code = 'CU-024'),
     'units', jsonb_build_array(jsonb_build_object('qty', 30)))));
 update inv.lots set created_at = now() - interval '10 days' where id = (select lot_id from inv.stock_doc_lines where doc_id = (select v from t where k = 'gr3'));
 select set_config('request.jwt.claim.sub', pg_temp.uid('TPKT')::text, true);
