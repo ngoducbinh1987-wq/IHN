@@ -4,13 +4,14 @@ import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
-  AlertTriangle, BarChart3, Bell, BookOpen, Boxes, CalendarRange, CheckSquare, ChevronDown, ClipboardCheck, ClipboardList, Cog, Factory, FileBarChart, FileText, Gauge,
+  AlertTriangle, BarChart3, Bell, BookOpen, BookOpenText, Boxes, CalendarRange, CheckSquare, ChevronDown, ClipboardCheck, ClipboardList, Cog, Factory, FileBarChart, FileText, Gauge,
   History, Loader2, Monitor, PackageCheck, PackageMinus, ScanLine, Search, Settings, ShoppingCart, SlidersHorizontal, Timer, Truck, Users, Warehouse,
   Workflow, Wrench,
 } from 'lucide-react';
 
 // alarm: số máy thiếu thông số (hiện nhãn đỏ "Alarm"), title: lời nhắc khi rê chuột
-export type NavItem = { href: string; label: string; icon: string; group: string; badge?: number; alarm?: number; alarmTitle?: string; static?: boolean };
+export type NavItem = { href: string; label: string; icon: string; group: string; badge?: number; alarm?: number; alarmTitle?: string; static?: boolean; solo?: boolean };
+// solo: mục chính đứng riêng (không thuộc nhóm thả xuống), vd. Hướng dẫn sử dụng
 
 function AlarmTag({ n, title }: { n: number; title?: string }) {
   return (
@@ -26,7 +27,7 @@ const ICONS = {
   warehouse: Warehouse, scan: ScanLine, issue: PackageMinus, receive: PackageCheck, count: ClipboardCheck, truck: Truck, chart: BarChart3, ledger: BookOpen,
   machine: Cog, wrench: Wrench, checklist: ClipboardCheck, speed: Timer, capacity: BarChart3, history: History,
   report: FileBarChart, settings: Settings,
-  calendar: CalendarRange, order: ClipboardCheck, shift: Timer, sliders: SlidersHorizontal,
+  calendar: CalendarRange, order: ClipboardCheck, shift: Timer, sliders: SlidersHorizontal, guide: BookOpenText,
 } as const;
 
 // Biểu tượng của nhóm menu (hiện ở dòng nhóm khi thu gọn)
@@ -80,6 +81,20 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
           const GIcon = ICONS[GROUP_ICONS[g] ?? 'spec'];
           const id = `menu-nhom-${gi}`;
           const here = g === current;
+          // Mục chính đứng riêng: một dòng bấm thẳng, không thả xuống
+          if (list.length === 1 && list[0].solo) {
+            const i = list[0];
+            const on = isOn(i, items, path);
+            const Icon = ICONS[i.icon as keyof typeof ICONS] ?? FileText;
+            return (
+              <Link key={g} href={i.href} onClick={onNavigate} aria-current={on ? 'page' : undefined} data-group={g}
+                className={`flex items-center gap-3 border-l-4 px-4 py-3 text-[15px] font-medium ${on ? 'border-brand bg-side-2 text-white' : 'border-transparent text-white/90 hover:bg-white/5 hover:text-white'}`}>
+                <Icon size={18} className="shrink-0" />
+                <span className="flex-1">{i.label}</span>
+                <LinkPending />
+              </Link>
+            );
+          }
           return (
             <div key={g} className="flex flex-col" data-group={g}>
               <button type="button" onClick={() => toggle(g)} aria-expanded={expanded} aria-controls={id}

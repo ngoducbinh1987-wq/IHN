@@ -49,6 +49,17 @@ if (!page.url().includes('/khoi-tao')) fail('Tài khoản chưa có hồ sơ ph�
 await page.fill('#full_name', 'Ngô Đức Bình');
 await Promise.all([page.waitForURL('**/quan-tri**'), page.click('button:has-text("Nhận vai trò quản trị")')]);
 await expectOk(page, 'Nhận vai trò quản trị đầu tiên');
+// Hướng dẫn sử dụng: mục chính trên menu, mọi quy trình mở được
+{
+  await page.click('nav[aria-label="Menu chính"] a[href="/huong-dan"]');
+  await page.waitForURL('**/huong-dan');
+  const links = await page.$$eval('main a[href^="/huong-dan/"]', (a) => [...new Set(a.map((x) => x.getAttribute('href')))]);
+  if (links.length < 20) fail('Hướng dẫn sử dụng thiếu quy trình: ' + links.length);
+  await page.goto(`${BASE}/huong-dan/quy-trinh-chung`);
+  const t = await page.textContent('main');
+  if (!t.includes('Chủ tịch HĐQT') || !t.includes('Kết quả') || !t.includes('Trước 12:00 thứ 7')) fail('Lưu đồ quy trình chung thiếu nội dung');
+  ok('Hướng dẫn sử dụng: menu, ' + links.length + ' quy trình, lưu đồ');
+}
 
 // 2. Tạo tài khoản các phòng ban
 const users = [

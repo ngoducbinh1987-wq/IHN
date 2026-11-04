@@ -85,6 +85,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
   // Ô tick phân quyền: chỉ Quản trị hệ thống thấy
   if (me.is_admin) items.push({ href: '/quan-tri/phan-quyen', label: 'Phân quyền', icon: 'users', group: 'Hệ thống & cài đặt' });
+  // Hướng dẫn sử dụng: mục chính, mọi tài khoản đều thấy (anh Bình yêu cầu 04/11/2026)
+  items.push({ href: '/huong-dan', label: 'Hướng dẫn sử dụng', icon: 'guide', group: 'Hướng dẫn sử dụng', solo: true });
   const menu = items;
 
   const initials = me.full_name.split(' ').filter(Boolean).slice(-2).map((w) => w[0]).join('').toUpperCase();
