@@ -30,7 +30,7 @@ export default async function PlansPage({ searchParams }: { searchParams: Promis
       <div className="card overflow-x-auto">
         {data && data.length > 0 ? (
           <table className="tbl">
-            <thead><tr><th>Kế hoạch</th><th className="num">Số SKU</th><th className="num">Tổng mét</th><th>Ngày cần vật tư</th><th>MRP</th><th>Trạng thái</th></tr></thead>
+            <thead><tr><th>Kế hoạch</th><th className="num">Số SKU</th><th className="num">Tổng mét</th><th>Ngày cần vật tư</th><th>MRP</th><th>Trạng thái</th>{me.is_admin && <th>Quản trị</th>}</tr></thead>
             <tbody>
               {data.map((p) => (
                 <tr key={p.id}>
@@ -40,6 +40,7 @@ export default async function PlansPage({ searchParams }: { searchParams: Promis
                   <td>{df(p.material_need_date)}</td>
                   <td>{p.last_run_id ? <Pill tone="ok">Đã chạy</Pill> : <Pill>Chưa chạy</Pill>}</td>
                   <td><StatusPill map={DOC_STATUS} value={p.status} /></td>
+                  {me.is_admin && <td>{p.status === 'DRAFT' && <Link className="btn btn-sm btn-bad-o admin-xoa-ke-hoach" href={`/ke-hoach/${p.id}?xoa=1#admin-tools`}>Xóa</Link>}</td>}
                 </tr>
               ))}
             </tbody>

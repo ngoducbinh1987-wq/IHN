@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { FileSpreadsheet } from 'lucide-react';
 import { notFound } from 'next/navigation';
+import { AdminTools } from '@/components/admin-tools';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
 import { df, nf, numIn } from '@/lib/format';
@@ -64,6 +65,10 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
         <Link className="btn" href="/ke-hoach/dieu-chinh">Đóng</Link>
       </>} />
       <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>
+      {me.is_admin && a.status !== 'APPROVED' && (
+        <AdminTools docType="PLAN_ADJ" docId={a.id} docNo={a.adj_no} canReopen={a.status !== 'DRAFT'}
+          back={`/ke-hoach/dieu-chinh/${a.id}`} after="/ke-hoach/dieu-chinh" />
+      )}
       <section className="card mb-4 flex flex-wrap items-center gap-3 px-4 py-3">
         <Pill tone={STATUS[a.status]?.[1] ?? 'mute'}>{STATUS[a.status]?.[0] ?? a.status}</Pill>
         <span className="text-[13.5px]">Lập bởi {a.created_by_name} · {df(a.created_at, true)}{a.applied_at ? ` · áp vào kế hoạch ${df(a.applied_at, true)}` : ''}</span>

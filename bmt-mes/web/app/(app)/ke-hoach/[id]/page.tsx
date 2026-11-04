@@ -23,7 +23,7 @@ const MRP_TONE: Record<string, 'ok' | 'warn' | 'bad' | 'mute' | 'info'> = {
 };
 
 export default async function PlanDetail({ params, searchParams }:
-  { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string; sua?: string; mrp?: string }> }) {
+  { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string; sua?: string; mrp?: string; xoa?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
   await requirePage('ke-hoach');
@@ -116,7 +116,7 @@ export default async function PlanDetail({ params, searchParams }:
       <div className="-mx-4 mb-4 md:-mx-5"><StageBar stages={stages} /></div>
       <Flash ok={sp.ok} err={sp.err} />
       {me.roles.includes('ADMIN') && (
-        <AdminTools docType="PLAN" docId={id} docNo={plan.plan_no} requestId={req?.id} pending={req?.status === 'PENDING'} canReopen={plan.status !== 'DRAFT'}
+        <AdminTools docType="PLAN" docId={id} docNo={plan.plan_no} requestId={req?.id} pending={req?.status === 'PENDING'} canReopen={plan.status !== 'DRAFT'} open={sp.xoa === '1'}
           back={`/ke-hoach/${id}`} after="/ke-hoach" />
       )}
       {stale && (

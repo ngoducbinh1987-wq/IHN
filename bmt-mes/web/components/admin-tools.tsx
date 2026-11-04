@@ -3,17 +3,17 @@ import { SubmitButton } from '@/components/submit-button';
 import { adminCancelRequest, adminDeleteDoc, adminReopenDoc } from '@/app/(app)/quan-tri/doc-actions';
 
 // Loại chứng từ Quản trị được mở lại / xóa (giống app.admin_doc); phiếu kho, lệnh SX dùng phiếu đảo / hủy sẵn có
-export const ADMIN_DOC_TYPES = ['PR', 'PO', 'SO', 'PLAN', 'PROPOSAL', 'SPEC_NEW', 'SPEC_MINOR'];
+export const ADMIN_DOC_TYPES = ['PR', 'PO', 'SO', 'PLAN', 'PROPOSAL', 'SPEC_NEW', 'SPEC_MINOR', 'PLAN_ADJ'];
 
 // Khung thao tác của Quản trị hệ thống: hủy quy trình đang chạy, mở lại để sửa, xóa chứng từ (bắt buộc lý do)
-export function AdminTools({ docType, docId, docNo, requestId, pending, canReopen = true, back, after }: {
+export function AdminTools({ docType, docId, docNo, requestId, pending, canReopen = true, open = false, back, after }: {
   docType?: string; docId?: string; docNo: string; requestId?: string | null; pending?: boolean;
-  canReopen?: boolean; back: string; after: string;
+  canReopen?: boolean; open?: boolean; back: string; after: string;
 }) {
   const doc = !!docType && !!docId && ADMIN_DOC_TYPES.includes(docType);
   if (!doc && !(requestId && pending)) return null;
   return (
-    <details id="admin-tools" className="card mb-4 border-bad/40">
+    <details id="admin-tools" className="card mb-4 border-bad/40" open={open}>
       <summary className="card-h cursor-pointer list-none">
         <h2 className="flex items-center gap-2"><ShieldAlert size={17} className="text-bad" />Quản trị hệ thống</h2>
         <span className="text-[12.5px] text-muted">Hủy quy trình · mở lại để sửa · xóa {docNo}</span>
