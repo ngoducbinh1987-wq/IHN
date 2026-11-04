@@ -12,7 +12,8 @@ import { PO_STATUS, isBuyer, type Po, type PoLine } from '@/lib/purchase';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { adminPoLine } from '../../quan-tri/data-actions';
-import { addSupplier, cancelPo, deletePoLine, movePoLines, savePoHeader, savePoLine, submitPo } from '../actions';
+import { addSupplier, cancelPo, deletePoLine, movePoLines, returnToTong, savePoHeader, savePoLine, setPoLine, submitPo } from '../actions';
+import { TongView } from './tong-view';
 
 export const metadata = { title: 'Đơn mua hàng' };
 
@@ -25,6 +26,8 @@ export default async function PoDetail({ params, searchParams }:
   const supabase = await createClient();
   const { data: po } = await supabase.schema('app').from('v_pos').select('*').eq('id', id).maybeSingle<Po>();
   if (!po) notFound();
+  // Đơn mua hàng tổng: màn hình chốt từng dòng, gom hợp đồng
+  if (po.kind === 'TONG') return <TongView po={po} me={me} sp={sp} />;
   const [{ data: lines }, { data: req }, { data: sups }, { data: mats }, { data: flow }] = await Promise.all([
     supabase.schema('app').from('v_po_lines').select('*').eq('po_id', id).order('line_no').returns<PoLine[]>(),
     po.request_id ? supabase.schema('app').from('v_approvals').select('*').eq('id', po.request_id).maybeSingle<Approval>() : Promise.resolve({ data: null }),
@@ -43,7 +46,7 @@ export default async function PoDetail({ params, searchParams }:
   const fromMrp = (lines ?? []).some((l) => l.need_qty !== null);
   const total = (lines ?? []).reduce((s, l) => s + (l.unit_price === null ? 0 : Number(l.qty) * Number(l.unit_price)), 0);
   const stages: Stage[] = req?.steps ?? [
-    { seq: 0, label: 'NV mua hàng kiểm tra, duyệt gửi', state: draft ? 'current' : 'done' },
+    { seq: 0, label: po.parent_id ? 'NV mua gom hợp đồng, gửi TP Mua' : 'NV mua hàng kiểm tra, duyệt gửi', state: draft ? 'current' : 'done' },
     ...(flow ?? []).map((s) => ({ seq: s.seq, label: s.level_label, role: s.role_code, state: 'todo' as const })),
   ];
   const summary = `${po.supplier_name ?? 'Chưa chọn NCC'} · ${po.line_count} dòng${po.plan_no ? ` · ${po.plan_no}` : ''}${po.pr_no ? ` · ${po.pr_no}` : ''}`;
@@ -57,7 +60,7 @@ export default async function PoDetail({ params, searchParams }:
           {draft && buyer && (lines?.length ?? 0) > 0 && (
             <form action={submitPo} className="print:hidden">
               <input type="hidden" name="po_id" value={id} /><input type="hidden" name="po_no" value={po.po_no} /><input type="hidden" name="summary" value={summary} />
-              <SubmitButton className="btn btn-pri"><Send size={15} />Duyệt, gửi TP Mua</SubmitButton>
+              <SubmitButton className="btn btn-pri"><Send size={15} />{po.parent_id ? 'Gửi TP Mua duyệt' : 'Duyệt, gửi TP Mua'}</SubmitButton>
             </form>
           )}
           <PrintButton />
@@ -65,7 +68,16 @@ export default async function PoDetail({ params, searchParams }:
         </>} />
       <div className="-mx-4 mb-4 md:-mx-5 print:hidden"><StageBar stages={stages} /></div>
       <div className="print:hidden"><Flash ok={sp.ok} err={sp.err} /></div>
-      {draft && buyer && (
+      {po.parent_id && (
+        <div className="mb-3 text-[14px]">Hợp đồng theo đơn mua tổng <Link className="link font-medium" href={`/don-mua/${po.parent_id}`}>{po.parent_no}</Link></div>
+      )}
+      {draft && buyer && po.parent_id && (
+        <div role="note" id="buyer-check" className="mb-4 rounded border-l-4 border-warn bg-warn-soft px-4 py-2.5 text-[14px] print:hidden">
+          <b>Hợp đồng nháp:</b> kiểm tra số lượng, giá, điều khoản thanh toán, ngày giao từng dòng rồi bấm <b>Gửi TP Mua duyệt</b>.
+          Cần đổi nhà cung cấp thì <b>Trả dòng về đơn tổng</b> (khung bên phải), chọn NCC khác rồi gom lại.
+        </div>
+      )}
+      {draft && buyer && !po.parent_id && (
         <div role="note" id="buyer-check" className="mb-4 rounded border-l-4 border-warn bg-warn-soft px-4 py-2.5 text-[14px] print:hidden">
           <b>NV mua kiểm tra trước khi gửi:</b> chọn nhà cung cấp (thêm NCC mới ở khung bên phải), nhập đơn giá, ngày về từng dòng; vật tư mua ở NCC khác thì tích dòng và chuyển sang NCC đó (MES tự tách đơn).
           Xong bấm <b>Duyệt, gửi TP Mua</b>. Không mua nữa thì hủy đơn (ghi lý do).
@@ -93,23 +105,24 @@ export default async function PoDetail({ params, searchParams }:
               <th>Mã VT</th><th>Vật tư</th>
               {fromMrp && <><th className="num">Nhu cầu SX</th><th className="num">Tồn đạt QC</th><th className="num" title="Hàng đang về theo đơn đã duyệt">Đang về</th></>}
               <th className="num">Số mua</th><th>ĐVT</th>{showPrice && <th className="num">Đơn giá</th>}{showPrice && <th className="num">Thành tiền</th>}
-              <th>Ngày về</th><th className="num">Đã nhận</th>{editable && <th className="print:hidden" />}
+              <th>Thanh toán</th><th>Ngày giao</th><th className="num">Đã nhận</th>{editable && <th className="print:hidden" />}
             </tr></thead>
             <tbody>
               {(lines ?? []).map((l) => (
                 <tr key={l.id}>
-                  {draft && buyer && <td className="print:hidden"><input type="checkbox" name="line" value={l.id} form="move-form" aria-label={`Chọn ${l.material_code}`} /></td>}
+                  {draft && buyer && <td className="print:hidden">{!po.parent_id && <input type="checkbox" name="line" value={l.id} form="move-form" aria-label={`Chọn ${l.material_code}`} />}</td>}
                   <td className="mono font-medium">{l.material_code}</td>
                   <td className="min-w-[170px]">{l.material_name}{l.note && <div className="text-[12px] text-muted">{l.note}</div>}</td>
                   {fromMrp && <><td className="num">{nf(l.need_qty, 2)}</td><td className="num">{nf(l.available, 2)}</td><td className="num">{nf(l.incoming, 2)}</td></>}
                   {editable ? (
-                    <td colSpan={showPrice ? 5 : 3} className="print:hidden">
-                      <form action={savePoLine} className="flex flex-wrap items-center justify-end gap-1">
+                    <td colSpan={showPrice ? 6 : 4} className="print:hidden">
+                      <form action={setPoLine} className="flex flex-wrap items-center justify-end gap-1">
                         <input type="hidden" name="po_id" value={id} /><input type="hidden" name="line_id" value={l.id} />
                         <input className="inp w-[100px] py-1 text-right" name="qty" defaultValue={numIn(l.qty)} inputMode="decimal" aria-label={`Số mua ${l.material_code}`} />
                         <span className="w-8 text-[13px]">{l.uom}</span>
                         {showPrice && <input className={`inp w-[110px] py-1 text-right ${l.priced ? '' : 'inp-y'}`} name="unit_price" defaultValue={numIn(l.unit_price)} inputMode="decimal" placeholder="Đơn giá" aria-label={`Đơn giá ${l.material_code}`} />}
-                        <input className="inp w-[140px] py-1" type="date" name="expected_date" defaultValue={l.expected_date ?? ''} aria-label={`Ngày về ${l.material_code}`} />
+                        <input className={`inp w-[170px] py-1 ${l.payment_terms ? '' : 'inp-y'}`} name="payment_terms" defaultValue={l.payment_terms ?? ''} placeholder="Điều khoản thanh toán" aria-label={`Điều khoản ${l.material_code}`} />
+                        <input className="inp w-[140px] py-1" type="date" name="expected_date" defaultValue={l.expected_date ?? ''} aria-label={`Ngày giao ${l.material_code}`} />
                         <SubmitButton className="btn btn-sm" pendingText="…">Lưu</SubmitButton>
                       </form>
                       {l.mrp_qty !== null && Number(l.mrp_qty) !== Number(l.qty) && <div className="text-right text-[12px] text-warn">MES đề nghị {nf(l.mrp_qty, 2)}</div>}
@@ -120,6 +133,7 @@ export default async function PoDetail({ params, searchParams }:
                       <td>{l.uom}</td>
                       {showPrice && <td className="num">{l.unit_price === null ? <Pill tone="warn">Chưa có giá</Pill> : nf(l.unit_price)}</td>}
                       {showPrice && <td className="num">{l.amount === null ? '—' : nf(l.amount)}</td>}
+                      <td className="min-w-[120px]">{l.payment_terms ?? '—'}</td>
                       <td>{df(l.expected_date)}</td>
                     </>
                   )}
@@ -136,7 +150,7 @@ export default async function PoDetail({ params, searchParams }:
               <tfoot><tr><td colSpan={20} className="px-3 py-2 text-right font-medium">Tổng (dòng có giá): {nf(total)} đ</td></tr></tfoot>
             )}
           </table>
-          {draft && buyer && otherSups.length > 0 && (
+          {draft && buyer && !po.parent_id && otherSups.length > 0 && (
             <form id="move-form" action={movePoLines} className="flex flex-wrap items-end gap-2 border-t border-line bg-sunk/50 p-4 print:hidden">
               <input type="hidden" name="po_id" value={id} />
               <label className="lbl">Chuyển dòng đã tích sang NCC
@@ -180,11 +194,16 @@ export default async function PoDetail({ params, searchParams }:
             {editable ? (
               <form action={savePoHeader} className="flex flex-col gap-3">
                 <input type="hidden" name="po_id" value={id} />
-                <label className="lbl"><span className="req">Nhà cung cấp</span>
-                  <select className={`inp ${po.supplier_id ? '' : 'inp-y'}`} name="supplier_id" defaultValue={po.supplier_id ?? ''}>
-                    <option value="">Chưa chọn</option>
-                    {(sups ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select></label>
+                {po.parent_id ? (
+                  <div className="text-[14px]"><div className="text-muted">Nhà cung cấp</div><b>{po.supplier_name}</b>
+                    <input type="hidden" name="supplier_id" value={po.supplier_id ?? ''} /></div>
+                ) : (
+                  <label className="lbl"><span className="req">Nhà cung cấp</span>
+                    <select className={`inp ${po.supplier_id ? '' : 'inp-y'}`} name="supplier_id" defaultValue={po.supplier_id ?? ''}>
+                      <option value="">Chưa chọn</option>
+                      {(sups ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select></label>
+                )}
                 <label className="lbl">Ngày hàng về<input className="inp" type="date" name="expected_date" defaultValue={po.expected_date ?? ''} /></label>
                 <label className="lbl">Điều khoản thanh toán<input className="inp" name="payment_terms" defaultValue={po.payment_terms ?? ''} placeholder="Ví dụ: 30 ngày sau khi nhận hàng" /></label>
                 <label className="lbl">Ghi chú<textarea className="inp" name="note" rows={2} defaultValue={po.note ?? ''} /></label>
@@ -194,7 +213,7 @@ export default async function PoDetail({ params, searchParams }:
             ) : (
               <dl className="text-[14px]">
                 <dt className="text-muted">Nhà cung cấp</dt><dd className="mb-2">{po.supplier_name ?? '—'}{po.supplier_tax_code && <div className="text-[12.5px] text-muted">MST {po.supplier_tax_code}</div>}</dd>
-                <dt className="text-muted">Ngày hàng về</dt><dd className="mb-2">{df(po.expected_date)}</dd>
+                <dt className="text-muted">Ngày giao sớm nhất</dt><dd className="mb-2">{df(po.expected_date)}</dd>
                 <dt className="text-muted">Điều khoản thanh toán</dt><dd className="mb-2">{po.payment_terms ?? '—'}</dd>
                 <dt className="text-muted">Ghi chú</dt><dd className="mb-2">{po.note ?? '—'}</dd>
               </dl>
@@ -209,7 +228,18 @@ export default async function PoDetail({ params, searchParams }:
               {po.has_receipt && <><dt className="text-muted">Nhận hàng</dt><dd><Link className="link" href={`/kho/phieu?q=${po.po_no}`}>Xem phiếu nhập theo đơn</Link></dd></>}
             </dl>
           </section>
-          {editable && buyer && (
+          {draft && buyer && po.parent_id && (
+            <details className="card p-4 print:hidden" id="tra-ve-don-tong">
+              <summary className="cursor-pointer text-[15px] font-medium text-brand">Trả dòng về đơn tổng</summary>
+              <form action={returnToTong} className="mt-3 flex flex-col gap-2">
+                <input type="hidden" name="po_id" value={id} />
+                <p className="text-[13px] text-muted">Mọi dòng về lại đơn tổng {po.parent_no} (giữ giá, điều khoản để sửa), hợp đồng này hủy. Dùng khi đổi NCC hoặc gom lại.</p>
+                <label className="lbl">Lý do<input className="inp" name="reason" placeholder="Ví dụ: đổi NCC cho băng AL/PET" /></label>
+                <div><SubmitButton className="btn">Trả về đơn tổng</SubmitButton></div>
+              </form>
+            </details>
+          )}
+          {editable && buyer && !po.parent_id && (
             <details className="card p-4 print:hidden">
               <summary className="cursor-pointer text-[15px] font-medium text-brand">Thêm nhà cung cấp mới</summary>
               <form action={addSupplier} className="mt-3 flex flex-col gap-2">
@@ -222,7 +252,7 @@ export default async function PoDetail({ params, searchParams }:
               </form>
             </details>
           )}
-          {draft && buyer && (
+          {draft && buyer && !po.parent_id && (
             <details className="card p-4 print:hidden">
               <summary className="cursor-pointer text-[15px] font-medium text-bad">Hủy đơn mua</summary>
               <form action={cancelPo} className="mt-3 flex flex-col gap-2">

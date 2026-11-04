@@ -93,10 +93,10 @@ select id, pg_temp.v('sup_cu'), 268000, true, 7 from master.materials where code
 
 -- ================================================================ 0. Cấu hình quy trình, menu
 select pg_temp.ok((select string_agg(level_label, ' → ' order by seq) from wf.approval_steps where doc_type = 'PO' and enabled)
-  = 'TP Mua duyệt đơn mua hàng → Giám đốc duyệt đơn mua hàng'
-  and (select notify_roles @> array['KT_KHO', 'KT_GT', 'KTT'] from wf.approval_steps where doc_type = 'PO' and seq = 1)
-  and (select submit_label like 'NV mua hàng kiểm tra%' from wf.approval_flows where doc_type = 'PO'),
-  'Đơn mua: NV mua kiểm tra, duyệt gửi → TP Mua duyệt (báo Kế toán) → Giám đốc duyệt');
+  = 'TP Mua duyệt hợp đồng mua hàng → Giám đốc duyệt hợp đồng mua hàng'
+  and (select fallback_role is null and notify_roles = '{}' from wf.approval_steps where doc_type = 'PO' and seq = 1)
+  and (select submit_label like 'NV mua gom%' from wf.approval_flows where doc_type = 'PO'),
+  'Hợp đồng mua: NV mua gom từ đơn tổng → TP Mua (không duyệt thay) → Giám đốc (migration 9500)');
 select pg_temp.ok((select string_agg(level_label, ' → ' order by seq) from wf.approval_steps where doc_type = 'DELIVERY' and enabled) = 'Giám đốc duyệt lệnh giao',
   'Lệnh giao: chỉ Giám đốc duyệt');
 select pg_temp.ok(exists (select 1 from core.pages where key = 'don-mua' and path = '/don-mua')
@@ -104,7 +104,7 @@ select pg_temp.ok(exists (select 1 from core.pages where key = 'don-mua' and pat
   and exists (select 1 from core.role_pages where page_key = 'don-mua' and role_code = 'KTT'),
   'Menu Đơn mua hàng cho Mua hàng, Kế toán, Ban giám đốc');
 
--- ================================================================ A1. Chủ tịch chốt kế hoạch → MES tự sinh đơn mua theo NCC
+-- ================================================================ A1. Chủ tịch chốt kế hoạch → MES lập đơn mua tổng (migration 9500)
 select pg_temp.as_user('P_SXTP');
 insert into plan.production_plans (plan_no, period_label, material_need_date) values ('KH-T51', 'Thử 5200', pg_temp.today() + 20);
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-T51';
@@ -116,128 +116,185 @@ select pg_temp.ok(not exists (select 1 from purchase.purchase_orders where plan_
 select pg_temp.as_user('P_GD'); select wf.act(pg_temp.v('plan_req'), 'APPROVE');
 select pg_temp.ok(not exists (select 1 from purchase.purchase_orders where plan_id = pg_temp.v('plan')), 'Giám đốc duyệt (chưa chốt): chưa sinh đơn mua');
 select pg_temp.as_user('P_CT'); select wf.act(pg_temp.v('plan_req'), 'APPROVE');
-insert into t select 'po_cu', id from purchase.purchase_orders where plan_id = pg_temp.v('plan') and supplier_id = pg_temp.v('sup_cu');
-insert into t select 'po_x', id from purchase.purchase_orders where plan_id = pg_temp.v('plan') and supplier_id is null;
-select pg_temp.ok((select count(*) = 2 and bool_and(status = 'DRAFT' and source = 'MRP' and mrp_run_id = pg_temp.v('run'))
-                   from purchase.purchase_orders where plan_id = pg_temp.v('plan')),
-  'Chủ tịch chốt: MES tự sinh 2 đơn mua nháp (một đơn NCC đồng, một đơn vật tư chưa có NCC)');
-select pg_temp.ok((select count(*) = 1 from purchase.po_lines where po_id = pg_temp.v('po_cu'))
-  and pg_temp.poq(pg_temp.v('po_cu'), 'CU-024') = (select ml.suggest_qty from plan.mrp_lines ml join master.materials m on m.id = ml.material_id
-                                                  where ml.run_id = pg_temp.v('run') and m.code = 'CU-024')
-  and (select unit_price = 268000 from purchase.po_lines where po_id = pg_temp.v('po_cu')),
-  'Đơn NCC đồng: đúng số MRP đề nghị, giá theo điều kiện mua');
-select pg_temp.ok((select sum(l.qty) from purchase.po_lines l join purchase.purchase_orders po on po.id = l.po_id where po.plan_id = pg_temp.v('plan'))
-  = (select sum(suggest_qty) from plan.mrp_lines where run_id = pg_temp.v('run')),
-  'Tổng các đơn mua = tổng đề nghị mua của MRP');
-select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUANV') and title like 'Đơn mua hàng chờ NV mua kiểm tra%'),
-  'NV mua nhận thông báo kiểm tra đơn mua');
+insert into t select 'tong', id from purchase.purchase_orders where plan_id = pg_temp.v('plan') and kind = 'TONG';
+select pg_temp.ok((select count(*) = 1 from purchase.purchase_orders where plan_id = pg_temp.v('plan'))
+  and (select po_no like 'DMT-%' and status = 'DRAFT' and source = 'MRP' and mrp_run_id = pg_temp.v('run') and supplier_id is null
+              and due_date = purchase.add_workdays(pg_temp.today(), 5) from purchase.purchase_orders where id = pg_temp.v('tong')),
+  'Chủ tịch chốt: MES lập một đơn mua tổng (DMT-…), hạn gửi đủ hợp đồng 5 ngày làm việc');
+select pg_temp.ok((select sum(qty) from purchase.po_lines where po_id = pg_temp.v('tong')) = (select sum(suggest_qty) from plan.mrp_lines where run_id = pg_temp.v('run'))
+  and (select supplier_id = pg_temp.v('sup_cu') and unit_price = 268000 from purchase.po_lines l join master.materials m on m.id = l.material_id
+       where l.po_id = pg_temp.v('tong') and m.code = 'CU-024'),
+  'Đơn tổng = đề nghị mua của MRP; NCC, giá gợi ý theo từng dòng (điều kiện mua của vật tư)');
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUANV') and title like 'Đơn mua hàng tổng DMT-%hạn gửi đủ hợp đồng%'),
+  'NV mua nhận đơn mua tổng kèm hạn');
 select pg_temp.as_user('P_MUATP');
 select pg_temp.fails($$select app.adjust_mrp_line((select id from plan.mrp_lines where run_id = pg_temp.v('run') and suggest_qty > 0 limit 1), 1, null, null, 'x')$$,
   'đơn mua', 'Đã có đơn mua: khóa kết quả MRP, sửa trên đơn mua');
 
--- ================================================================ A2. NV mua kiểm tra: NCC, giá, chia đơn, gửi
+-- ================================================================ A2. NV mua chốt từng dòng, gom hợp đồng theo NCC, gửi TP Mua
+create function pg_temp.line(p_po uuid, p_code text) returns uuid language sql as $$
+  select l.id from purchase.po_lines l join master.materials m on m.id = l.material_id where l.po_id = p_po and m.code = p_code limit 1 $$;
 select pg_temp.as_user('P_VH');
-select pg_temp.fails($$select app.po_save_header(pg_temp.v('po_x'), pg_temp.v('sup_pvc'), null, null, null, false)$$, 'NV mua', 'Công nhân không sửa đơn mua');
-select pg_temp.as_user('P_KD');
-select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po_cu'), 'x')$$, 'quyền gửi duyệt', 'Người ngoài phòng mua không gửi duyệt đơn mua');
+select pg_temp.fails($$select app.po_line_set(pg_temp.line(pg_temp.v('tong'), 'CU-024'), null, 1, 'x', null)$$, 'NV mua', 'Công nhân không sửa đơn mua');
 select pg_temp.as_user('P_MUANV');
-select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po_x'), 'x')$$, 'chọn nhà cung cấp', 'Đơn chưa chọn NCC: không gửi được');
--- Chuyển dòng PVC-FR sang NCC nhựa: MES lập đơn mới cho NCC đó
-insert into t select 'po_pvc', app.po_move_lines(pg_temp.v('po_x'), array(select l.id from purchase.po_lines l join master.materials m on m.id = l.material_id
-                                                                       where l.po_id = pg_temp.v('po_x') and m.code = 'PVC-FR'), pg_temp.v('sup_pvc'));
-select pg_temp.ok((select supplier_id = pg_temp.v('sup_pvc') and status = 'DRAFT' and source = 'MRP' and plan_id = pg_temp.v('plan') from purchase.purchase_orders where id = pg_temp.v('po_pvc'))
-  and pg_temp.poq(pg_temp.v('po_pvc'), 'PVC-FR') > 0 and pg_temp.poq(pg_temp.v('po_x'), 'PVC-FR') = 0,
-  'Chia đơn: dòng nhựa chuyển sang đơn mới của NCC nhựa, cùng nguồn kế hoạch');
--- NCC mới tạo ngay trên đơn
+select pg_temp.fails($$select wf.submit('PO', pg_temp.v('tong'), 'x')$$, 'không gửi duyệt', 'Đơn mua tổng không gửi duyệt');
+select pg_temp.fails($$select app.po_make_contracts(pg_temp.v('tong'))$$, 'Chưa có dòng nào', 'Chưa chốt dòng nào: không gom được hợp đồng');
 insert into t select 'sup_new', app.save_supplier('NCC tổng hợp thử 5200', '0109999999', 'Chị B', 'Hà Nội');
 select pg_temp.ok((select is_supplier and code like 'NCC-%' from core.partners where id = pg_temp.v('sup_new'))
   and app.save_supplier('ncc tổng hợp thử 5200') = pg_temp.v('sup_new'),
   'NV mua thêm NCC mới (trùng tên thì dùng lại)');
-select app.po_save_header(pg_temp.v('po_x'), pg_temp.v('sup_new'), pg_temp.today() + 15, '30 ngày', 'Giao tại kho BMT', false);
-select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po_x'), 'x')$$, 'chưa có đơn giá', 'Thiếu đơn giá: không gửi được');
-select app.po_save_line(pg_temp.v('po_x'), l.id, null, l.qty, 50000, null, null) from purchase.po_lines l where l.po_id = pg_temp.v('po_x');
-select app.po_save_line(pg_temp.v('po_pvc'), l.id, null, l.qty, 32000, null, null) from purchase.po_lines l where l.po_id = pg_temp.v('po_pvc');
-select pg_temp.fails($$select app.po_save_line(pg_temp.v('po_cu'), null, 'CU-024', 5, 1, null, null)$$, 'đã có trong đơn', 'Không thêm trùng vật tư trong một đơn');
-select app.po_save_line(pg_temp.v('po_cu'), null, 'TALC', 25, 20000, pg_temp.today() + 10, 'Mua kèm');
-select pg_temp.ok(pg_temp.poq(pg_temp.v('po_cu'), 'TALC') = 25, 'NV mua thêm dòng vào đơn nháp');
-select app.po_delete_line(l.id) from purchase.po_lines l join master.materials m on m.id = l.material_id where l.po_id = pg_temp.v('po_cu') and m.code = 'TALC';
-select pg_temp.fails($$select app.po_delete_line((select id from purchase.po_lines where po_id = pg_temp.v('po_cu') limit 1))$$, 'ít nhất một dòng', 'Không bỏ dòng cuối (hủy đơn nếu không mua)');
-insert into t select 'po_cu_req', wf.submit('PO', pg_temp.v('po_cu'), 'x', 'Đồng theo KH-T51');
-select pg_temp.ok((select status = 'PENDING_APPROVAL' from purchase.purchase_orders where id = pg_temp.v('po_cu'))
-  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUATP') and link = '/duyet/' || pg_temp.v('po_cu_req')),
-  'NV mua duyệt gửi: TP Mua nhận đơn chờ duyệt');
-select pg_temp.fails($$select app.po_save_line(pg_temp.v('po_cu'), (select id from purchase.po_lines where po_id = pg_temp.v('po_cu') limit 1), null, 1, 1, null, null)$$,
+select app.po_line_set(pg_temp.line(pg_temp.v('tong'), 'CU-024'), pg_temp.v('sup_cu'), 268000, '30 ngày sau nhận hàng', pg_temp.today() + 12);
+select app.po_line_set(pg_temp.line(pg_temp.v('tong'), 'PVC-FR'), pg_temp.v('sup_pvc'), 32000, null, pg_temp.today() + 8);
+select pg_temp.fails(format($$select app.po_make_contracts(%L, array[%L]::uuid[])$$, pg_temp.v('tong'), pg_temp.line(pg_temp.v('tong'), 'PVC-FR')),
+  'Chưa chốt đủ', 'Dòng thiếu điều khoản thanh toán: không gom vào hợp đồng');
+select app.po_line_set(pg_temp.line(pg_temp.v('tong'), 'PVC-FR'), pg_temp.v('sup_pvc'), 32000, '15 ngày', pg_temp.today() + 8);
+select app.po_line_set(l.id, pg_temp.v('sup_new'), 50000, 'Trả ngay', pg_temp.today() + 15) from purchase.po_lines l join master.materials m on m.id = l.material_id
+ where l.po_id = pg_temp.v('tong') and m.code not in ('CU-024', 'PVC-FR');
+select pg_temp.ok((select bool_and(ready) and count(distinct supplier_id) = 3 from app.v_po_lines where po_id = pg_temp.v('tong')),
+  'NV mua chốt NCC, giá, điều khoản, ngày giao cho từng dòng (mỗi chủng loại một NCC)');
+select app.po_make_contracts(pg_temp.v('tong'));
+insert into t select 'hd_cu', id from purchase.purchase_orders where parent_id = pg_temp.v('tong') and supplier_id = pg_temp.v('sup_cu');
+insert into t select 'hd_pvc', id from purchase.purchase_orders where parent_id = pg_temp.v('tong') and supplier_id = pg_temp.v('sup_pvc');
+insert into t select 'hd_new', id from purchase.purchase_orders where parent_id = pg_temp.v('tong') and supplier_id = pg_temp.v('sup_new');
+select pg_temp.ok((select count(*) = 3 and bool_and(kind = 'HD' and status = 'DRAFT' and po_no like 'PO-%' and source = 'MRP' and plan_id = pg_temp.v('plan'))
+                   from purchase.purchase_orders where parent_id = pg_temp.v('tong'))
+  and not exists (select 1 from purchase.po_lines where po_id = pg_temp.v('tong'))
+  and (select payment_terms = '30 ngày sau nhận hàng' and expected_date = pg_temp.today() + 12 from purchase.purchase_orders where id = pg_temp.v('hd_cu'))
+  and pg_temp.poq(pg_temp.v('hd_pvc'), 'PVC-FR') > 0
+  and (select all_submitted_at is null from purchase.purchase_orders where id = pg_temp.v('tong')),
+  'Gom: mỗi NCC một hợp đồng nháp, dòng chuyển từ đơn tổng sang hợp đồng, điều khoản/ngày giao theo dòng');
+-- Trả hợp đồng nhựa về đơn tổng, gom lại và gửi luôn
+select app.po_return_to_tong(pg_temp.v('hd_pvc'), 'Đổi số lượng');
+select pg_temp.ok((select status = 'CANCELLED' from purchase.purchase_orders where id = pg_temp.v('hd_pvc'))
+  and pg_temp.line(pg_temp.v('tong'), 'PVC-FR') is not null
+  and (select supplier_id = pg_temp.v('sup_pvc') and payment_terms = '15 ngày' from purchase.po_lines where id = pg_temp.line(pg_temp.v('tong'), 'PVC-FR')),
+  'Trả hợp đồng nháp về đơn tổng: dòng giữ NCC, giá, điều khoản để sửa và gom lại');
+select app.po_make_contracts(pg_temp.v('tong'), array[pg_temp.line(pg_temp.v('tong'), 'PVC-FR')], true);
+insert into t select 'hd_pvc2', id from purchase.purchase_orders where parent_id = pg_temp.v('tong') and supplier_id = pg_temp.v('sup_pvc') and status <> 'CANCELLED';
+select pg_temp.ok((select status = 'PENDING_APPROVAL' from purchase.purchase_orders where id = pg_temp.v('hd_pvc2')),
+  'Gom và gửi luôn: hợp đồng nhựa chờ TP Mua duyệt');
+select pg_temp.as_user('P_KD');
+select pg_temp.fails($$select wf.submit('PO', pg_temp.v('hd_cu'), 'x')$$, 'quyền gửi duyệt', 'Người ngoài phòng mua không gửi duyệt hợp đồng');
+select pg_temp.as_user('P_MUANV');
+insert into t select 'po_cu_req', wf.submit('PO', pg_temp.v('hd_cu'), 'x', 'Đồng theo KH-T51');
+select pg_temp.ok((select all_submitted_at is null from purchase.purchase_orders where id = pg_temp.v('tong')), 'Còn hợp đồng nháp: chưa gửi đủ');
+insert into t select 'new_req', wf.submit('PO', pg_temp.v('hd_new'), 'x', 'Vật tư khác theo KH-T51');
+select pg_temp.ok((select status = 'PENDING_APPROVAL' from purchase.purchase_orders where id = pg_temp.v('hd_cu'))
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUATP') and link = '/duyet/' || pg_temp.v('po_cu_req'))
+  and (select all_submitted_at is not null and status = 'DRAFT' from purchase.purchase_orders where id = pg_temp.v('tong')),
+  'Gửi đủ hợp đồng: đơn tổng ghi đã gửi đủ, TP Mua nhận hợp đồng chờ duyệt');
+select pg_temp.fails($$select app.po_line_set(pg_temp.line(pg_temp.v('hd_cu'), 'CU-024'), null, 1, 'x', null)$$,
   'Người lập không sửa', 'Đã gửi: NV mua không tự sửa (người duyệt sửa hoặc trả lại)');
 
--- ================================================================ A3. TP Mua sửa khi duyệt, duyệt → báo Kế toán; Giám đốc duyệt
+-- ================================================================ A3. TP Mua sửa khi duyệt, duyệt; Giám đốc duyệt → báo NV mua, Kế toán; hoàn tất đơn tổng
 select pg_temp.as_user('P_MUATP');
-select app.po_save_line(pg_temp.v('po_cu'), (select id from purchase.po_lines where po_id = pg_temp.v('po_cu') limit 1), null,
-  (select qty + 100 from purchase.po_lines where po_id = pg_temp.v('po_cu') limit 1), 265000, pg_temp.today() + 12, 'Đàm phán lại giá');
+select app.po_line_set(pg_temp.line(pg_temp.v('hd_cu'), 'CU-024'), null, 265000, '30 ngày sau nhận hàng', pg_temp.today() + 12,
+  (select qty + 100 from purchase.po_lines where po_id = pg_temp.v('hd_cu') limit 1), 'Đàm phán lại giá');
 select pg_temp.ok(exists (select 1 from wf.approval_actions where request_id = pg_temp.v('po_cu_req') and comment like '[Sửa khi duyệt]%CU-024%265%')
-  and (select wf.doc_hash('purchase.purchase_orders', pg_temp.v('po_cu')) = data_hash from wf.approval_requests where id = pg_temp.v('po_cu_req'))
+  and (select wf.doc_hash('purchase.purchase_orders', pg_temp.v('hd_cu')) = data_hash from wf.approval_requests where id = pg_temp.v('po_cu_req'))
   and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUANV') and title like 'Người duyệt đã sửa%'),
   'TP Mua sửa số lượng, giá khi duyệt: ghi lịch sử duyệt, báo NV mua, mã kiểm vẫn khớp');
+select pg_temp.fails($$select app.po_line_set(pg_temp.line(pg_temp.v('hd_cu'), 'CU-024'), pg_temp.v('sup_pvc'), 265000, 'x', null)$$,
+  'trả dòng về đơn mua tổng', 'Đổi NCC dòng đã vào hợp đồng: phải trả về đơn tổng');
 select pg_temp.ok(wf.act(pg_temp.v('po_cu_req'), 'APPROVE') = 'PENDING', 'TP Mua duyệt, chuyển Giám đốc');
-select pg_temp.ok((select count(distinct user_id) = 3 from wf.notifications where title like '%TP Mua duyệt đơn mua hàng xong, chờ Giám đốc%'
-                   and user_id in (pg_temp.uid('P_KT'), pg_temp.uid('P_KTGT'), pg_temp.uid('P_KTT'))),
-  'TP Mua duyệt chuyển Giám đốc: Kế toán kho, Kế toán giá thành, Kế toán trưởng nhận thông báo');
+select pg_temp.ok(not exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_KTT') and title like '%hợp đồng mua%'),
+  'Kế toán chưa nhận thông báo khi TP Mua duyệt (chỉ khi Giám đốc duyệt xong)');
 select pg_temp.as_user('P_CT');
-select pg_temp.fails($$select wf.act(pg_temp.v('po_cu_req'), 'APPROVE')$$, 'cần vai trò', 'Chủ tịch không duyệt đơn mua (bước Giám đốc)');
+select pg_temp.fails($$select wf.act(pg_temp.v('po_cu_req'), 'APPROVE')$$, 'cần vai trò', 'Chủ tịch không duyệt hợp đồng mua (bước Giám đốc)');
 select pg_temp.as_user('P_GD');
-select pg_temp.ok(wf.act(pg_temp.v('po_cu_req'), 'APPROVE') = 'APPROVED', 'Giám đốc duyệt đơn mua');
-select pg_temp.ok((select status = 'APPROVED' from purchase.purchase_orders where id = pg_temp.v('po_cu'))
+select pg_temp.ok(wf.act(pg_temp.v('po_cu_req'), 'APPROVE') = 'APPROVED', 'Giám đốc duyệt hợp đồng');
+select pg_temp.ok((select status = 'APPROVED' from purchase.purchase_orders where id = pg_temp.v('hd_cu'))
   and (select unit_price = 265000 from master.material_suppliers ms join master.materials m on m.id = ms.material_id
        where m.code = 'CU-024' and ms.supplier_id = pg_temp.v('sup_cu'))
   and exists (select 1 from master.price_history ph join master.materials m on m.id = ph.material_id where m.code = 'CU-024' and ph.price = 265000),
-  'Đơn mua đã duyệt: giá mới ghi vào điều kiện mua của vật tư (MRP lần sau dùng) và lịch sử giá');
-select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_SXTP') and title like 'Hàng sắp về theo PO-%')
-  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUANV') and title like 'Đơn mua đã duyệt, gửi NCC%'),
-  'Báo thủ kho NVL hàng sắp về, báo NV mua gửi NCC');
--- Nhận hàng theo PO đã duyệt (TP SX kiêm thủ kho NVL)
+  'Hợp đồng đã duyệt: giá mới ghi vào điều kiện mua của vật tư và lịch sử giá');
+select pg_temp.ok((select count(distinct user_id) = 4 from wf.notifications where title like 'Giám đốc đã duyệt hợp đồng mua PO-%'
+                   and user_id in (pg_temp.uid('P_KT'), pg_temp.uid('P_KTGT'), pg_temp.uid('P_KTT'), pg_temp.uid('P_MUANV')))
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_SXTP') and title like 'Hàng sắp về theo PO-%'),
+  'Giám đốc duyệt: báo NV mua, Kế toán kho, Kế toán giá thành, Kế toán trưởng; thủ kho NVL chờ hàng');
+select pg_temp.ok((select done_at is null from purchase.purchase_orders where id = pg_temp.v('tong')), 'Còn hợp đồng chờ duyệt: đơn tổng chưa hoàn tất');
+select pg_temp.as_user('P_MUATP');
+select wf.act(r.id, 'APPROVE') from wf.approval_requests r where r.doc_id in (pg_temp.v('hd_pvc2'), pg_temp.v('hd_new')) and r.status = 'PENDING';
+select pg_temp.as_user('P_GD');
+select wf.act(r.id, 'APPROVE') from wf.approval_requests r where r.doc_id in (pg_temp.v('hd_pvc2'), pg_temp.v('hd_new')) and r.status = 'PENDING';
+select pg_temp.ok((select status = 'CLOSED' and done_at is not null from purchase.purchase_orders where id = pg_temp.v('tong'))
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_KTT') and title like 'Hoàn tất đơn mua tổng DMT-%')
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUANV') and title like 'Hoàn tất đơn mua tổng DMT-%'),
+  'Mọi hợp đồng đã duyệt: đơn tổng hoàn tất, báo NV mua và Kế toán');
+-- Nhận hàng theo hợp đồng đã duyệt (TP SX kiêm thủ kho NVL)
 select pg_temp.as_user('P_SXTP');
-insert into t select 'gr', inv.receive_goods(pg_temp.v('po_cu'), null, null, 'PGH-01',
-  jsonb_build_array(jsonb_build_object('po_line_id', (select id from purchase.po_lines where po_id = pg_temp.v('po_cu') limit 1),
+insert into t select 'gr', inv.receive_goods(pg_temp.v('hd_cu'), null, null, 'PGH-01',
+  jsonb_build_array(jsonb_build_object('po_line_id', (select id from purchase.po_lines where po_id = pg_temp.v('hd_cu') limit 1),
                                        'units', jsonb_build_array(jsonb_build_object('qty', 100)))));
-select pg_temp.ok((select status = 'PARTIAL_RECEIVED' from purchase.purchase_orders where id = pg_temp.v('po_cu'))
-  and (select received_qty = 100 from purchase.po_lines where po_id = pg_temp.v('po_cu') limit 1),
-  'Nhận hàng theo đơn mua đã duyệt: ghi số đã nhận, đơn chuyển "nhận một phần"');
+select pg_temp.ok((select status = 'PARTIAL_RECEIVED' from purchase.purchase_orders where id = pg_temp.v('hd_cu'))
+  and (select received_qty = 100 from purchase.po_lines where po_id = pg_temp.v('hd_cu') limit 1),
+  'Nhận hàng theo hợp đồng đã duyệt: ghi số đã nhận, hợp đồng chuyển "nhận một phần"');
 select pg_temp.fails(format($$select inv.receive_goods(%L, null, null, null, jsonb_build_array(jsonb_build_object('po_line_id', %L, 'units', jsonb_build_array(jsonb_build_object('qty', 999999)))))$$,
-  pg_temp.v('po_cu'), (select id from purchase.po_lines where po_id = pg_temp.v('po_cu') limit 1)), 'dung sai', 'Không nhận quá số đơn mua cộng dung sai');
--- MRP chạy lại: đơn nháp tính vào "đã đề xuất", không đề nghị trùng
-select pg_temp.as_user('P_SXTP');
+  pg_temp.v('hd_cu'), (select id from purchase.po_lines where po_id = pg_temp.v('hd_cu') limit 1)), 'dung sai', 'Không nhận quá số hợp đồng cộng dung sai');
+select pg_temp.fails($$select inv.receive_goods(pg_temp.v('tong'), null, null, null, '[]')$$, 'chưa duyệt', 'Không nhận hàng theo đơn tổng');
+-- MRP chạy lại: hợp đồng đã đặt tính vào hàng đang về, không đề nghị trùng
 insert into t select 'run2', app.plan_run_mrp(pg_temp.v('plan'));
-select pg_temp.ok((select ml.requested >= pg_temp.poq(pg_temp.v('po_pvc'), 'PVC-FR') and ml.suggest_qty = 0
-                   from plan.mrp_lines ml join master.materials m on m.id = ml.material_id and m.code = 'PVC-FR' where ml.run_id = pg_temp.v('run2')),
-  'Chạy lại MRP: đơn mua nháp tính vào "đã đề xuất", không đề nghị mua trùng');
+select pg_temp.ok((select ml.suggest_qty = 0 from plan.mrp_lines ml join master.materials m on m.id = ml.material_id and m.code = 'PVC-FR' where ml.run_id = pg_temp.v('run2')),
+  'Chạy lại MRP: vật tư đã đặt theo hợp đồng không đề nghị mua trùng');
 
--- ================================================================ A4. Hủy đơn nháp; đề xuất mua đã duyệt → đơn mua
+-- ================================================================ A4. Đề xuất mua đã duyệt → MES tự lập đơn tổng; hủy; hạn và cảnh báo
 select pg_temp.as_user('P_MUANV');
-select pg_temp.fails($$select app.po_cancel(pg_temp.v('po_pvc'), ' ')$$, 'lý do', 'Hủy đơn mua phải có lý do');
-select app.po_cancel(pg_temp.v('po_pvc'), 'Dùng tồn kho cũ');
-select pg_temp.ok((select status = 'CANCELLED' and cancel_reason = 'Dùng tồn kho cũ' from purchase.purchase_orders where id = pg_temp.v('po_pvc')),
-  'NV mua hủy đơn mua nháp có lý do');
 insert into t select 'pr', app.create_pr(pg_temp.today() + 10, 'Bổ sung đồng', '[{"material_code":"CU-024","qty":500}]', 'BO_SUNG');
 insert into t select 'pr_req', wf.submit('PR', pg_temp.v('pr'), 'x', 'Bổ sung');
 select pg_temp.fails($$select app.po_from_pr(pg_temp.v('pr'))$$, 'chưa được Giám đốc duyệt', 'Đề xuất chưa duyệt: chưa lập đơn mua');
 select pg_temp.as_user('P_MUATP'); select wf.act(pg_temp.v('pr_req'), 'APPROVE');
 select pg_temp.as_user('P_GD');    select wf.act(pg_temp.v('pr_req'), 'APPROVE');
-select pg_temp.as_user('P_MUANV');
-insert into t select 'po_pr', (app.po_from_pr(pg_temp.v('pr')) -> 'po_ids' ->> 0)::uuid;
-select pg_temp.ok((select source = 'PR' and pr_id = pg_temp.v('pr') and supplier_id = pg_temp.v('sup_cu') and status = 'DRAFT' from purchase.purchase_orders where id = pg_temp.v('po_pr'))
-  and pg_temp.poq(pg_temp.v('po_pr'), 'CU-024') = 500
-  and (select status = 'CLOSED' from purchase.purchase_requests where id = pg_temp.v('pr'))
+insert into t select 'tong_pr', id from purchase.purchase_orders where pr_id = pg_temp.v('pr') and kind = 'TONG';
+select pg_temp.ok((select source = 'PR' and status = 'DRAFT' and po_no like 'DMT-%' from purchase.purchase_orders where id = pg_temp.v('tong_pr'))
+  and pg_temp.poq(pg_temp.v('tong_pr'), 'CU-024') = 500
+  and (select supplier_id = pg_temp.v('sup_cu') and unit_price = 265000 from purchase.po_lines where po_id = pg_temp.v('tong_pr'))
+  and (select status = 'APPROVED' from purchase.purchase_requests where id = pg_temp.v('pr'))
   and (select ordered_qty = 500 from purchase.pr_lines where pr_id = pg_temp.v('pr')),
-  'Đề xuất đã duyệt → NV mua lập đơn mua theo NCC ưu tiên; đề xuất ghi đã lên đơn đủ');
-select pg_temp.fails($$select app.po_from_pr(pg_temp.v('pr'))$$, 'lên đơn đủ', 'Không lập đơn trùng từ một đề xuất');
-select app.po_cancel(pg_temp.v('po_pr'), 'NCC hết hàng, đặt lại sau');
-select pg_temp.ok((select status = 'APPROVED' from purchase.purchase_requests where id = pg_temp.v('pr'))
+  'Giám đốc duyệt đề xuất mua: MES tự lập đơn mua tổng giao NV mua (giá theo hợp đồng vừa duyệt)');
+select pg_temp.as_user('P_MUANV');
+select pg_temp.fails($$select app.po_from_pr(pg_temp.v('pr'))$$, 'đủ số lượng', 'Không lập đơn trùng từ một đề xuất');
+select pg_temp.fails($$select app.po_cancel(pg_temp.v('tong_pr'), ' ')$$, 'lý do', 'Hủy đơn mua phải có lý do');
+select app.po_cancel(pg_temp.v('tong_pr'), 'NCC hết hàng, đặt lại sau');
+select pg_temp.ok((select status = 'CANCELLED' and cancel_reason = 'NCC hết hàng, đặt lại sau' from purchase.purchase_orders where id = pg_temp.v('tong_pr'))
+  and (select status = 'APPROVED' from purchase.purchase_requests where id = pg_temp.v('pr'))
   and (select ordered_qty = 0 from purchase.pr_lines where pr_id = pg_temp.v('pr')),
-  'Hủy đơn lập từ đề xuất: đề xuất trở lại "đã duyệt", lập đơn lại được');
-select pg_temp.ok((select count(*) = 4 from app.v_pos where plan_id = pg_temp.v('plan') or pr_id = pg_temp.v('pr'))
-  and (select source_label = 'Tự sinh từ MRP' and plan_no = 'KH-T51' and line_count = 1 from app.v_pos where id = pg_temp.v('po_cu')),
-  'Danh sách đơn mua: nguồn, kế hoạch, số dòng');
+  'Hủy đơn tổng lập từ đề xuất: đề xuất trở lại "đã duyệt", lập đơn lại được');
+insert into t select 'tong_pr2', (app.po_from_pr(pg_temp.v('pr')) -> 'po_ids' ->> 0)::uuid;
+-- Quá hạn gửi hợp đồng: cảnh báo NV mua, TP Mua, Giám đốc (một lần)
+reset role;
+update purchase.purchase_orders set due_date = pg_temp.today() - 1 where id = pg_temp.v('tong_pr2');
+select purchase.po_deadline_alerts(); select purchase.po_deadline_alerts();
+select pg_temp.ok((select count(*) = 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title like 'Quá hạn gửi hợp đồng: DMT-%'
+                   and link = '/don-mua/' || pg_temp.v('tong_pr2'))
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUANV') and title like 'Quá hạn gửi hợp đồng: DMT-%')
+  and (select overdue from app.v_pos where id = pg_temp.v('tong_pr2')),
+  'Quá 5 ngày làm việc chưa gửi đủ hợp đồng: cảnh báo NV mua, TP Mua và Giám đốc (một lần)');
+-- Quá hạn duyệt (1 ngày làm việc): cảnh báo người duyệt và cấp trên; job hạn chung không xử lý hợp đồng mua
+select pg_temp.as_user('P_MUANV');
+select app.po_line_set(id, pg_temp.v('sup_cu'), 265000, '30 ngày', pg_temp.today() + 9) from purchase.po_lines where po_id = pg_temp.v('tong_pr2');
+select app.po_make_contracts(pg_temp.v('tong_pr2'), null, true);
+reset role;
+insert into t select 'late_req', r.id from wf.approval_requests r join purchase.purchase_orders h on h.id = r.doc_id
+ where h.parent_id = pg_temp.v('tong_pr2') and r.status = 'PENDING';
+update wf.approval_requests set step_started_at = now() - interval '9 days' where id = pg_temp.v('late_req');
+select wf.check_sla();
+select pg_temp.ok(not exists (select 1 from wf.sla_alerts where request_id = pg_temp.v('late_req')), 'Job hạn chung (theo giờ) bỏ qua hợp đồng mua');
+select purchase.po_deadline_alerts();
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_MUATP') and title like 'Quá hạn duyệt hợp đồng mua: PO-%')
+  and exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title like 'Cảnh báo: hợp đồng mua PO-% quá hạn duyệt'),
+  'TP Mua quá 1 ngày làm việc chưa duyệt: nhắc TP Mua, cảnh báo Giám đốc');
+select pg_temp.as_user('P_MUATP'); select wf.act(pg_temp.v('late_req'), 'APPROVE');
+reset role;
+update wf.approval_requests set step_started_at = now() - interval '9 days' where id = pg_temp.v('late_req');
+select purchase.po_deadline_alerts();
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_CT') and title like 'Cảnh báo: hợp đồng mua PO-% quá hạn duyệt'),
+  'Giám đốc quá 1 ngày làm việc chưa duyệt: cảnh báo Chủ tịch HĐQT');
+select pg_temp.ok((select count(*) >= 3 from app.v_pos where plan_id = pg_temp.v('plan'))
+  and (select kind = 'TONG' and contract_count = 3 and contract_approved = 3 from app.v_pos where id = pg_temp.v('tong'))
+  and (select parent_no like 'DMT-%' and source_label = 'Tự sinh từ MRP' and plan_no = 'KH-T51' and line_count = 1 from app.v_pos where id = pg_temp.v('hd_cu')),
+  'Danh sách: đơn tổng (số hợp đồng, đã duyệt), hợp đồng (đơn tổng, nguồn, kế hoạch, số dòng)');
 select pg_temp.as_user('P_SXTP');
-select pg_temp.ok((select unit_price is null and amount is null and need_qty is not null from app.v_po_lines where po_id = pg_temp.v('po_cu') limit 1),
+select pg_temp.ok((select unit_price is null and amount is null and need_qty is not null from app.v_po_lines where po_id = pg_temp.v('hd_cu') limit 1),
   'Người không được xem giá thấy dòng đơn mua nhưng không thấy giá');
 
 -- ================================================================ B1. Tồn đầu kỳ: BTP từng bobin, thành phẩm số cuộn × mét

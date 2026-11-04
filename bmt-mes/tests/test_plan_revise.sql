@@ -162,25 +162,23 @@ select pg_temp.ok(not exists (select 1 from pr1_before b left join purchase.pr_l
 select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_SXKH') and title like 'Kế hoạch tháng đã hiệu chỉnh%' and body like '%mua thêm%'),
   'TP SX được báo vật tư cần mua thêm');
 -- Migration 5100: duyệt xong MES tự lập đơn mua PO2 (nháp) cho phần mua thêm → NV mua kiểm tra, gửi → TP Mua duyệt (báo Kế toán) → chờ Giám đốc
-insert into t select 'po2', id from purchase.purchase_orders where adjustment_id = pg_temp.v('up') and status = 'DRAFT' and source = 'MRP' order by po_no limit 1;
+insert into t select 'po2t', id from purchase.purchase_orders where adjustment_id = pg_temp.v('up') and status = 'DRAFT' and source = 'MRP' and kind = 'TONG';
 select pg_temp.ok((select count(*) = 1 from purchase.purchase_orders where adjustment_id = pg_temp.v('up'))
   and pg_temp.poq(pg_temp.v('up'), 'CU-024') = (select (pg_temp.row(v, 'CU-024') ->> 'buy_more')::numeric from j where k = 'up')
   and (select (v -> 'po' ->> 'count')::int = 1 from j where k = 'up'),
-  'Hiệu chỉnh được duyệt: MES tự lập đơn mua PO2 đúng số mua thêm (chưa có NCC: một đơn)');
-select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_MUANV') and title like 'Đơn mua hàng chờ NV mua kiểm tra%')
+  'Hiệu chỉnh được duyệt: MES tự lập đơn mua tổng đúng số mua thêm (migration 9500)');
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_MUANV') and title like 'Đơn mua hàng tổng DMT-%')
   and exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_SXKH') and title like 'Kế hoạch tháng đã hiệu chỉnh%' and body like '%đã lập đơn mua%'),
-  'NV mua nhận đơn mua chờ kiểm tra; TP SX được báo đã lập đơn mua');
+  'NV mua nhận đơn mua tổng; TP SX được báo đã lập đơn mua');
 select pg_temp.as_user('V_MUANV');
-select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po2'), 'x', 'x')$$, 'chọn nhà cung cấp', 'Chưa chọn NCC: không gửi được');
+select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po2t'), 'x', 'x')$$, 'không gửi duyệt', 'Đơn tổng không gửi duyệt');
 insert into t select 'sup', app.save_supplier('NCC thử 5100', '0100000051', 'Anh A', null);
-select app.po_save_header(pg_temp.v('po2'), pg_temp.v('sup'), pg_temp.today() + 7, '30 ngày', 'thử', false);
-select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po2'), 'x', 'x')$$, 'đơn giá', 'Thiếu đơn giá: không gửi được');
-select app.po_save_line(pg_temp.v('po2'), l.id, null, l.qty, 100000, null, null) from purchase.po_lines l where l.po_id = pg_temp.v('po2');
-insert into t select 'po2_req', wf.submit('PO', pg_temp.v('po2'), 'x', 'Đơn mua bổ sung');
+select app.po_line_set(l.id, pg_temp.v('sup'), 100000, '30 ngày', pg_temp.today() + 7) from purchase.po_lines l where l.po_id = pg_temp.v('po2t');
+select app.po_make_contracts(pg_temp.v('po2t'), null, true);
+insert into t select 'po2', id from purchase.purchase_orders where parent_id = pg_temp.v('po2t') and status = 'PENDING_APPROVAL';
+insert into t select 'po2_req', id from wf.approval_requests where doc_id = pg_temp.v('po2') and status = 'PENDING';
 select pg_temp.as_user('V_MUATP');
-select pg_temp.ok(wf.act(pg_temp.v('po2_req'), 'APPROVE', null) = 'PENDING', 'TP Mua duyệt PO2, chuyển Giám đốc');
-select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('V_KT') and title like 'PO-%: TP Mua duyệt đơn mua hàng xong, chờ Giám đốc%'),
-  'Kế toán nhận thông báo khi TP Mua duyệt, chuyển Giám đốc');
+select pg_temp.ok(wf.act(pg_temp.v('po2_req'), 'APPROVE', null) = 'PENDING', 'TP Mua duyệt hợp đồng PO2, chuyển Giám đốc');
 select pg_temp.as_user('V_SXKH');
 insert into j select 'cu2', to_jsonb(pg_temp.poq(pg_temp.v('up'), 'CU-024'));
 insert into j select 'pv2', to_jsonb(pg_temp.poq(pg_temp.v('up'), 'PVC-FR'));

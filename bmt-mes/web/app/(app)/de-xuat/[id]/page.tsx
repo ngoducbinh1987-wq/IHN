@@ -59,8 +59,9 @@ export default async function PrDetail({ params, searchParams }:
               <SubmitButton className="btn btn-pri"><Send size={15} />Gửi duyệt</SubmitButton>
             </form>
           )}
-          {['APPROVED', 'PARTIAL_PO'].includes(pr.status) && isBuyer(me.roles) && (
-            <form action={poFromPr}><input type="hidden" name="pr_id" value={id} /><SubmitButton className="btn btn-pri">Lập đơn mua hàng</SubmitButton></form>
+          {['APPROVED', 'PARTIAL_PO'].includes(pr.status) && isBuyer(me.roles)
+            && (lines ?? []).some((l) => Number(l.qty) - Number((l as { ordered_qty?: number }).ordered_qty ?? 0) > 0.0001) && (
+            <form action={poFromPr}><input type="hidden" name="pr_id" value={id} /><SubmitButton className="btn btn-pri">Lập đơn mua tổng</SubmitButton></form>
           )}
           <Link className="btn" href="/de-xuat">Đóng</Link>
         </>} />

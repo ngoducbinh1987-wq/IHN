@@ -267,46 +267,55 @@ ok('Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch s
   ok('BGĐ thấy thành tiền CU-024 = 100 kg × 268.000 = 26.800.000 đ');
   await c.close();
 }
-// 6a'. Chủ tịch chốt → MES tự sinh đơn mua từ MRP; NV mua kiểm tra (NCC, sửa số, giá), duyệt gửi → TP Mua → Giám đốc; MRP khóa
+// 6a'. Chủ tịch chốt → MES lập đơn mua tổng; NV mua chốt NCC, giá, điều khoản, ngày giao từng dòng, gom hợp đồng, gửi → TP Mua → Giám đốc (migration 9500)
 let poUrl = null;
 let poNo = '';
+let tongUrl = null;
 {
   const [c, p] = await ctxFor();
   await login(p, 'mua.nv@bmt.test');
   await p.goto(planUrl);
   const hrefs = await p.locator('#don-mua a[href^="/don-mua/"]').evaluateAll((as) => as.map((x) => x.getAttribute('href')));
-  if (!hrefs.length) fail('Chủ tịch chốt kế hoạch: MES phải tự sinh đơn mua (khung Đơn mua hàng theo kế hoạch)');
+  if (hrefs.length !== 1) fail(`Chủ tịch chốt kế hoạch: MES phải lập một đơn mua tổng (thấy ${hrefs.length})`);
   if (await p.locator('button:has-text("Sinh đề xuất mua (PR)")').count()) fail('Không còn nút sinh đề xuất mua (PR) từ kế hoạch');
-  for (const h of hrefs) {
-    await p.goto(`${BASE}${h}`);
-    if ((await p.textContent('main')).includes('CU-024')) { poUrl = `${BASE}${h}`; break; }
-  }
-  if (!poUrl) fail('Không thấy đơn mua tự sinh có CU-024');
-  ok(`MES tự sinh ${hrefs.length} đơn mua nháp từ MRP khi Chủ tịch chốt kế hoạch`);
-  if (!(await p.locator('#buyer-check').count())) fail('Đơn nháp phải nhắc NV mua kiểm tra trước khi gửi');
-  if ((await p.inputValue('select[name=supplier_id]')) === '') {
-    await p.click('summary:has-text("Thêm nhà cung cấp mới")');
-    await p.fill('form:has(input[name=tax_code]) input[name=name]', 'NCC đồng thử E2E');
-    await clickNav(p, 'button:has-text("Thêm và chọn cho đơn này")');
-    await expectOk(p, 'NV mua thêm NCC mới ngay trên đơn mua');
-  }
-  await p.fill('tr:has-text("CU-024") input[name=qty]', '120');
-  await p.fill('tr:has-text("CU-024") input[name=unit_price]', '268.000');
-  await clickNav(p, 'tr:has-text("CU-024") button:has-text("Lưu")');
-  await expectOk(p, 'NV mua sửa CU-024 100 → 120 kg, giá 268.000 trên đơn mua');
-  const cuRow = await p.locator('tr:has-text("CU-024")').first().innerText();
-  if (!cuRow.includes('MES đề nghị 100')) fail(`Dòng đơn mua phải hiện số MES đề nghị: ${cuRow}`);
+  tongUrl = `${BASE}${hrefs[0]}`;
+  await p.goto(tongUrl);
+  if (!(await p.textContent('main h1')).includes('Đơn mua hàng tổng') || !(await p.locator('#buyer-check').count())) fail('Trang đơn mua tổng phải nhắc NV mua chốt từng dòng');
+  if (!(await p.textContent('#tong-info')).includes('Hạn gửi đủ hợp đồng')) fail('Đơn tổng phải ghi hạn gửi đủ hợp đồng');
+  ok('MES lập đơn mua tổng từ MRP khi Chủ tịch chốt kế hoạch, ghi hạn 5 ngày làm việc');
+  await p.click('summary:has-text("Thêm nhà cung cấp mới")');
+  await p.fill('form:has(input[name=tax_code]) input[name=name]', 'NCC đồng thử E2E');
+  await clickNav(p, 'button:has-text("Thêm (chọn ở cột NCC từng dòng)")');
+  await expectOk(p, 'NV mua thêm NCC mới trên đơn tổng');
+  const d = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const row = 'tr:has-text("CU-024")';
+  await p.fill(`${row} input[name=qty]`, '120');
+  await p.selectOption(`${row} select[name=supplier_id]`, { label: 'NCC đồng thử E2E' });
+  await p.fill(`${row} input[name=unit_price]`, '268.000');
+  await p.fill(`${row} input[name=payment_terms]`, '30 ngày sau khi nhận hàng');
+  await p.fill(`${row} input[name=expected_date]`, d);
+  await clickNav(p, `${row} button:has-text("Lưu")`);
+  await expectOk(p, 'NV mua chốt dòng CU-024: 120 kg, NCC, giá 268.000, điều khoản, ngày giao');
+  const cuRow = await p.locator(row).first().innerText();
+  if (!cuRow.includes('MES đề nghị 100')) fail(`Dòng đơn tổng phải hiện số MES đề nghị: ${cuRow}`);
   for (let i = 0; i < 40; i++) {
-    await p.goto(poUrl);
-    const empty = p.locator('tr:has(input[name=unit_price][value=""])').first();
-    if (!(await empty.count())) break;
-    await empty.locator('input[name=unit_price]').fill('1.000');
-    await clickNav(p, 'tr:has(input[name=unit_price][value=""]) button:has-text("Lưu")');
+    await p.goto(tongUrl);
+    const r = p.locator('#dong-tong tbody tr[class*="bg-warn-soft"]').first();
+    if (!(await r.count())) break;
+    await r.locator('select[name=supplier_id]').selectOption({ label: 'NCC đồng thử E2E' });
+    if (!(await r.locator('input[name=unit_price]').inputValue())) await r.locator('input[name=unit_price]').fill('1.000');
+    await r.locator('input[name=payment_terms]').fill('Trả ngay khi nhận hàng');
+    await r.locator('input[name=expected_date]').fill(d);
+    await clickNav(p, '#dong-tong tbody tr[class*="bg-warn-soft"] >> nth=0 >> button:has-text("Lưu")');
   }
+  await p.goto(tongUrl);
+  await clickNav(p, 'button:has-text("Gom và gửi TP Mua")');
+  await expectOk(p, 'NV mua gom các dòng thành hợp đồng theo NCC, gửi TP Mua');
+  const links = await p.locator('#hop-dong a[href^="/don-mua/"]').evaluateAll((as) => as.map((x) => [x.getAttribute('href'), x.textContent]));
+  if (links.length !== 1) fail(`Một NCC: phải ra một hợp đồng (thấy ${links.length})`);
+  poUrl = `${BASE}${links[0][0]}`; poNo = links[0][1].trim();
   await p.goto(poUrl);
-  await clickNav(p, 'button:has-text("Duyệt, gửi TP Mua")');
-  await expectOk(p, 'NV mua duyệt, gửi TP Mua');
-  poNo = (await p.textContent('main h1')).split(' – ')[0].trim();
+  if (!(await p.textContent('main')).includes('Hợp đồng theo đơn mua tổng')) fail('Hợp đồng phải ghi đơn mua tổng nguồn');
   await p.screenshot({ path: `${SHOTS}/05b-don-mua.png`, fullPage: true });
   await c.close();
 }
@@ -317,8 +326,11 @@ await approveAs('bgd@bmt.test', poNo, 'Giám đốc');
   await login(p, 'mua.nv@bmt.test');
   await p.goto(poUrl);
   const body = await p.textContent('main');
-  if (!body.includes('Đã duyệt, chờ hàng') || !body.includes('120')) fail(`Đơn mua phải Đã duyệt với CU-024 120 kg: ${body.slice(0, 300)}`);
-  ok(`Đơn mua ${poNo}: NV mua → TP Mua → Giám đốc duyệt, dùng số NV mua đã sửa (CU-024 120 kg)`);
+  if (!body.includes('Đã duyệt, chờ hàng') || !body.includes('120')) fail(`Hợp đồng phải Đã duyệt với CU-024 120 kg: ${body.slice(0, 300)}`);
+  ok(`Hợp đồng ${poNo}: NV mua → TP Mua → Giám đốc duyệt, dùng số NV mua đã chốt (CU-024 120 kg)`);
+  await p.goto(tongUrl);
+  if (!(await p.textContent('#tong-info')).includes('Hoàn tất')) fail('Mọi hợp đồng đã duyệt: đơn tổng phải Hoàn tất');
+  ok('Đơn mua tổng hoàn tất khi Giám đốc duyệt đủ hợp đồng');
   await p.goto(`${BASE}/don-mua?tab=cho-hang`);
   if (!(await p.textContent('main')).includes(poNo)) fail('Danh sách Đơn mua hàng phải có đơn đã duyệt chờ hàng');
   await c.close();
@@ -439,6 +451,15 @@ await approveAs('bgd@bmt.test', prNo, 'GĐ');
     if (confirm) await p.check('input[name=confirm]');
     await clickNav(p, `button:has-text("${button}")`);
   };
+  // Giám đốc duyệt đề xuất → MES tự lập đơn mua tổng (migration 9500): mở lại đề xuất thì xóa đơn tổng trước
+  const tongHref = await p.locator('a[href^="/don-mua/"]').first().getAttribute('href');
+  if (!tongHref) fail('Đề xuất đã duyệt phải có đơn mua tổng MES tự lập');
+  await p.goto(`${BASE}${tongHref}`);
+  if (!(await p.textContent('main h1')).includes('Đơn mua hàng tổng')) fail('Đề xuất đã duyệt: đơn MES tự lập phải là đơn mua tổng');
+  await admin('Xóa chứng từ', 'Lập lại theo đề xuất sửa', true);
+  await expectOk(p, 'Quản trị xóa đơn mua tổng lập từ đề xuất');
+  ok('Giám đốc duyệt đề xuất: MES tự lập đơn mua tổng');
+  await p.goto(prUrl);
   await admin('Mở lại để sửa', 'Sửa số lượng theo tồn thực tế');
   await expectOk(p, `Quản trị mở lại đề xuất đã duyệt ${prNo}`);
   if (!(await p.textContent('main')).includes('Nháp')) fail('Đề xuất mở lại phải về Nháp');
@@ -547,7 +568,7 @@ if (!(await flash(page)).includes('Nhắc trước hạn')) fail('Phải chặn 
 ok('Chặn cấu hình sai: nhắc trước hạn ≥ thời hạn');
 await page.goto(`${BASE}/quan-tri/quy-trinh?f=PO`);
 const poText = await page.textContent('main');
-if (poText.includes('giá trị ≥ 20.000.000') || !poText.includes('TP Mua duyệt đơn mua hàng')) fail(`Quy trình PO phải bỏ hạn mức 20/200 triệu: ${poText.slice(0, 300)}`);
+if (poText.includes('giá trị ≥ 20.000.000') || !poText.includes('TP Mua duyệt hợp đồng mua hàng')) fail(`Quy trình PO phải bỏ hạn mức 20/200 triệu: ${poText.slice(0, 300)}`);
 if (await page.locator('a:has-text("Thay đổi nhỏ spec")').count()) fail('Không còn quy trình Spec thay đổi nhỏ');
 ok('Cài đặt quy trình: PO bỏ hạn mức 20 triệu / 200 triệu (TP Mua → Giám đốc); đã bỏ Spec thay đổi nhỏ');
 await page.goto(`${BASE}/bao-cao/hao-hut?tab=dong`);
