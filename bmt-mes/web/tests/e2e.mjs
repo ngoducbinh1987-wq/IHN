@@ -31,7 +31,7 @@ async function clickNav(page, selector) {
   await Promise.all([page.waitForURL((u) => u.href !== before), page.click(selector)]);
   await page.waitForLoadState('networkidle');
 }
-const flash = async (page) => (await page.locator('[role=status]').first().textContent().catch(() => '')) ?? '';
+const flash = async (page) => (await page.locator('[role=status]:not(.menu-alarm)').first().textContent().catch(() => '')) ?? '';
 async function expectOk(page, what) {
   const t = await flash(page);
   if (!t || /lỗi|không|error/i.test(t) && !/Không có/.test(t)) {

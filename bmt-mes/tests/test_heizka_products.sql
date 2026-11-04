@@ -12,7 +12,7 @@ select p.code, p.group_code, p.default_brand, p.description, s.status, s.brand, 
   from master.products p join master.product_specs s on s.id = p.current_spec_id join master.spec_results res on res.spec_id = s.id
  where p.code in ('HER15S2LZ','HER18S2LZ','HER16S2LZ','HEW18S2PC','HER15U2LZ','HEW16S2PC','HER10S2LZ','HER25U2LZ');
 
-select pg_temp.ok((select count(*) = 8 and bool_and(default_brand = 'HEIZKA' and brand = 'HEIZKA' and status = 'DRAFT') from hz), '8 mã Heizka, thương hiệu HEIZKA, spec Nháp');
+select pg_temp.ok((select count(*) = 8 and bool_and(default_brand = 'HEIZKA' and brand = 'HEIZKA' and status in ('DRAFT', 'RELEASED')) from hz), '8 mã Heizka, thương hiệu HEIZKA, spec Nháp (từ 04/11/2026 đã phát hành, migration 8400)');
 select pg_temp.ok((select bool_and(abs(core_dia_mm - v.core) < 0.002 and od_mm = v.od and abs(a_total_mm2 - v.a) < 0.001)
                      from hz join (values ('HER15S2LZ', 2.6, 6.8, 1.357), ('HER18S2LZ', 2.2, 5.9, 0.736), ('HER16S2LZ', 2.6, 6.8, 1.227),
                                           ('HEW18S2PC', 2.15, 6.0, 0.785), ('HER15U2LZ', 2.6, 6.7, 1.357), ('HEW16S2PC', 2.5, 6.7, 1.276),

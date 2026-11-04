@@ -89,11 +89,11 @@ select pg_temp.as_user('U_MUATP');
 update master.material_suppliers set unit_price = 268000, lead_time_days = 14
  where material_id = (select id from master.materials where code = 'CU-024');
 select pg_temp.as_user('U_SXKH');
-insert into plan.production_plans (plan_no, period_label, material_need_date) values ('KH-2611-01', 'Tháng 11/2026', current_date + 30);
+insert into plan.production_plans (plan_no, period_label, material_need_date) values ('KH-THU-FLOWS', 'Tháng 11/2026', current_date + 30);
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
 select pp.id, p.id, p.current_spec_id, 3500, 1, 500, 'Bobin gỗ', 'KAVIX' from plan.production_plans pp, master.products p
- where pp.plan_no = 'KH-2611-01' and p.code = 'PFR-2C-1P5';
-insert into t select 'run1', plan.run_mrp((select id from plan.production_plans where plan_no = 'KH-2611-01'));
+ where pp.plan_no = 'KH-THU-FLOWS' and p.code = 'PFR-2C-1P5';
+insert into t select 'run1', plan.run_mrp((select id from plan.production_plans where plan_no = 'KH-THU-FLOWS'));
 select pg_temp.ok((select suggest_qty = 100 and status = 'Đặt hàng' from plan.mrp_lines l join master.materials m on m.id = l.material_id
   where run_id = (select v from t where k='run1') and m.code = 'CU-024'), 'MRP: CU-024 cần 87,85 kg → đề nghị 100 kg (bội số 100), có giá + lead time');
 select pg_temp.ok((select status from plan.mrp_lines l join master.materials m on m.id = l.material_id
@@ -107,13 +107,13 @@ select pg_temp.fails($$select plan.run_mrp((select id from plan.production_plans
 select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k='run1'))$$, 'được phê duyệt', 'Chưa duyệt kế hoạch thì không sinh PR');
 -- Quy trình 28/10/2026: TP SX lập kế hoạch tháng, chạy MRP → Giám đốc duyệt → Chủ tịch HĐQT chốt
 select pg_temp.as_user('U_SXTP');
-insert into t select 'req_plan', wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'KH-2611-01'), 'KH-2611-01');
+insert into t select 'req_plan', wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'KH-THU-FLOWS'), 'KH-THU-FLOWS');
 select pg_temp.as_user('U_CT');
 select pg_temp.fails($$select wf.act((select v from t where k='req_plan'), 'APPROVE')$$, 'cần vai trò', 'Bước Giám đốc: Chủ tịch không duyệt trước Giám đốc');
 select pg_temp.as_user('U_BGD');  select wf.act((select v from t where k='req_plan'), 'APPROVE');
 select pg_temp.fails($$select wf.act((select v from t where k='req_plan'), 'APPROVE')$$, 'cần vai trò', 'Bước Chủ tịch HĐQT: Giám đốc không chốt thay');
 select pg_temp.as_user('U_CT');   select wf.act((select v from t where k='req_plan'), 'APPROVE');
-select pg_temp.ok((select status from plan.production_plans where plan_no = 'KH-2611-01') = 'APPROVED', 'Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT chốt');
+select pg_temp.ok((select status from plan.production_plans where plan_no = 'KH-THU-FLOWS') = 'APPROVED', 'Kế hoạch tháng: TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT chốt');
 select pg_temp.as_user('U_SXKH');
 -- Migration 5100: Chủ tịch chốt kế hoạch → MES tự sinh đơn mua nháp từ MRP (NV mua kiểm tra → TP Mua → Giám đốc), không sinh PR
 select pg_temp.ok((select count(*) from purchase.po_lines l join purchase.purchase_orders po on po.id = l.po_id
