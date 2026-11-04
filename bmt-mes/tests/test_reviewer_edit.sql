@@ -3,6 +3,8 @@
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 set client_min_messages = warning;
 begin;
+-- Dữ liệu thật đã duyệt tồn dự phòng (phiếu DP 04/11/2026): kịch bản giả định dự phòng 0 → tạm đặt 0 trong giao dịch (rollback)
+update master.materials set safety_stock = 0 where safety_stock > 0;
 create temp table r (n serial, msg text);
 create temp table t (k text primary key, v uuid);
 
