@@ -18,14 +18,14 @@ select pg_temp.ok((select bool_and(abs(core_dia_mm - v.core) < 0.002 and od_mm =
                                           ('HEW18S2PC', 2.15, 6.0, 0.785), ('HER15U2LZ', 2.6, 6.7, 1.357), ('HEW16S2PC', 2.5, 6.7, 1.276),
                                           ('HER10S2LZ', 2.1, 5.7, 0.724), ('HER25U2LZ', 3.1, 7.9, 2.217)) v(code, core, od, a) using (code)),
   'Đường kính lõi, OD, tiết diện ruột đúng spec Heizka');
-select pg_temp.ok((select bool_and(case when code like 'HEW%' then conductor_mat = 'TC' and drain_mat = 'TC' and drain_wires = 12 and sheath = 'PVC' and m_per_pack = 305
-                                        when shield then conductor_mat = 'BC' and drain_mat = 'TCCA' and drain_wires = 7 and drain_dia_mm = 0.18 and sheath = 'LSZH' and m_per_pack = 500
+select pg_temp.ok((select bool_and(case when code like 'HEW%' then conductor_mat = 'TC' and drain_mat = 'TCCA' and drain_dia_mm = 0.2 and drain_wires in (7, 12) and sheath = 'PVC' and m_per_pack = 305
+                                        when shield then conductor_mat = 'BC' and drain_mat = 'TCCA' and drain_wires = 7 and drain_dia_mm = 0.2 and sheath = 'LSZH' and m_per_pack = 500
                                         else conductor_mat = 'BC' and not pet_tape and drain_wires = 0 and sheath = 'LSZH' end) from hz),
-  'Vật liệu ruột, drain, vỏ, đóng gói theo spec');
+  'Vật liệu ruột, drain (TCCA Ø0,20 – chuẩn 04/11/2026), vỏ, đóng gói theo spec');
 select pg_temp.ok((select description from hz where code = 'HER15S2LZ') = '1P×2×1.5 mm² SI/vỏ LSZH, shield AL/PET + drain'
               and (select description from hz where code = 'HER25U2LZ') = '2×2.5 mm² SI/vỏ LSZH, không shield'
               and (select description from hz where code = 'HEW16S2PC') = '1P×2×AWG16 HDPE/vỏ PVC, shield AL/PET + drain', 'Tên theo quy tắc');
-select pg_temp.ok(not exists (select 1 from hz, unnest(master.bom_issues(spec_id)) x), 'BOM khớp thông số (đồng CU-025/TC-025, drain TCCA-018/TC-018, PET, độn, màu vỏ, nhãn)');
+select pg_temp.ok(not exists (select 1 from hz, unnest(master.bom_issues(spec_id)) x), 'BOM khớp thông số (đồng CU-025/TC-025, drain TCCA-020, PET, độn, màu vỏ, nhãn)');
 select pg_temp.ok((select count(*) = 4 from hz where rdc_calc > rdc_limit)
               and (select bool_and(code in ('HER10S2LZ', 'HER16S2LZ', 'HER18S2LZ', 'HEW18S2PC')) from hz where rdc_calc > rdc_limit),
   'Rdc vượt giới hạn theo tên bán: HER10, HER16, HER18, HEW18');
