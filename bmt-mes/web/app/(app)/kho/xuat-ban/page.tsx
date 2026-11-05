@@ -17,8 +17,8 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
   const supabase = await createClient();
   const le = new LoadErrors();
   const [{ data: dvs }, { data: groups }, { data: customers }] = le.all(await Promise.all([
-    supabase.schema('app').from('v_deliveries').select('*').order('created_at', { ascending: false }).limit(100),
-    supabase.schema('app').from('v_fg_stock').select('*').order('product_code').order('brand').order('pack_m', { ascending: false }).returns<FgGroup[]>(),
+    supabase.schema('app').from('v_deliveries').select('id, delivery_no, status, ship_date, so_no, label_brand, customer_name, created_by_name, reel_count, total_m, direct, coil_count, shipped_coils').order('created_at', { ascending: false }).limit(100),
+    supabase.schema('app').from('v_fg_stock').select('product_code, brand, pack_m, qc_wait_coils, putaway_coils, store_coils, store_m, hold_coils, total_coils, committed_coils, free_coils').order('product_code').order('brand').order('pack_m', { ascending: false }).returns<FgGroup[]>(),
     supabase.schema('core').from('partners').select('id, name').eq('is_customer', true).eq('active', true).order('name'),
   ]));
   const canCreate = can(me, 'sales', 'create') || hasRole(me, 'KT_KHO', 'ADMIN');

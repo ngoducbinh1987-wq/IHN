@@ -65,7 +65,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const term = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
   // Đọc hết tồn (nối từng trang 1.000 dòng): bảng theo mã hàng cộng từ mọi dòng, không được thiếu
   const stockPage = (from: number, to: number) => {
-    let q = supabase.schema('app').from('v_stock').select('*');
+    let q = supabase.schema('app').from('v_stock').select('warehouse_id, warehouse_code, location_id, location_code, lot_id, lot_no, hu_id, hu_no, item_kind, item_code, item_name, uom, qc_status, exp_date, mfg_date, brand, color, wip_stage, qty, reserved_qty, available, is_remnant, expiring');
     if (kho) q = q.eq('warehouse_code', kho);
     if (loc === 'dat') q = q.eq('qc_status', 'PASSED');
     if (loc === 'qc') q = q.eq('qc_status', 'PENDING');
@@ -80,7 +80,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const [stock, { data: fg }, { data: whs }] = le.all(await Promise.all([
     fetchAll<Row>(stockPage),
     // Thành phẩm đếm theo cuộn, chủng loại (mã · nhãn · quy cách): cuộn chỉ dán tem QC PASS, xuất theo số cuộn
-    kho === 'KTP' && !detail ? supabase.schema('app').from('v_fg_stock').select('*').order('product_code').order('brand').returns<FgGroup[]>() : Promise.resolve({ data: [] as FgGroup[] }),
+    kho === 'KTP' && !detail ? supabase.schema('app').from('v_fg_stock').select('product_code, brand, pack_m, qc_wait_coils, putaway_coils, store_coils, store_m, hold_coils, committed_coils, free_coils').order('product_code').order('brand').returns<FgGroup[]>() : Promise.resolve({ data: [] as FgGroup[] }),
     admin ? supabase.schema('inv').from('warehouses').select('id, code, name').order('code') : Promise.resolve({ data: [] as { id: string; code: string; name: string }[] }),
   ]));
   const rows = stock.data;

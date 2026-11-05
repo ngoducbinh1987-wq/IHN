@@ -30,9 +30,9 @@ export default async function DeliveryDetail({ params, searchParams }: { params:
     notFound();
   }
   const [{ data: items }, { data: lines }, { data: groups }, { data: keepers }] = le.all(await Promise.all([
-    supabase.schema('app').from('v_delivery_items').select('*').eq('delivery_id', id).order('line_no').returns<Item[]>(),
-    supabase.schema('app').from('v_delivery_lines').select('*').eq('delivery_id', id).order('hu_no'),
-    supabase.schema('app').from('v_fg_stock').select('*').order('product_code').returns<FgGroup[]>(),
+    supabase.schema('app').from('v_delivery_items').select('id, line_no, product_code, product_name, brand, pack_m, coils, shipped_coils, shipped_m, free_coils').eq('delivery_id', id).order('line_no').returns<Item[]>(),
+    supabase.schema('app').from('v_delivery_lines').select('id, hu_no, lot_no, qty_m, product_code, product_name, location_code').eq('delivery_id', id).order('hu_no'),
+    supabase.schema('app').from('v_fg_stock').select('product_code, brand, pack_m, free_coils').order('product_code').returns<FgGroup[]>(),
     supabase.schema('app').rpc('fg_keepers'),
   ]));
   const { data: reviewEdit } = d.status === 'PENDING_APPROVAL' && d.direct

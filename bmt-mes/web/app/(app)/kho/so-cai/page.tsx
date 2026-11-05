@@ -46,7 +46,7 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   if (tab === 'the-kho' && sp.ma) {
     const ma = sp.ma;
     const ledger = le.one(await fetchAll<Record<string, unknown>>((a, b) => {
-      let q = supabase.schema('app').from('v_ledger').select('*').eq('item_code', ma).gte('doc_date', from).lte('doc_date', to);
+      let q = supabase.schema('app').from('v_ledger').select('id, doc_date, doc_no, doc_type, doc_id, warehouse_code, location_code, lot_no, hu_no, item_name, uom, qty, posted_by_name').eq('item_code', ma).gte('doc_date', from).lte('doc_date', to);
       if (wh) q = q.eq('warehouse_id', wh.id);
       return q.order('doc_date').order('moved_at').order('id').range(a, b);
     }));

@@ -16,7 +16,7 @@ export default async function CountsPage({ searchParams }: { searchParams: Promi
   const supabase = await createClient();
   const le = new LoadErrors();
   const [{ data: counts }, { data: whs }, { data: locs }] = le.all(await Promise.all([
-    supabase.schema('app').from('v_counts').select('*').order('count_date', { ascending: false }).limit(100),
+    supabase.schema('app').from('v_counts').select('id, count_no, warehouse_code, status, count_type, count_date, created_by_name, line_count, counted, diff_lines, location_codes').order('count_date', { ascending: false }).limit(100),
     supabase.schema('inv').from('warehouses').select('id, code, name').order('code'),
     supabase.schema('app').from('v_locations').select('id, code, name, warehouse_code').eq('active', true).order('warehouse_code').order('sort'),
   ]));

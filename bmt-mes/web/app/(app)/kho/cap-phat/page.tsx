@@ -18,9 +18,9 @@ export default async function RequisitionsPage({ searchParams }: { searchParams:
   const supabase = await createClient();
   const le = new LoadErrors();
   const [{ data: reqs }, { data: counts }, { data: wos }, { data: reasons }] = le.all(await Promise.all([
-    supabase.schema('app').from('v_requisitions').select('*').in('status', TAB_STATUS[tab]).order('created_at', { ascending: false }).limit(200),
+    supabase.schema('app').from('v_requisitions').select('id, req_no, kind, status, work_date, qty_m, reason_name, created_by_name, wo_no, product_code, product_name, line_count, line_done').in('status', TAB_STATUS[tab]).order('created_at', { ascending: false }).limit(200),
     supabase.schema('app').from('v_requisitions').select('status'),
-    supabase.schema('app').from('v_open_wos').select('*').order('wo_no'),
+    supabase.schema('app').from('v_open_wos').select('id, wo_no, qty_m, product_code, requisitioned_m').order('wo_no'),
     supabase.schema('master').from('reason_codes').select('code, name').eq('kind', 'EXTRA_ISSUE').order('code'),
   ]));
   const n = (k: string) => (counts ?? []).filter((r) => TAB_STATUS[k].includes(r.status)).length;

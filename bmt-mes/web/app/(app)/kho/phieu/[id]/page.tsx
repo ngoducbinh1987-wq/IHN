@@ -28,7 +28,7 @@ export default async function DocDetail({ params, searchParams }: { params: Prom
     notFound();
   }
   const [{ data: lines }, { data: prices }, { data: gr }] = le.all(await Promise.all([
-    supabase.schema('app').from('v_stock_doc_lines').select('*').eq('doc_id', id).order('line_no'),
+    supabase.schema('app').from('v_stock_doc_lines').select('id, line_no, lot_no, hu_id, hu_no, qty, gross_kg, tare_kg, reason, note, item_code, item_name, uom, item_kind, qc_status, location_code, to_location_code').eq('doc_id', id).order('line_no'),
     me.can_see_price ? supabase.schema('app').rpc('doc_line_prices', { p_doc: id }) : Promise.resolve({ data: [] as { line_id: string; unit_cost: number | null; amount: number | null }[] }),
     d.doc_type === 'GR' && d.ref_type === 'GR'
       ? supabase.schema('purchase').from('goods_receipts').select('gr_no, delivery_note, no_po_reason, checked_by, checked_at, check_note').eq('id', d.ref_id).maybeSingle()

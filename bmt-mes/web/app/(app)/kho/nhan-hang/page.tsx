@@ -17,7 +17,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const supabase = await createClient();
   const le = new LoadErrors();
   const [{ data: pos }, { data: mats }, { data: sups }, { data: locs }, { data: pkgs }] = le.all(await Promise.all([
-    supabase.schema('app').from('v_open_po_lines').select('*').order('po_no', { ascending: false }).order('line_no').returns<PoLine[]>(),
+    supabase.schema('app').from('v_open_po_lines').select('po_id, po_no, supplier_name, line_id, material_code, material_name, uom, has_expiry, qty, received_qty').order('po_no', { ascending: false }).order('line_no').returns<PoLine[]>(),
     supabase.schema('master').from('materials').select('code, name, uom, has_expiry').eq('is_scrap', false).eq('active', true).order('code').returns<MatOpt[]>(),
     supabase.schema('core').from('partners').select('id, name').eq('is_supplier', true).eq('active', true).order('name'),
     supabase.schema('app').from('v_locations').select('id, code, name').eq('warehouse_code', 'KNL').eq('active', true).order('sort'),

@@ -11,7 +11,7 @@ export default async function PrintPutaway() {
   await requireMe();
   const supabase = await createClient();
   const [{ data: groups }, { data: keepers }] = await Promise.all([
-    supabase.schema('app').from('v_fg_stock').select('*').gt('putaway_coils', 0).order('product_code').returns<FgGroup[]>(),
+    supabase.schema('app').from('v_fg_stock').select('product_code, brand, pack_m, putaway_coils, putaway_m').gt('putaway_coils', 0).order('product_code').returns<FgGroup[]>(),
     supabase.schema('app').rpc('fg_keepers'),
   ]);
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });

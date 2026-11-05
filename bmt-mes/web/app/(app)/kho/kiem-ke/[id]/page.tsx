@@ -25,7 +25,7 @@ export default async function CountDetail({ params, searchParams }: { params: Pr
     notFound();
   }
   const [{ data: lines }, { data: locs }, { data: adj }] = le.all(await Promise.all([
-    supabase.schema('app').from('v_count_lines').select('*').eq('count_id', id).order('location_code').order('item_code').order('hu_no'),
+    supabase.schema('app').from('v_count_lines').select('id, lot_no, hu_id, hu_no, location_code, item_code, item_name, uom, system_qty, counted_qty, counted_by_name, note, diff').eq('count_id', id).order('location_code').order('item_code').order('hu_no'),
     supabase.schema('app').from('v_locations').select('id, code, name').eq('warehouse_code', c.warehouse_code).eq('active', true).order('sort'),
     c.adj_doc_id ? supabase.schema('app').from('v_stock_docs').select('id, doc_no, approval_id, status').eq('id', c.adj_doc_id).maybeSingle() : Promise.resolve({ data: null }),
   ]));

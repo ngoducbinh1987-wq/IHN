@@ -21,8 +21,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const admin = hasRole(me, 'ADMIN');
   const [{ data: settings }, { data: locs }, { data: pkgs }, { data: mats }, { data: whs }, { data: groups }] = le.all(await Promise.all([
     supabase.schema('app').from('v_inv_settings').select('*').order('sort'),
-    supabase.schema('app').from('v_locations').select('*').order('warehouse_code').order('sort'),
-    supabase.schema('master').from('package_types').select('*').order('code'),
+    supabase.schema('app').from('v_locations').select('id, code, name, kind, active, warehouse_code, units').order('warehouse_code').order('sort'),
+    supabase.schema('master').from('package_types').select('id, code, name, tare_kg, material_group, active').order('code'),
     tab === 'vat-tu' ? supabase.schema('master').from('materials').select('id, code, name, uom, reorder_point, shelf_life_days, storage_zone, abc_class, has_expiry').eq('is_scrap', false).order('code') : Promise.resolve({ data: [] as never[] }),
     supabase.schema('inv').from('warehouses').select('id, code, name').order('code'),
     supabase.schema('master').from('material_groups').select('code, name').order('code'),

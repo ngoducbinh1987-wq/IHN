@@ -101,8 +101,8 @@ export default async function FgToolsPage({ searchParams }: { searchParams: Prom
   const le = new LoadErrors();
   const [{ data: prods }, { data: groups }, { data: coils }, { data: keepers }] = le.all(await Promise.all([
     supabase.schema('app').from('v_products').select('id, code, description, spec_status').order('code'),
-    supabase.schema('app').from('v_fg_stock').select('*').order('product_code').returns<FgGroup[]>(),
-    supabase.schema('app').from('v_fg_coils').select('*').order('product_code').order('mfg_date').returns<Coil[]>(),
+    supabase.schema('app').from('v_fg_stock').select('product_code, brand, pack_m, putaway_coils, putaway_m').order('product_code').returns<FgGroup[]>(),
+    supabase.schema('app').from('v_fg_coils').select('id, hu_no, lot_no, product_code, brand, mfg_date, qc_status, qty, pack_m, location_code, location_kind, reserved_qty').order('product_code').order('mfg_date').returns<Coil[]>(),
     supabase.schema('app').rpc('fg_keepers'),
   ]));
   const kp = (keepers ?? []) as { code: string; full_name: string | null }[];

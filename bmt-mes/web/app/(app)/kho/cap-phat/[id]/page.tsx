@@ -26,7 +26,7 @@ export default async function RequisitionDetail({ params, searchParams }: { para
     notFound();
   }
   const [{ data: lines }, { data: docs }, { data: vh }, { data: tt }, { data: kt }] = le.all(await Promise.all([
-    supabase.schema('app').from('v_requisition_lines').select('*').eq('req_id', id).order('material_code'),
+    supabase.schema('app').from('v_requisition_lines').select('id, material_id, material_code, material_name, uom, qty_norm, qty_req, qty_issued, qty_returned, remaining, available').eq('req_id', id).order('material_code'),
     supabase.schema('app').from('v_stock_docs').select('id, doc_no, doc_type, posted_at, receiver_name, received_at, review_status, total_qty, created_by_name')
       .eq('requisition_id', id).order('posted_at', { ascending: false }),
     supabase.schema('app').rpc('role_holders', { p_role: 'VAN_HANH' }),
@@ -35,7 +35,7 @@ export default async function RequisitionDetail({ params, searchParams }: { para
   ]));
   const open = (lines ?? []).filter((l) => Number(l.remaining) > 0);
   const { data: sugg } = open.length
-    ? le.one(await supabase.schema('app').from('v_pick_suggest').select('*').in('material_id', open.map((l) => l.material_id)).lte('pick_order', 3).order('pick_order'))
+    ? le.one(await supabase.schema('app').from('v_pick_suggest').select('hu_id, hu_no, material_id, exp_date, available, location_code').in('material_id', open.map((l) => l.material_id)).lte('pick_order', 3).order('pick_order'))
     : { data: [] as never[] };
   const receivers = [...((vh ?? []) as Person[]), ...((tt ?? []) as Person[])].filter((p, i, a) => p.id !== me.id && a.findIndex((x) => x.id === p.id) === i);
   const witnesses = ((kt ?? []) as Person[]).filter((p) => p.id !== me.id);

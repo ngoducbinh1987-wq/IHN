@@ -34,11 +34,11 @@ export default async function PrintTags({ searchParams }: { searchParams: Promis
       supabase.schema('app').from('v_stock_doc_lines').select('hu_id, qty').eq('doc_id', sp.doc).gt('qty', 0).not('hu_id', 'is', null),
     ]);
     const ids = [...new Set((lines ?? []).map((l) => l.hu_id as string))];
-    if (ids.length) hus = ((await supabase.schema('app').from('v_hu').select('*').in('id', ids).neq('status', 'VOID').order('hu_no')).data ?? []) as Hu[];
+    if (ids.length) hus = ((await supabase.schema('app').from('v_hu').select('id, hu_no, qr_payload, qty, gross_kg, tare_kg, is_remnant, print_count, lot_no, item_kind, qc_status, mfg_date, exp_date, supplier_lot, brand, color, uom, item_code, item_name, warehouse_code, location_code, supplier_name, wo_no, op_code, carrier_code').in('id', ids).neq('status', 'VOID').order('hu_no')).data ?? []) as Hu[];
     title = `Tem phiếu ${d?.doc_no ?? ''}`;
   } else if (sp.hu) {
     const ids = sp.hu.split(',').filter((x) => UUID.test(x));
-    if (ids.length) hus = ((await supabase.schema('app').from('v_hu').select('*').in('id', ids).order('hu_no')).data ?? []) as Hu[];
+    if (ids.length) hus = ((await supabase.schema('app').from('v_hu').select('id, hu_no, qr_payload, qty, gross_kg, tare_kg, is_remnant, print_count, lot_no, item_kind, qc_status, mfg_date, exp_date, supplier_lot, brand, color, uom, item_code, item_name, warehouse_code, location_code, supplier_name, wo_no, op_code, carrier_code').in('id', ids).order('hu_no')).data ?? []) as Hu[];
     title = 'Tem đơn vị';
   } else if (sp.loc) {
     const code = sp.loc.toUpperCase();
