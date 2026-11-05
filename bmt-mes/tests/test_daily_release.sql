@@ -140,7 +140,8 @@ select app.kh_approve_slip((select v from t where k = 'slip1'));
 insert into t select 'req1', id from inv.requisitions where slip_id = (select v from t where k = 'slip1');
 select pg_temp.ok((select rq.status = 'APPROVED' and rq.kind = 'NORM' and rq.wo_id = (select v from t where k = 'wo') and rq.work_date = pg_temp.today()
   from inv.requisitions rq where rq.id = (select v from t where k = 'req1')), 'Duyệt phiếu lĩnh → phiếu lĩnh Kho đã duyệt theo lệnh SX, đúng ngày');
-select pg_temp.ok(not exists (select 1 from expect e full join inv.requisition_lines rl on rl.material_id = e.material_id and rl.req_id = (select v from t where k = 'req1')
+select pg_temp.ok(not exists (select 1 from expect e
+                              full join (select * from inv.requisition_lines where req_id = (select v from t where k = 'req1')) rl on rl.material_id = e.material_id
                               where rl.qty_req is distinct from e.qty),
   'Dòng phiếu lĩnh Kho = định mức BOM của ngày');
 select pg_temp.ok(exists (select 1 from wf.notifications n join core.profiles p on p.id = n.user_id where p.employee_code = 'W_THUKHO' and n.link = '/kho/cap-phat'),
