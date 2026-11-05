@@ -10,22 +10,15 @@ import { replanDue } from '@/lib/kh/replan';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
-  // Hồ sơ người dùng và các số đếm trên menu chạy song song (một lượt hỏi database thay vì hai)
-  const [me, { count: myTurn }, { count: unread }, { count: maintAll }, { count: qcWait }, { data: safetyBelow }, { count: poDraft }, { data: paramAlarm }] = await Promise.all([
+  // Hồ sơ người dùng + mọi số đếm trên menu: 2 lượt gọi database chạy song song (app.menu_counts gộp 7 số đếm:
+  // chờ tôi duyệt, thông báo chưa đọc, bảo dưỡng quá hạn, chờ QC, dưới dự phòng, đơn mua nháp, máy thiếu tốc độ)
+  const [me, { data: counts }] = await Promise.all([
     requireMe(),
-    supabase.schema('app').from('v_approvals').select('id', { count: 'exact', head: true }).eq('my_turn', true),
-    supabase.schema('app').from('v_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
-    // Việc bảo dưỡng quá hạn chưa có phiếu (RLS chỉ trả dòng cho người có quyền xem máy)
-    supabase.schema('app').from('v_maint_plans').select('id', { count: 'exact', head: true }).eq('active', true).eq('state', 'OVERDUE').is('open_wo', null),
-    // Bobin, lô chờ QC (RLS: chỉ người xem được kho)
-    supabase.schema('inv').from('lots').select('id', { count: 'exact', head: true }).eq('qc_status', 'PENDING'),
-    // Vật tư dưới mức tồn dự phòng (hàm tự kiểm quyền mua hàng / kho / Ban giám đốc)
-    supabase.schema('app').rpc('safety_below_count'),
-    // Đơn mua MES tự sinh chờ NV mua kiểm tra (RLS: người xem được mua hàng)
-    supabase.schema('purchase').from('purchase_orders').select('id', { count: 'exact', head: true }).eq('status', 'DRAFT'),
-    // Máy xếp lịch còn thiếu thông số tốc độ (Alarm; hàm tự kiểm quyền xem máy / kế hoạch SX)
-    supabase.schema('app').rpc('machine_param_alarm_count'),
+    supabase.schema('app').rpc('menu_counts'),
   ]);
+  const c = (counts ?? {}) as Record<string, number | null>;
+  const myTurn = c.my_turn, unread = c.unread, maintAll = c.maint_overdue, qcWait = c.qc_wait;
+  const safetyBelow = c.safety_below, poDraft = c.po_draft, paramAlarm = c.param_alarm;
   // Tính lại tiến độ sau ca: 1 giờ sau khi hết ca, lần đầu TP SX / Kế hoạch SX / Giám đốc mở MES thì MES tính (sau khi trả trang,
   // không làm chậm trang); job máy chủ bmt_replan làm việc này khi đã cấu hình CRON_SECRET + khóa máy chủ
   if (me.roles.some((r) => ['SX_TP', 'SX_KH', 'BGD', 'ADMIN'].includes(r))) {
