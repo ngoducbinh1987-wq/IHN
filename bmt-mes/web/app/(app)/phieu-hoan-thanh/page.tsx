@@ -42,8 +42,8 @@ export default async function SlipsPage({ searchParams }: { searchParams: Promis
   const day = /^\d{4}-\d{2}-\d{2}$/.test(sp.ngay ?? '') ? sp.ngay! : today;
   const supabase = await createClient();
   const [{ data: targets }, { data: slips }, { data: machines }, { data: operators }, { data: reasons }] = await Promise.all([
-    supabase.schema('app').from('v_slip_targets').select('*').order('wo_no').order('seq').returns<Target[]>(),
-    supabase.schema('app').from('v_bobbin_slips').select('*').eq('work_date', day).order('recorded_at', { ascending: false }).returns<Slip[]>(),
+    supabase.schema('app').from('v_slip_targets').select('wo_id, wo_no, wo_status, wo_qty_m, pack_type, m_per_pack, product_code, product_name, cores, sheath_color, insulation_colors, wo_op_id, op_code, op_name, seq, machine_type, per_core, planned_m, good_m, machine_code, slips, core_cu_kgkm').order('wo_no').order('seq').returns<Target[]>(),
+    supabase.schema('app').from('v_bobbin_slips').select('id, slip_no, paper_no, status, void_reason, recorded_at, op_code, op_name, wo_no, product_code, machine_code, carrier_code, operator_code, ended_at, gross_kg, net_kg, qty_m, qty_estimated, coils, scrap_kg, lot_no, qc_status, inputs, recorded_by_name, true_m, true_used_kg').eq('work_date', day).order('recorded_at', { ascending: false }).returns<Slip[]>(),
     supabase.schema('master').from('machines').select('code, name, machine_type').eq('active', true).is('inline_with', null).order('code'),
     supabase.schema('master').from('operators').select('code, job').eq('active', true).order('sort'),
     supabase.schema('master').from('reason_codes').select('code, name').eq('kind', 'SCRAP').order('code'),

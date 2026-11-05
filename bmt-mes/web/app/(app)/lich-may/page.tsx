@@ -137,10 +137,10 @@ export default async function LichMay({ searchParams }: { searchParams: Promise<
           {view && tab === 'tiendo' && <Progress kh={kh} view={view} />}
           {tab === 'tiendo' && <ReplanCard kh={kh} canPlan={canPlan}
             after={Number(((await db.schema('master').from('planning_config').select('replan_after_min').eq('id', 1).maybeSingle()).data as { replan_after_min?: number } | null)?.replan_after_min ?? 60)}
-            runs={((await db.schema('app').from('v_kh_replans').select('*').eq('plan_id', kh.planId).order('started_at', { ascending: false }).limit(10)).data ?? []) as ReplanRow[]} />}
+            runs={((await db.schema('app').from('v_kh_replans').select('id, kind, work_date, shift_no, shift_end, status, started_at, finished_at, run_by_name, version, error, lots, result').eq('plan_id', kh.planId).order('started_at', { ascending: false }).limit(10)).data ?? []) as ReplanRow[]} />}
           {tab === 'toiuu' && <OptimizeTab kh={kh} sp={sp} roles={me.roles} userId={me.id}
-            ots={((await db.schema('app').from('v_kh_overtime').select('*').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as OtRow[]}
-            reqs={((await db.schema('app').from('v_kh_shift_requests').select('*').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as ShiftReqRow[]} />}
+            ots={((await db.schema('app').from('v_kh_overtime').select('id, req_no, plan_no, extra_min, mix_early_h, date_from, date_to, summary, reason, status, proposed_by, proposed_by_name, proposed_at, reviewed_by_name, reviewed_at, review_note').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as OtRow[]}
+            reqs={((await db.schema('app').from('v_kh_shift_requests').select('id, req_no, plan_no, items, summary, reason, status, proposed_by, proposed_by_name, proposed_at, reviewed_by_name, reviewed_at, review_note').order('proposed_at', { ascending: false }).limit(15)).data ?? []) as ShiftReqRow[]} />}
           {tab === 'cancu' && <Basis kh={kh} view={view} />}
           {tab === 'phatsinh' && <Changes kh={kh} sp={sp} roles={me.roles} userId={me.id} />}
           {tab === 'baoduong' && <Maint kh={kh} view={view} roles={me.roles} userId={me.id} />}
@@ -777,8 +777,8 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
   const canSim = canReq || hasRole(roles, ROLE.params);
   const [{ data: prods }, { data: reqs }, { data: vers }] = await Promise.all([
     canSim ? db.schema('app').from('v_kh_products').select('*').order('product_code') : Promise.resolve({ data: [] as ProductRow[] }),
-    db.schema('app').from('v_kh_changes').select('*').eq('plan_id', kh.planId ?? '').order('created_at', { ascending: false }).limit(30),
-    db.schema('app').from('v_kh_versions').select('*').eq('plan_id', kh.planId ?? '').order('version', { ascending: false }).limit(30),
+    db.schema('app').from('v_kh_changes').select('id, req_no, payload, result, level, steps, status, note, created_at, created_by, created_by_name, finished_at, plan_id').eq('plan_id', kh.planId ?? '').order('created_at', { ascending: false }).limit(30),
+    db.schema('app').from('v_kh_versions').select('id, version, created_at, reason, created_by_name, change_no, is_current, status, approved_by_name, approved_at, review_note, params').eq('plan_id', kh.planId ?? '').order('version', { ascending: false }).limit(30),
   ]);
   const products = (prods ?? []) as ProductRow[];
   const input = sp.sp ? readChange(sp) : null;

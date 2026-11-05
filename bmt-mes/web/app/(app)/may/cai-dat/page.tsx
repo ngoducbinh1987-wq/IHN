@@ -18,7 +18,7 @@ export default async function MachineSettings({ searchParams }: { searchParams: 
   const supabase = await createClient();
   const [{ data: settings }, { data: items }, { data: lines }] = await Promise.all([
     supabase.schema('app').from('v_machine_settings').select('key, value'),
-    supabase.schema('app').from('v_maint_check_items').select('*').order('sort'),
+    supabase.schema('app').from('v_maint_check_items').select('id, label, machine_id, sort').order('sort'),
     supabase.schema('app').from('v_machines').select('id, code').is('line_id', null).order('code'),
   ]);
   const get = (k: string) => (settings ?? []).find((s) => s.key === k)?.value;

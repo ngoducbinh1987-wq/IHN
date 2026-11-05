@@ -22,7 +22,7 @@ export default async function PlanPage({ params, searchParams }: { params: Promi
   if (!p) notFound();
   const cfg = can(me, 'machine', 'config');
   const [{ data: wos }, { data: machines }, { data: remind }] = await Promise.all([
-    supabase.schema('app').from('v_maint_wos').select('*').eq('plan_id', id).order('created_at', { ascending: false }).limit(20),
+    supabase.schema('app').from('v_maint_wos').select('id, wo_no, status, result, done_by_name, finished_at, confirmed_by_name').eq('plan_id', id).order('created_at', { ascending: false }).limit(20),
     cfg && sp.sua ? supabase.schema('app').from('v_machines').select('id, code, name, unit_kind, line_id').order('code') : Promise.resolve({ data: [] as never[] }),
     supabase.schema('app').from('v_machine_settings').select('value').eq('key', 'remind_days').maybeSingle(),
   ]);

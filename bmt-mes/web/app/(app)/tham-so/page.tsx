@@ -37,9 +37,9 @@ export default async function ThamSo({ searchParams }: { searchParams: Promise<R
   const { cfg, machines, flowMeta } = await loadConfig(db);
   const F = flowOf(cfg);
   const wd = cfg.workdays ?? DEFAULT_WD;
-  const { data: log } = await db.schema('app').from('v_kh_param_log').select('*').order('at', { ascending: false }).limit(100);
+  const { data: log } = await db.schema('app').from('v_kh_param_log').select('id, at, user_name, section, item, old_value, new_value, reason').order('at', { ascending: false }).limit(100);
   const PP = peopleOf(cfg);
-  const { data: avRows } = await db.schema('app').from('v_machine_avail').select('*').order('machine_code');
+  const { data: avRows } = await db.schema('app').from('v_machine_avail').select('machine_code, machine_name, tracked_days, plan_hours, down_hours, events, down_pct, fill_pct, fill_now, enough, below_floor, avail_learn, avail_days, avail_min_days, avail_floor_pct').order('machine_code');
   const av = (avRows ?? []) as AvailRow[];
   const evOf = new Map<string, AvailEvent[]>();
   await Promise.all(av.filter((a) => a.events > 0).map(async (a) => {

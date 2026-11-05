@@ -22,8 +22,8 @@ export default async function ChecklistPage({ searchParams }: { searchParams: Pr
   const supabase = await createClient();
   const [{ data: lines }, { data: items }, { data: checks }] = await Promise.all([
     supabase.schema('app').from('v_machines').select('id, code, name, status, status_since, status_eta, operators').is('line_id', null).eq('active', true).neq('status', 'OFF').order('code'),
-    supabase.schema('app').from('v_maint_check_items').select('*').eq('active', true).order('sort'),
-    supabase.schema('app').from('v_maint_checks').select('*').eq('check_date', day),
+    supabase.schema('app').from('v_maint_check_items').select('machine_id, label').eq('active', true).order('sort'),
+    supabase.schema('app').from('v_maint_checks').select('id, machine_id, results, has_issue, note, done_at, done_by_name, checked_at, checked_by_name').eq('check_date', day),
   ]);
   const itemsFor = (id: string) => (items ?? []).filter((i) => !i.machine_id || i.machine_id === id).map((i) => i.label);
   const canWrite = can(me, 'machine', 'create') && isToday;

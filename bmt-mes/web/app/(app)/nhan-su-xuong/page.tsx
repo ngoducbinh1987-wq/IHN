@@ -45,13 +45,13 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
   const canEdit = me.roles.some((r) => ['SX_TP', 'SX_KH', 'ADMIN'].includes(r));
   const canSkill = me.roles.some((r) => ['SX_TP', 'ADMIN'].includes(r));
   const [{ data: opRows }, { data: mRows }, { data: absRows }, { data: covRows }, { data: crewRows }, { data: users }, { data: shRows }] = await Promise.all([
-    db.schema('app').from('v_operators_all').select('*').order('sort'),
+    db.schema('app').from('v_operators_all').select('code, full_name, job, extra, note, active, stopped_at, sort, is_deputy, keeps_fg, profile_id, profile_name, skills').order('sort'),
     db.schema('app').from('v_kh_machines').select('id, code, name, machine_type, status').order('code'),
-    db.schema('app').from('v_kh_absences').select('*').gte('date_to', addDays(today, -60)).order('date_from'),
-    db.schema('app').from('v_kh_covers').select('*').gte('date_to', addDays(today, -30)).order('date_from'),
-    db.schema('app').from('v_kh_crew_days').select('*').gte('work_date', today).order('work_date'),
+    db.schema('app').from('v_kh_absences').select('id, operator_code, full_name, date_from, date_to, part, kind, note, created_by_name, created_at').gte('date_to', addDays(today, -60)).order('date_from'),
+    db.schema('app').from('v_kh_covers').select('id, operator_code, full_name, machine_code, date_from, date_to, reason, skill, created_by_name').gte('date_to', addDays(today, -30)).order('date_from'),
+    db.schema('app').from('v_kh_crew_days').select('work_date, machine_code, crew, members, note, set_by_name').gte('work_date', today).order('work_date'),
     canEdit ? db.schema('app').from('v_users').select('id, full_name, status').eq('status', 'ACTIVE').order('full_name') : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
-    db.schema('app').from('v_kh_op_shifts').select('*').gte('date_to', addDays(today, -84)).order('date_from'),
+    db.schema('app').from('v_kh_op_shifts').select('id, operator_code, full_name, date_from, date_to, shift_no, note, created_by_name').gte('date_to', addDays(today, -84)).order('date_from'),
   ]);
   const [{ data: rosterRows }, { data: hourRows }] = await Promise.all([
     db.schema('app').from('v_kh_rosters').select('*').gte('week_start', addDays(today, -84)).order('week_start', { ascending: false }).order('created_at', { ascending: false }),

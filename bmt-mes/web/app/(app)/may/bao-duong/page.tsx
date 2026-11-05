@@ -19,8 +19,8 @@ export default async function MaintPage({ searchParams }: { searchParams: Promis
   const loc = ['can-lam', 'tat-ca', 'phieu'].includes(sp.loc ?? '') ? sp.loc! : 'can-lam';
   const supabase = await createClient();
   const [{ data: plans, error }, { data: wos }, { data: lines }] = await Promise.all([
-    supabase.schema('app').from('v_maint_plans').select('*'),
-    supabase.schema('app').from('v_maint_wos').select('*').in('status', ['OPEN', 'IN_PROGRESS']).order('created_at', { ascending: false }),
+    supabase.schema('app').from('v_maint_plans').select('id, name, kind, level, active, line_id, line_code, unit_kind, machine_name, state, open_wo, open_wo_no, days_left, due_date, stop_minutes, off_shift, assignee_role, trigger, every_days, every_hours, every_km, used_days, used_hours, used_km'),
+    supabase.schema('app').from('v_maint_wos').select('id, wo_no, wo_type, line_id, line_code, machine_code, title, status, planned_date, created_at, eta').in('status', ['OPEN', 'IN_PROGRESS']).order('created_at', { ascending: false }),
     supabase.schema('app').from('v_machines').select('id, code').is('line_id', null).eq('active', true).order('code'),
   ]);
   const all = (plans ?? []).filter((p) => !sp.day || p.line_id === sp.day);

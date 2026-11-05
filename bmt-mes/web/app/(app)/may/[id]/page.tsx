@@ -120,8 +120,8 @@ export default async function MachineProfile({ params, searchParams }:
 async function SpecsTab({ id, cfg, back }: { id: string; cfg: boolean; back: string }) {
   const supabase = await createClient();
   const [{ data: specs }, { data: comps }, { data: mats }] = await Promise.all([
-    supabase.schema('app').from('v_machine_specs').select('*').eq('machine_id', id).order('sort').order('label'),
-    supabase.schema('app').from('v_machine_components').select('*').eq('machine_id', id).order('kind').order('name'),
+    supabase.schema('app').from('v_machine_specs').select('id, grp, label, value, uom, source').eq('machine_id', id).order('sort').order('label'),
+    supabase.schema('app').from('v_machine_components').select('id, kind, name, spec, qty, material_id, material_code, stock, min_stock, low_stock').eq('machine_id', id).order('kind').order('name'),
     cfg ? supabase.schema('master').from('materials').select('id, code, name').eq('active', true).order('code') : Promise.resolve({ data: [] as { id: string; code: string; name: string }[] }),
   ]);
   const rows = specs ?? [];
@@ -268,7 +268,7 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
   const supabase = await createClient();
   const [{ data: ranges }, { data: speeds }, { data: ops }, { data: cores }, { data: products }, { data: line }, { data: plcAll }] = await Promise.all([
     supabase.schema('app').from('v_machine_ranges').select('id, min_value, max_value').eq('machine_id', lineId).eq('param', 'SIZE_MM2'),
-    supabase.schema('app').from('v_machine_speeds').select('*').eq('machine_id', lineId).neq('status', 'OBSOLETE'),
+    supabase.schema('app').from('v_machine_speeds').select('id, op_code, product_id, product_code, group_code, group_name, core_code, std_mpm, setup_min, status, created_by, approved_by_name, approved_at, temp_approval, wait_days').eq('machine_id', lineId).neq('status', 'OBSOLETE'),
     supabase.schema('master').from('operations').select('code, name').order('seq'),
     supabase.schema('master').from('core_types').select('code, nominal_mm2').order('nominal_mm2'),
     supabase.schema('master').from('products').select('id, code').eq('active', true).order('code'),
@@ -379,8 +379,8 @@ async function SpeedTab({ lineId, isLine, machineType, cfg, canPropose, meId, ca
 // ---------------------------------------------------------------- Bảo dưỡng
 async function MaintTab({ id, lineId, isLine, cfg }: { id: string; lineId: string; isLine: boolean; cfg: boolean }) {
   const supabase = await createClient();
-  const plansQ = supabase.schema('app').from('v_maint_plans').select('*').order('due_date');
-  const wosQ = supabase.schema('app').from('v_maint_wos').select('*').order('created_at', { ascending: false }).limit(20);
+  const plansQ = supabase.schema('app').from('v_maint_plans').select('id, name, level, active, unit_kind, machine_name, state, open_wo, open_wo_no, days_left, due_date, stop_minutes, off_shift, trigger, every_days, every_hours, every_km, used_days, used_hours, used_km').order('due_date');
+  const wosQ = supabase.schema('app').from('v_maint_wos').select('id, wo_no, wo_type, machine_code, title, status, created_at, finished_at').order('created_at', { ascending: false }).limit(20);
   const [{ data: plans }, { data: wos }] = await Promise.all([
     isLine ? plansQ.eq('line_id', lineId) : plansQ.eq('machine_id', id),
     isLine ? wosQ.eq('line_id', lineId) : wosQ.eq('machine_id', id),
@@ -433,9 +433,9 @@ async function MaintTab({ id, lineId, isLine, cfg }: { id: string; lineId: strin
 async function PeopleTab({ id, lineId, isLine, cfg, canAssign, canCertify, back }: { id: string; lineId: string; isLine: boolean; cfg: boolean; canAssign: boolean; canCertify: boolean; back: string }) {
   const supabase = await createClient();
   const [{ data: ops }, { data: people }, { data: docs }] = await Promise.all([
-    supabase.schema('app').from('v_machine_operators').select('*').eq('machine_id', lineId).order('level').order('sort'),
+    supabase.schema('app').from('v_machine_operators').select('operator_code, profile_name, job, is_deputy, level, signed_at, signed_by_name').eq('machine_id', lineId).order('level').order('sort'),
     supabase.schema('app').from('v_kh_operators').select('code, job, profile_name, skills, learning').order('sort'),
-    supabase.schema('app').from('v_machine_docs').select('*').eq('machine_id', id).order('kind').order('title'),
+    supabase.schema('app').from('v_machine_docs').select('id, title, url, kind, status, note').eq('machine_id', id).order('kind').order('title'),
   ]);
   const free = (people ?? []).filter((p) => !(ops ?? []).some((o) => o.operator_code === p.code));
   const hidden = (op: string) => <><input type="hidden" name="machine_id" value={lineId} /><input type="hidden" name="operator" value={op} /><input type="hidden" name="back" value={back} /></>;

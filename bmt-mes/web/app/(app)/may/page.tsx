@@ -17,7 +17,7 @@ export default async function MachinesPage({ searchParams }: { searchParams: Pro
   const supabase = await createClient();
   const today = vnToday();
   const [{ data: machines, error }, { data: plans }, { data: checks }, { data: speeds }, { data: low }, { data: wos }, { data: gapRows }] = await Promise.all([
-    supabase.schema('app').from('v_machines').select('*').order('code'),
+    supabase.schema('app').from('v_machines').select('id, code, name, line_id, active, status, status_since, status_eta, status_note, open_repair_id, op_name, operators, seq, unit_kind, spec_total, spec_filled').order('code'),
     supabase.schema('app').from('v_maint_plans').select('id, name, machine_code, line_id, line_code, state, days_left, trigger, every_days, every_hours, every_km, used_days, used_hours, used_km, open_wo, level').eq('active', true),
     supabase.schema('app').from('v_maint_checks').select('machine_id, has_issue, checked_at, note').eq('check_date', today),
     supabase.schema('app').from('v_machine_speeds').select('id, machine_code, label, op_name, std_mpm, wait_days').eq('status', 'PENDING'),

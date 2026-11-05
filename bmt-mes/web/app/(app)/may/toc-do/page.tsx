@@ -22,7 +22,7 @@ export default async function SpeedsPage({ searchParams }: { searchParams: Promi
   const me = await requirePerm('machine', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();
-  let q = supabase.schema('app').from('v_machine_speeds').select('*').order('op_code').order('machine_code').order('core_code', { nullsFirst: true });
+  let q = supabase.schema('app').from('v_machine_speeds').select('id, machine_id, op_code, op_name, machine_code, machine_name, label, product_code, group_code, group_name, core_code, note, std_mpm, range_max, setup_min, status, approved_by_name, approved_at, temp_approval, submitted_at, wait_days').order('op_code').order('machine_code').order('core_code', { nullsFirst: true });
   if (tab.st) q = q.in('status', tab.st);
   const { data, error } = await q;
   const [{ count: pending }, { data: gapRows }] = await Promise.all([

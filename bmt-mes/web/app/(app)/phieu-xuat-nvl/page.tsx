@@ -33,12 +33,12 @@ export default async function PaperIssuePage({ searchParams }: { searchParams: P
   const [{ data: reqs }, { data: docs }, { data: operators }] = await Promise.all([
     supabase.schema('app').from('v_requisitions').select('id, req_no, kind, status, work_date, note, wo_no, product_code, product_name')
       .eq('work_date', day).in('status', ['APPROVED', 'PARTIAL', 'DONE']).order('wo_no').returns<Req[]>(),
-    supabase.schema('app').from('v_wo_mat_docs').select('*').eq('work_date', day).order('doc_no', { ascending: false }).returns<Doc[]>(),
+    supabase.schema('app').from('v_wo_mat_docs').select('id, doc_no, doc_type, status, paper_no, receiver_code, posted_at, wo_no, product_code, req_no, lines, created_by_name, reversed_by').eq('work_date', day).order('doc_no', { ascending: false }).returns<Doc[]>(),
     supabase.schema('master').from('operators').select('code, job').eq('active', true).order('sort'),
   ]);
   const ids = (reqs ?? []).map((r) => r.id);
   const { data: lines } = ids.length
-    ? await supabase.schema('app').from('v_requisition_lines').select('*').in('req_id', ids).order('material_code').returns<Line[]>()
+    ? await supabase.schema('app').from('v_requisition_lines').select('id, req_id, material_id, material_code, material_name, uom, qty_req, qty_issued, qty_returned, remaining').in('req_id', ids).order('material_code').returns<Line[]>()
     : { data: [] as Line[] };
   const mats = [...new Set((lines ?? []).map((l) => l.material_id))];
   const { data: picks } = mats.length

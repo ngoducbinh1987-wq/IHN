@@ -35,7 +35,7 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
   const shifts = kh.cal.shifts.filter((s, j) => j === 0 || kh.cfg.shifts.find((x) => x.code === s.code)?.active
     || (kh.cfg.machine_shifts ?? []).some((x) => x.from <= date && date <= x.to && x.shifts >= shiftNoOf(s.code)));
   const shift = shifts.find((s) => s.code === sp.s)?.code ?? shifts[0]?.code ?? 'A';
-  const { data: repRows } = await db.schema('app').from('v_kh_reports').select('*').eq('work_date', date).eq('shift_code', shift);
+  const { data: repRows } = await db.schema('app').from('v_kh_reports').select('id, status, operator_code, source, scrap_kg, scrap_reason, note, keeps, scraps, lines, downtime, samples, saved_at, submitted_at, submitted_by_name, confirmed_at, confirmed_by_name, machine_code, shift_code').eq('work_date', date).eq('shift_code', shift);
   const reports = (repRows ?? []) as Report[];
   const plans = Object.fromEntries(kh.machines.map((m) => [m.code, shiftLines(kh, date, m.code, shift)]));
   const code = kh.machines.find((m) => m.code === sp.m)?.code ?? kh.machines.find((m) => plans[m.code].length)?.code ?? kh.machines[0]?.code;

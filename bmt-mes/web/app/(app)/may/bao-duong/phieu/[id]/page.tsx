@@ -21,7 +21,7 @@ export default async function WoPage({ params, searchParams }: { params: Promise
   const { data: w } = await supabase.schema('app').from('v_maint_wos').select('*').eq('id', id).maybeSingle();
   if (!w) notFound();
   const [{ data: parts }, { data: mats }] = await Promise.all([
-    supabase.schema('mfg').from('maint_wo_parts').select('*').eq('wo_id', id).order('created_at'),
+    supabase.schema('mfg').from('maint_wo_parts').select('id, item, note, qty, uom, issued').eq('wo_id', id).order('created_at'),
     supabase.schema('master').from('materials').select('id, code, name, uom').eq('active', true).order('code'),
   ]);
   const back = `/may/bao-duong/phieu/${id}`;

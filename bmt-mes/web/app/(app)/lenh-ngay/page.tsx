@@ -34,7 +34,7 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
   const todayW = isWorkday(today, wdays) ? today : nextWd(today, 1);
   const date = sp.d && /^\d{4}-\d{2}-\d{2}$/.test(sp.d) ? sp.d : todayW;
   const chips = [prevWorkday(todayW), todayW, nextWd(todayW, 1), nextWd(todayW, 2), nextWd(todayW, 3), nextWd(todayW, 4)];
-  const { data: rel } = await db.schema('app').from('v_kh_releases').select('*').eq('plan_id', kh.planId ?? '').eq('work_date', date).order('revision', { ascending: false });
+  const { data: rel } = await db.schema('app').from('v_kh_releases').select('id, work_date, revision, version_id, note, released_at, released_by_name, status, proposed_by, proposed_by_name, proposed_at, review_note, slip_id, slip_no, slip_lines, slip_status, approved_at, approved_by_name, requisitions').eq('plan_id', kh.planId ?? '').eq('work_date', date).order('revision', { ascending: false });
   const all = (rel ?? []) as Release[];
   // Lệnh đã phát (Giám đốc duyệt); bản TP SX đề xuất chờ Giám đốc; bản bị trả lại gần nhất
   const releases = all.filter((r) => r.status === 'RELEASED');
