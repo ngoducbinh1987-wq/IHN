@@ -18,7 +18,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
   await requirePage('vat-tu');
   const me = await requirePerm('master', 'view');
   const supabase = await createClient();
-  let query = supabase.schema('app').from('v_materials').select('*').order('group_name').order('code');
+  let query = supabase.schema('app').from('v_materials').select('id, code, name, group_name, uom, loss_rate, has_expiry, requires_coa, terms_id, moq, pack_multiple, lead_time_days, unit_price, supplier_item_code, available, in_quality').order('group_name').order('code');
   const q = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
   if (q) query = query.or(`code.ilike.*${q}*,name.ilike.*${q}*`);
   const { data, error } = await query.returns<Mat[]>();

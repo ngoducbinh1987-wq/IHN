@@ -75,8 +75,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const supabase = await createClient();
   const [{ data: dash }, { data: mine }, { data: sent }, { data: shared }, { data: ov, error: ovErr }] = await Promise.all([
     supabase.schema('app').from('v_dashboard').select('*').maybeSingle<Dash>(),
-    supabase.schema('app').from('v_approvals').select('*').eq('my_turn', true).order('submitted_at').limit(10).returns<Approval[]>(),
-    supabase.schema('app').from('v_approvals').select('*').eq('i_submitted', true).eq('status', 'PENDING').order('submitted_at', { ascending: false }).limit(5).returns<Approval[]>(),
+    supabase.schema('app').from('v_approvals').select('id, doc_type_name, doc_no, summary, status, current_level, current_role_name, current_approvers, submitted_by_name, submitted_at, step_due_at, overdue, step_index, step_total, steps').eq('my_turn', true).order('submitted_at').limit(10).returns<Approval[]>(),
+    supabase.schema('app').from('v_approvals').select('id, doc_type_name, doc_no, summary, status, current_level, current_role_name, current_approvers, submitted_by_name, submitted_at, step_due_at, overdue, step_index, step_total, steps').eq('i_submitted', true).eq('status', 'PENDING').order('submitted_at', { ascending: false }).limit(5).returns<Approval[]>(),
     supabase.schema('app').rpc('shared_overview'),
     supabase.schema('app').rpc('dashboard'),
   ]);

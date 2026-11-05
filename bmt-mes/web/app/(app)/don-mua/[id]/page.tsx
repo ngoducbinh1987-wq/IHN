@@ -29,7 +29,7 @@ export default async function PoDetail({ params, searchParams }:
   // Đơn mua hàng tổng: màn hình chốt từng dòng, gom hợp đồng
   if (po.kind === 'TONG') return <TongView po={po} me={me} sp={sp} />;
   const [{ data: lines }, { data: req }, { data: sups }, { data: mats }, { data: flow }] = await Promise.all([
-    supabase.schema('app').from('v_po_lines').select('*').eq('po_id', id).order('line_no').returns<PoLine[]>(),
+    supabase.schema('app').from('v_po_lines').select('id, line_no, material_code, material_name, uom, qty, received_qty, expected_date, note, mrp_qty, unit_price, amount, priced, need_qty, available, incoming, payment_terms').eq('po_id', id).order('line_no').returns<PoLine[]>(),
     po.request_id ? supabase.schema('app').from('v_approvals').select('*').eq('id', po.request_id).maybeSingle<Approval>() : Promise.resolve({ data: null }),
     supabase.schema('core').from('partners').select('id, code, name').eq('is_supplier', true).eq('active', true).order('name'),
     supabase.schema('app').from('v_materials').select('code, name, uom').order('code'),

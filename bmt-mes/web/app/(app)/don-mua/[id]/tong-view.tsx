@@ -17,9 +17,9 @@ const TERMS = ['Trả ngay khi nhận hàng', '30 ngày sau khi nhận hàng', '
 export async function TongView({ po, me, sp }: { po: Po; me: Me; sp: { ok?: string; err?: string } }) {
   const supabase = await createClient();
   const [{ data: lines }, { data: sups }, { data: contracts }] = await Promise.all([
-    supabase.schema('app').from('v_po_lines').select('*').eq('po_id', po.id).order('line_no').returns<PoLine[]>(),
+    supabase.schema('app').from('v_po_lines').select('id, material_code, material_name, uom, qty, expected_date, mrp_qty, unit_price, priced, need_qty, supplier_id, supplier_name, payment_terms, ready').eq('po_id', po.id).order('line_no').returns<PoLine[]>(),
     supabase.schema('core').from('partners').select('id, name').eq('is_supplier', true).eq('active', true).order('name'),
-    supabase.schema('app').from('v_pos').select('*').eq('parent_id', po.id).order('created_at').returns<Po[]>(),
+    supabase.schema('app').from('v_pos').select('id, po_no, status, supplier_name, expected_date, payment_terms, cancel_reason, line_count, amount').eq('parent_id', po.id).order('created_at').returns<Po[]>(),
   ]);
   const buyer = isBuyer(me.roles);
   const open = po.status === 'DRAFT';

@@ -23,14 +23,14 @@ export default async function PrList({ searchParams }: { searchParams: Promise<{
   const me = await requirePerm('purchase', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();
-  let query = supabase.schema('app').from('v_prs').select('*').order('created_at', { ascending: false }).limit(300);
+  let query = supabase.schema('app').from('v_prs').select('id, pr_no, source, status, need_date, note, created_at, created_by_name, line_count, request_id, pr_kind_label').order('created_at', { ascending: false }).limit(300);
   if (tab.st) query = query.in('status', tab.st);
   const q = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
   if (q) query = query.or(`pr_no.ilike.*${q}*,note.ilike.*${q}*`);
   const { data, error } = await query.returns<Pr[]>();
   const reqIds = (data ?? []).map((p) => p.request_id).filter(Boolean) as string[];
   const { data: reqs } = reqIds.length
-    ? await supabase.schema('app').from('v_approvals').select('*').in('id', reqIds).returns<Approval[]>()
+    ? await supabase.schema('app').from('v_approvals').select('id, status, current_level, current_role_name, current_approvers, step_due_at, overdue, step_index, step_total, steps').in('id', reqIds).returns<Approval[]>()
     : { data: [] as Approval[] };
   const byId = new Map((reqs ?? []).map((r) => [r.id, r]));
   const href = (t: string) => `/de-xuat?tab=${t}${q ? `&q=${encodeURIComponent(q)}` : ''}`;

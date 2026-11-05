@@ -28,14 +28,14 @@ export default async function ProductDetail({ params, searchParams }:
   const supabase = await createClient();
   const { data: p } = await supabase.schema('app').from('v_products').select('*').eq('code', code).maybeSingle();
   if (!p) notFound();
-  const { data: versions } = await supabase.schema('app').from('v_spec_versions').select('*').eq('product_id', p.id).order('version', { ascending: false });
+  const { data: versions } = await supabase.schema('app').from('v_spec_versions').select('id, version, status, is_current').eq('product_id', p.id).order('version', { ascending: false });
   const specId = (versions ?? []).some((x) => x.id === sp.v) ? sp.v! : p.spec_id;
   const [{ data: spec }, { data: res }, { data: issues }, { data: bom }, { data: reqs }, { data: mats }, { data: cores }] = await Promise.all([
     supabase.schema('master').from('product_specs').select('*').eq('id', specId).single(),
     supabase.schema('master').from('spec_results').select('*').eq('spec_id', specId).maybeSingle(),
     supabase.schema('master').rpc('check_spec', { p_spec: specId }),
     supabase.schema('app').from('v_bom_lines').select('*').eq('spec_id', specId).order('operation_code').order('material_code'),
-    supabase.schema('app').from('v_approvals').select('*').eq('doc_id', specId).order('submitted_at', { ascending: false }).returns<Approval[]>(),
+    supabase.schema('app').from('v_approvals').select('id, doc_no, status, submitted_by_name, submitted_at, steps').eq('doc_id', specId).order('submitted_at', { ascending: false }).returns<Approval[]>(),
     supabase.schema('app').from('v_materials').select('code, name, uom').order('code'),
     supabase.schema('master').from('core_types').select('code').order('code'),
   ]);

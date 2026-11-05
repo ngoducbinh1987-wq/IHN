@@ -18,7 +18,7 @@ export default async function PlansPage({ searchParams }: { searchParams: Promis
   const me = await requirePerm('plan', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[2];
   const supabase = await createClient();
-  let q = supabase.schema('app').from('v_plans').select('*').order('created_at', { ascending: false });
+  let q = supabase.schema('app').from('v_plans').select('id, plan_no, period_label, material_need_date, status, created_at, line_count, total_m, last_run_id').order('created_at', { ascending: false });
   if (tab.st) q = q.in('status', tab.st);
   const { data, error } = await q;
   return (

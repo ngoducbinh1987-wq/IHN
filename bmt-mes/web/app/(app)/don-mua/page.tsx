@@ -26,7 +26,7 @@ export default async function PoList({ searchParams }: { searchParams: Promise<{
   const me = await requirePerm('purchase', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();
-  let query = supabase.schema('app').from('v_pos').select('*').order('created_at', { ascending: false }).limit(300);
+  let query = supabase.schema('app').from('v_pos').select('id, po_no, status, source_label, supplier_name, expected_date, plan_id, plan_no, pr_id, pr_no, adj_no, line_count, amount, missing_price, created_at, request_id, parent_id, parent_no, due_date, all_submitted_at, done_at, contract_count, contract_approved, lines_ready, overdue').order('created_at', { ascending: false }).limit(300);
   query = query.eq('kind', tab.kind);
   if (tab.st) query = query.in('status', tab.st);
   const q = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
@@ -37,7 +37,7 @@ export default async function PoList({ searchParams }: { searchParams: Promise<{
   ]);
   const reqIds = (data ?? []).map((p) => p.request_id).filter(Boolean) as string[];
   const { data: reqs } = reqIds.length
-    ? await supabase.schema('app').from('v_approvals').select('*').in('id', reqIds).returns<Approval[]>()
+    ? await supabase.schema('app').from('v_approvals').select('id, status, current_level, current_role_name, current_approvers, overdue, step_index, step_total, steps').in('id', reqIds).returns<Approval[]>()
     : { data: [] as Approval[] };
   const byId = new Map((reqs ?? []).map((r) => [r.id, r]));
   const n = (t: (typeof TABS)[number]) => (t.st && t.key !== 'tong-xong' ? (counts ?? []).filter((c) => c.kind === t.kind && t.st!.includes(c.status)).length : undefined);

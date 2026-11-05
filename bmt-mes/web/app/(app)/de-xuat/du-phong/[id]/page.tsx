@@ -25,7 +25,7 @@ export default async function SafetyChange({ params, searchParams }: { params: P
   const supabase = await createClient();
   const { data: c } = await supabase.schema('app').from('v_safety_changes').select('*').eq('id', id).maybeSingle<Change>();
   if (!c) notFound();
-  const { data: lines } = await supabase.schema('app').from('v_safety_change_lines').select('*').eq('change_id', id).order('line_no').returns<Line[]>();
+  const { data: lines } = await supabase.schema('app').from('v_safety_change_lines').select('id, material_code, material_name, uom, old_qty, old_days, per_day, new_days, new_qty, note').eq('change_id', id).order('line_no').returns<Line[]>();
   const draft = c.status === 'DRAFT';
   // Người lập (TP Mua) sửa khi nháp; Giám đốc (người đang duyệt) sửa khi chờ duyệt, ghi lịch sử duyệt và báo người lập
   const { data: reviewEdit } = c.status === 'PENDING_APPROVAL'

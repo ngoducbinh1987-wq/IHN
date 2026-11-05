@@ -13,7 +13,7 @@ export default async function PrintPlan({ params }: { params: Promise<{ id: stri
   const supabase = await createClient();
   const { data: plan } = await supabase.schema('app').from('v_plans').select('*').eq('id', id).maybeSingle();
   if (!plan) notFound();
-  const { data: lines } = await supabase.schema('app').from('v_plan_lines').select('*').eq('plan_id', id).order('product_code');
+  const { data: lines } = await supabase.schema('app').from('v_plan_lines').select('id, product_code, description, qty_m, pack_type, m_per_pack, full_packs, odd_m, packs, kg_per_pack, brand').eq('plan_id', id).order('product_code');
   return (
     <main className="mx-auto max-w-[1100px] bg-white p-6 text-[13px] text-ink print:p-0">
       <div className="mb-4 flex items-start justify-between gap-4">

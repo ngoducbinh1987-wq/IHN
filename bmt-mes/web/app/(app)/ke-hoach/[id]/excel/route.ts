@@ -18,10 +18,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!plan) return new NextResponse('Không tìm thấy kế hoạch', { status: 404 });
   if (!plan.last_run_id) return new NextResponse('Kế hoạch chưa chạy MRP', { status: 400 });
   const [mrp, levels, run, edits] = await Promise.all([
-    db.schema('app').from('v_mrp_lines').select('*').eq('run_id', plan.last_run_id).order('suggest_qty', { ascending: false }).order('material_code'),
-    db.schema('app').from('v_mrp_products').select('*').eq('run_id', plan.last_run_id).order('id'),
+    db.schema('app').from('v_mrp_lines').select('theoretical, total_issue, available, in_quality, incoming, reserve, net_short, pack_multiple, suggest_qty, amount, status, orig_suggest_qty, note, requested, material_code, material_name, uom, eff_need_date, projected_after').eq('run_id', plan.last_run_id).order('suggest_qty', { ascending: false }).order('material_code'),
+    db.schema('app').from('v_mrp_products').select('qty_m, fg_m, cv_m, bl_m, lb_m, cb_m, q6, q5, q34, q2, q1, product_code, cores').eq('run_id', plan.last_run_id).order('id'),
     db.schema('plan').from('mrp_runs').select('run_at').eq('id', plan.last_run_id).maybeSingle(),
-    db.schema('app').from('v_mrp_edits').select('*').eq('plan_id', id).order('edited_at', { ascending: false }),
+    db.schema('app').from('v_mrp_edits').select('run_id, old_qty, new_qty, old_need_date, new_need_date, old_note, new_note, reason, edited_at, material_code, material_name, edited_by_name').eq('plan_id', id).order('edited_at', { ascending: false }),
   ]);
   const err = mrp.error ?? levels.error ?? edits.error;
   if (err) return new NextResponse(`Không đọc được kết quả MRP: ${err.message}`, { status: 400 });

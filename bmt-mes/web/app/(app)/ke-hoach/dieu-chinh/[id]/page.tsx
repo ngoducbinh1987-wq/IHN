@@ -40,7 +40,7 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
   const { data: a } = await supabase.schema('app').from('v_plan_adjustments').select('*').eq('id', id).maybeSingle<Adj>();
   if (!a) notFound();
   const [{ data: lines }, { data: planLines }, { data: products }, { data: impactRows }] = await Promise.all([
-    supabase.schema('app').from('v_plan_adjustment_lines').select('*').eq('adj_id', id).order('line_no').returns<Line[]>(),
+    supabase.schema('app').from('v_plan_adjustment_lines').select('id, line_no, kind, plan_line_id, product_code, qty_m, due_date, priority, old_qty_m, old_due_date, note').eq('adj_id', id).order('line_no').returns<Line[]>(),
     supabase.schema('app').from('v_kh_plan_lines').select('id, product_code, qty_m, due_date').eq('plan_id', a.plan_id).gt('qty_m', 0).order('product_code').returns<PlanLine[]>(),
     supabase.schema('app').from('v_products').select('code, description').eq('spec_status', 'RELEASED').order('code'),
     supabase.schema('app').rpc('adj_mrp', { p_adj: id }),

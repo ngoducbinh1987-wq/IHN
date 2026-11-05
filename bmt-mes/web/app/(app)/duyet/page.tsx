@@ -26,7 +26,7 @@ export default async function ApprovalsPage({ searchParams }:
   await requireMe();
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : 'cho-toi';
   const supabase = await createClient();
-  let query = supabase.schema('app').from('v_approvals').select('*').order('submitted_at', { ascending: false }).limit(300);
+  let query = supabase.schema('app').from('v_approvals').select('id, doc_type_name, doc_no, summary, status, current_level, current_role_name, current_approvers, submitted_by_name, submitted_at, step_due_at, overdue, step_index, step_total, my_turn, steps').order('submitted_at', { ascending: false }).limit(300);
   if (tab === 'cho-toi') query = query.eq('my_turn', true);
   if (tab === 'dang-xu-ly') query = query.eq('status', 'PENDING');
   if (tab === 'toi-gui') query = query.eq('i_submitted', true);

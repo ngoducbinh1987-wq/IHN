@@ -25,7 +25,7 @@ export default async function PrDetail({ params, searchParams }:
   const { data: pr } = await supabase.schema('app').from('v_prs').select('*').eq('id', id).maybeSingle();
   if (!pr) notFound();
   const [{ data: lines }, { data: req }, { data: mats }, { data: flow }, { data: pos }] = await Promise.all([
-    supabase.schema('app').from('v_pr_lines').select('*').eq('pr_id', id).order('material_code'),
+    supabase.schema('app').from('v_pr_lines').select('id, material_code, material_name, uom, qty, need_date, ordered_qty, unit_price, available, need_qty, available_qty, incoming_qty, mrp_qty, projected_qty, safety_qty').eq('pr_id', id).order('material_code'),
     pr.request_id ? supabase.schema('app').from('v_approvals').select('*').eq('id', pr.request_id).maybeSingle<Approval>() : Promise.resolve({ data: null }),
     supabase.schema('app').from('v_materials').select('code, name, uom').order('code'),
     supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code, enabled').eq('doc_type', 'PR').eq('enabled', true).order('seq'),

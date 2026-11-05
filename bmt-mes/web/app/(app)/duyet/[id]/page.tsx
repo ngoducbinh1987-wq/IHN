@@ -205,7 +205,7 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
   if (a.doc_type === 'PR') {
     const [{ data: pr }, { data: lines }] = await Promise.all([
       supabase.schema('app').from('v_prs').select('*').eq('id', a.doc_id).maybeSingle(),
-      supabase.schema('app').from('v_pr_lines').select('*').eq('pr_id', a.doc_id).order('material_code'),
+      supabase.schema('app').from('v_pr_lines').select('id, material_code, material_name, uom, qty, need_date, unit_price, available, safety_qty').eq('pr_id', a.doc_id).order('material_code'),
     ]);
     const total = (lines ?? []).reduce((s, l) => s + (l.unit_price === null ? 0 : Number(l.qty) * Number(l.unit_price)), 0);
     return (
@@ -233,7 +233,7 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
   if (a.doc_type === 'PO') {
     const [{ data: po }, { data: lines }] = await Promise.all([
       supabase.schema('app').from('v_pos').select('*').eq('id', a.doc_id).maybeSingle(),
-      supabase.schema('app').from('v_po_lines').select('*').eq('po_id', a.doc_id).order('line_no'),
+      supabase.schema('app').from('v_po_lines').select('id, material_code, material_name, uom, qty, expected_date, mrp_qty, unit_price, need_qty, available').eq('po_id', a.doc_id).order('line_no'),
     ]);
     const total = (lines ?? []).reduce((s, l) => s + (l.unit_price === null ? 0 : Number(l.qty) * Number(l.unit_price)), 0);
     return (
@@ -260,7 +260,7 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
   if (a.doc_type === 'DELIVERY') {
     const [{ data: d }, { data: items }] = await Promise.all([
       supabase.schema('app').from('v_deliveries').select('*').eq('id', a.doc_id).maybeSingle(),
-      supabase.schema('app').from('v_delivery_items').select('*').eq('delivery_id', a.doc_id).order('line_no'),
+      supabase.schema('app').from('v_delivery_items').select('id, product_code, brand, pack_m, coils, free_coils').eq('delivery_id', a.doc_id).order('line_no'),
     ]);
     return (
       <div className="flex flex-col gap-3">
@@ -327,7 +327,7 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
   if (a.doc_type === 'SAFETY_STOCK') {
     const [{ data: c }, { data: lines }] = await Promise.all([
       supabase.schema('app').from('v_safety_changes').select('*').eq('id', a.doc_id).maybeSingle(),
-      supabase.schema('app').from('v_safety_change_lines').select('*').eq('change_id', a.doc_id).order('line_no'),
+      supabase.schema('app').from('v_safety_change_lines').select('id, material_code, material_name, uom, old_qty, per_day, new_days, new_qty, note').eq('change_id', a.doc_id).order('line_no'),
     ]);
     return (
       <div className="flex flex-col gap-3">
@@ -348,7 +348,7 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
   if (a.doc_type === 'PLAN_ADJ') {
     const [{ data: adj }, { data: lines }, { data: imp }] = await Promise.all([
       supabase.schema('app').from('v_plan_adjustments').select('*').eq('id', a.doc_id).maybeSingle(),
-      supabase.schema('app').from('v_plan_adjustment_lines').select('*').eq('adj_id', a.doc_id).order('line_no'),
+      supabase.schema('app').from('v_plan_adjustment_lines').select('id, kind, product_code, qty_m, due_date, priority, old_qty_m, old_due_date, note').eq('adj_id', a.doc_id).order('line_no'),
       supabase.schema('app').rpc('adj_mrp', { p_adj: a.doc_id }),
     ]);
     const KIND: Record<string, string> = { ADD: 'Thêm mã / lô', QTY: 'Đổi sản lượng', DUE: 'Đổi hạn, ưu tiên', REMOVE: 'Bỏ mã' };

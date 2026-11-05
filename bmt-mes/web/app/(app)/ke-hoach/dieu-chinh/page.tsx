@@ -29,7 +29,7 @@ export default async function AdjustmentList({ searchParams }: { searchParams: P
   const me = await requirePerm('plan', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();
-  let q = supabase.schema('app').from('v_plan_adjustments').select('*').order('created_at', { ascending: false }).limit(300);
+  let q = supabase.schema('app').from('v_plan_adjustments').select('id, adj_no, plan_id, plan_no, status, reason, applied_at, created_at, created_by_name, line_count, approval_id').order('created_at', { ascending: false }).limit(300);
   if (tab.st) q = q.in('status', tab.st);
   const [{ data: adjs, error }, { data: plans }] = await Promise.all([
     q.returns<Adj[]>(),

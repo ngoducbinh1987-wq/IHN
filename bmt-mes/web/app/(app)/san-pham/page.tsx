@@ -29,7 +29,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const me = await requirePerm('spec', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();
-  let query = supabase.schema('app').from('v_products').select('*').order('code');
+  let query = supabase.schema('app').from('v_products').select('id, code, group_name, description, default_brand, version, spec_status, total_kgkm, od_mm, rdc_calc, rdc_limit, rdc_over').order('code');
   if (sp.nhom && GROUPS.includes(sp.nhom)) query = query.eq('group_code', sp.nhom);
   if (sp.th && BRANDS.includes(sp.th)) query = query.eq('default_brand', sp.th);
   if (tab.st === 'rdc') query = query.eq('rdc_over', true);

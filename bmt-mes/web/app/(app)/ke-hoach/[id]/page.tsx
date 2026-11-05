@@ -32,10 +32,10 @@ export default async function PlanDetail({ params, searchParams }:
   const { data: plan } = await supabase.schema('app').from('v_plans').select('*').eq('id', id).maybeSingle();
   if (!plan) notFound();
   const [{ data: lines }, { data: products }, { data: mrp }, { data: run }] = await Promise.all([
-    supabase.schema('app').from('v_plan_lines').select('*').eq('plan_id', id).order('product_code'),
+    supabase.schema('app').from('v_plan_lines').select('id, product_id, qty_m, run_lots, m_per_pack, pack_type, brand, product_code, description, spec_status, packs, full_packs, odd_m, kg_per_pack').eq('plan_id', id).order('product_code'),
     supabase.schema('app').from('v_products').select('id, code, description, spec_status, default_pack, default_m_per_pack, default_brand').order('code'),
     plan.last_run_id
-      ? supabase.schema('app').from('v_mrp_lines').select('*').eq('run_id', plan.last_run_id).order('suggest_qty', { ascending: false }).order('material_code')
+      ? supabase.schema('app').from('v_mrp_lines').select('id, theoretical, total_issue, available, in_quality, incoming, reserve, net_short, pack_multiple, suggest_qty, amount, latest_order_date, status, orig_suggest_qty, need_date, note, adjusted_at, requested, material_code, material_name, uom, eff_need_date, adjusted_by_name, projected_after').eq('run_id', plan.last_run_id).order('suggest_qty', { ascending: false }).order('material_code')
       : Promise.resolve({ data: [] as never[] }),
     plan.last_run_id
       ? supabase.schema('plan').from('mrp_runs').select('run_at, budget_vnd, missing_price_count').eq('id', plan.last_run_id).single()
@@ -46,21 +46,21 @@ export default async function PlanDetail({ params, searchParams }:
     supabase.schema('wf').from('approval_steps').select('seq, level_label').eq('doc_type', 'PLAN').eq('enabled', true).order('seq'),
     supabase.schema('wf').from('approval_flows').select('submit_label, submit_role, submit_user_ids').eq('doc_type', 'PLAN').maybeSingle(),
     supabase.schema('app').from('v_pack_options').select('pack_type, m_per_pack').order('pack_type').order('sort').returns<PackOption[]>(),
-    supabase.schema('app').from('v_mrp_edits').select('*').eq('plan_id', id).order('edited_at', { ascending: false }).limit(50),
+    supabase.schema('app').from('v_mrp_edits').select('id, run_id, old_qty, new_qty, old_need_date, new_need_date, old_note, new_note, reason, edited_at, material_code, material_name, edited_by_name').eq('plan_id', id).order('edited_at', { ascending: false }).limit(50),
     plan.last_run_id
       ? supabase.schema('purchase').from('purchase_requests').select('id, pr_no').eq('mrp_run_id', plan.last_run_id).neq('status', 'CANCELLED')
       : Promise.resolve({ data: [] as { id: string; pr_no: string }[] }),
   ]);
   const [{ data: levels }, { data: adjs }, { data: pos }] = await Promise.all([
     plan.last_run_id
-      ? supabase.schema('app').from('v_mrp_products').select('*').eq('run_id', plan.last_run_id).order('id')
+      ? supabase.schema('app').from('v_mrp_products').select('id, qty_m, fg_m, cv_m, bl_m, lb_m, cb_m, q6, q5, q34, q2, q1, product_code, cores').eq('run_id', plan.last_run_id).order('id')
       : Promise.resolve({ data: [] as Record<string, never>[] }),
-    supabase.schema('app').from('v_plan_adjustments').select('*').eq('plan_id', id).neq('status', 'CANCELLED').order('created_at', { ascending: false }),
+    supabase.schema('app').from('v_plan_adjustments').select('id, adj_no, status, reason, applied_at, created_at, created_by_name, line_count').eq('plan_id', id).neq('status', 'CANCELLED').order('created_at', { ascending: false }),
     // Đơn mua MES tự sinh khi Chủ tịch chốt kế hoạch / khi hiệu chỉnh được duyệt (và đơn từ đề xuất của kế hoạch)
     supabase.schema('app').from('v_pos').select('id, po_no, status, source_label, supplier_name, line_count, amount, adj_no, mrp_run_id, expected_date, kind, done_at, all_submitted_at, overdue')
       .eq('plan_id', id).order('created_at'),
   ]);
-  const { data: chairEdits } = await supabase.schema('app').from('v_plan_chair_edits').select('*').eq('plan_id', id).order('edited_at', { ascending: false });
+  const { data: chairEdits } = await supabase.schema('app').from('v_plan_chair_edits').select('id, action, old_data, new_data, reason, edited_at, product_code, edited_by_name').eq('plan_id', id).order('edited_at', { ascending: false });
   const canAdj = plan.status === 'APPROVED' && (can(me, 'plan', 'create') || me.roles.includes('SX_TP'));
   const stages: Stage[] = req?.steps ?? [{ seq: 0, label: flowHead?.submit_label ?? 'Lập kế hoạch', state: 'current' }, ...(flow ?? []).map((s) => ({ seq: s.seq, label: s.level_label, state: 'todo' as const }))];
   const draft = plan.status === 'DRAFT';

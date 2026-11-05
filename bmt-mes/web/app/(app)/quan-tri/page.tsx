@@ -65,7 +65,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const [{ data, error }, { data: whs }, { data: conf }] = await Promise.all([
     supabase.schema('app').from('v_users').select('*').order('full_name').returns<U[]>(),
     supabase.schema('app').from('v_warehouses').select('code, name').order('code').returns<W[]>(),
-    supabase.schema('app').from('v_role_conflicts').select('*').returns<C[]>(),
+    supabase.schema('app').from('v_role_conflicts').select('role_a, role_b').returns<C[]>(),
   ]);
   const warehouses = whs ?? [];
   const conflicts = conf ?? [];
