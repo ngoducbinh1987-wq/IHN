@@ -157,7 +157,7 @@ export async function saveAdj(form: FormData) {
   const { error } = await supabase.schema('app').rpc('adj_save', { p_adj: id, p_reason: String(form.get('reason') ?? ''), p_lines: adjLines(form, id) });
   if (error) adjBack(id, 'err', error.message);
   revalidatePath(`/ke-hoach/dieu-chinh/${id}`);
-  adjBack(id, 'ok', 'Đã lưu đề xuất hiệu chỉnh. Bảng MRP hiệu chỉnh bên dưới đã tính lại.');
+  adjBack(id, 'ok', 'Đã lưu đề xuất hiệu chỉnh. MES đã chạy lại MRP hiệu chỉnh theo các dòng mới (bảng bên dưới).');
 }
 
 export async function submitAdj(form: FormData) {
@@ -170,6 +170,15 @@ export async function submitAdj(form: FormData) {
   after(async () => { await flushEmailOutbox(); });
   revalidatePath('/', 'layout');
   adjBack(id, 'ok', 'Đã gửi Giám đốc duyệt, sau đó Chủ tịch HĐQT duyệt. Duyệt xong MES áp vào kế hoạch tháng và chạy MRP hiệu chỉnh.');
+}
+
+export async function runAdjMrp(form: FormData) {
+  const id = String(form.get('id'));
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('adj_run_mrp', { p_adj: id });
+  if (error) redirect(`/ke-hoach/dieu-chinh/${id}?err=${encodeURIComponent(error.message)}#mrp-hieu-chinh`);
+  revalidatePath(`/ke-hoach/dieu-chinh/${id}`);
+  redirect(`/ke-hoach/dieu-chinh/${id}?ok=${encodeURIComponent('Đã chạy MRP hiệu chỉnh theo tồn kho, hàng về, đơn mua hiện tại.')}#mrp-hieu-chinh`);
 }
 
 export async function cancelAdj(form: FormData) {

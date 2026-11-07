@@ -7,17 +7,19 @@ import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
 import { df, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { cancelAdj, saveAdj, submitAdj } from '../../actions';
+import { cancelAdj, runAdjMrp, saveAdj, submitAdj } from '../../actions';
 
 export const metadata = { title: 'Đề xuất hiệu chỉnh kế hoạch tháng' };
 
-type Adj = { id: string; adj_no: string; plan_id: string; plan_no: string; status: string; reason: string; applied_at: string | null; created_at: string; created_by: string; created_by_name: string | null; approval_id: string | null };
+type Adj = { id: string; adj_no: string; plan_id: string; plan_no: string; period_label: string | null; status: string; reason: string; applied_at: string | null; created_at: string; created_by: string; created_by_name: string | null; approval_id: string | null };
 type Line = { id: string; line_no: number; kind: string; plan_line_id: string | null; product_code: string | null; product_name: string | null; qty_m: number | null; due_date: string | null; priority: number | null; old_qty_m: number | null; old_due_date: string | null; note: string | null; new_line_id: string | null };
-type PlanLine = { id: string; product_code: string; qty_m: number; due_date: string | null };
+type PlanLine = { id: string; product_code: string; product_name: string | null; qty_m: number; due_date: string | null; priority: number | null; committed_date: string | null };
 type MrpRow = { code: string; name: string; uom: string; old_need: number; new_need: number; delta: number; available: number; incoming: number; approved: number;
   pending_before: number; pending_after: number; buy_more: number; projected_after: number; amount: number | null; action: string };
 type Cut = { doc_type?: string; pr_id: string; pr_no: string; status: string; material_code: string; uom: string; old: number; new: number };
-type Revise = { rows?: MrpRow[]; reductions?: Cut[]; buy_count?: number; cut_count?: number; preview?: boolean; applied?: boolean; error?: string; at?: string;
+type TblRow = { code: string; name: string; uom: string; mrp_old: number; mrp_new: number; diff: number; available: number | null; incoming: number | null;
+  requested: number | null; reserve: number | null; shortage: number | null; suggest: number; projected_after: number | null };
+type Revise = { rows?: MrpRow[]; table?: TblRow[]; by_name?: string | null; cached?: boolean; reductions?: Cut[]; buy_count?: number; cut_count?: number; preview?: boolean; applied?: boolean; error?: string; at?: string;
   po?: { count?: number; po_ids?: string[]; po_nos?: string[] } };
 
 const KIND: Record<string, string> = { ADD: 'Thêm mã / lô ngoài kế hoạch', QTY: 'Đổi sản lượng', DUE: 'Đổi hạn giao, ưu tiên', REMOVE: 'Bỏ mã' };
@@ -41,12 +43,28 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
   if (!a) notFound();
   const [{ data: lines }, { data: planLines }, { data: products }, { data: impactRows }] = await Promise.all([
     supabase.schema('app').from('v_plan_adjustment_lines').select('id, line_no, kind, plan_line_id, product_code, qty_m, due_date, priority, old_qty_m, old_due_date, note').eq('adj_id', id).order('line_no').returns<Line[]>(),
-    supabase.schema('app').from('v_kh_plan_lines').select('id, product_code, qty_m, due_date').eq('plan_id', a.plan_id).gt('qty_m', 0).order('product_code').returns<PlanLine[]>(),
+    supabase.schema('app').from('v_kh_plan_lines').select('id, product_code, product_name, qty_m, due_date, priority, committed_date').eq('plan_id', a.plan_id).gt('qty_m', 0).order('product_code').returns<PlanLine[]>(),
     supabase.schema('app').from('v_products').select('code, description').eq('spec_status', 'RELEASED').order('code'),
     supabase.schema('app').rpc('adj_mrp', { p_adj: id }),
   ]);
   const rv = (impactRows ?? {}) as Revise;
   const mrpRows = rv.rows ?? [];
+  const tbl = rv.table ?? [];
+  const actionOf = new Map(mrpRows.map((x) => [x.code, x.action]));
+  const canRun = a.status === 'DRAFT' || a.status === 'PENDING_APPROVAL';
+  const n2 = (v: number | null | undefined) => (v === null || v === undefined ? '—' : nf(v, 2));
+  // Danh mục sản xuất tháng: dòng kế hoạch hiện hành + kết quả sau hiệu chỉnh theo các dòng đề xuất
+  const byLine = new Map((lines ?? []).filter((l) => l.plan_line_id).map((l) => [l.plan_line_id as string, l]));
+  const adds = (lines ?? []).filter((l) => l.kind === 'ADD');
+  const after = (p: PlanLine) => {
+    const l = byLine.get(p.id);
+    if (!l) return { qty: p.qty_m, due: p.due_date, prio: p.priority, l };
+    if (l.kind === 'REMOVE') return { qty: 0, due: p.due_date, prio: p.priority, l };
+    if (l.kind === 'QTY') return { qty: l.qty_m ?? p.qty_m, due: l.due_date ?? p.due_date, prio: l.priority ?? p.priority, l };
+    return { qty: p.qty_m, due: l.due_date ?? p.due_date, prio: l.priority ?? p.priority, l };
+  };
+  const totalNow = (planLines ?? []).reduce((t, p) => t + Number(p.qty_m), 0);
+  const totalAfter = (planLines ?? []).reduce((t, p) => t + Number(after(p).qty), 0) + adds.reduce((t, l) => t + Number(l.qty_m ?? 0), 0);
   const cuts = rv.reductions ?? [];
   const draft = a.status === 'DRAFT';
   // Người lập sửa khi nháp; Chủ tịch (người đang duyệt) sửa khi chờ duyệt, ghi lịch sử duyệt
@@ -73,6 +91,41 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
         <Pill tone={STATUS[a.status]?.[1] ?? 'mute'}>{STATUS[a.status]?.[0] ?? a.status}</Pill>
         <span className="text-[13.5px]">Lập bởi {a.created_by_name} · {df(a.created_at, true)}{a.applied_at ? ` · áp vào kế hoạch ${df(a.applied_at, true)}` : ''}</span>
         <span className="text-[12.5px] text-muted">TP SX lập → Giám đốc duyệt → Chủ tịch HĐQT duyệt. Duyệt xong MES áp vào kế hoạch tháng, chạy MRP hiệu chỉnh: giảm đơn mua, đề xuất mua chưa duyệt của kế hoạch, giữ nguyên vật tư Giám đốc đã duyệt mua; thiếu thì MES tự sinh đơn mua thêm (NV mua kiểm tra → TP Mua → Giám đốc); xếp lại lịch máy.</span>
+      </section>
+
+      <section className="card mb-4 overflow-x-auto" id="danh-muc-san-xuat">
+        <div className="card-h"><span>Danh mục sản xuất {a.period_label ?? ''} · {a.plan_no}</span>
+          <span className="text-[12.5px] font-normal text-muted">{(planLines ?? []).length} mã · hiện {nf(totalNow)} m{totalAfter !== totalNow ? ` → sau hiệu chỉnh ${nf(totalAfter)} m` : ''}</span></div>
+        {(planLines ?? []).length === 0 && adds.length === 0 ? <Empty>Kế hoạch tháng chưa có dòng sản xuất.</Empty> : (
+          <table className="tbl">
+            <thead><tr><th>#</th><th>Mã</th><th>Quy cách</th><th className="num">Số mét hiện tại</th><th>Hạn giao</th><th>Ngày chốt</th>
+              <th className="num">Số mét sau hiệu chỉnh</th><th>Hạn sau hiệu chỉnh</th><th>Hiệu chỉnh</th></tr></thead>
+            <tbody>
+              {(planLines ?? []).map((p, i) => {
+                const x = after(p);
+                const changed = !!x.l;
+                return (
+                  <tr key={p.id} className={changed ? 'bg-warn-soft/60' : ''}>
+                    <td>{i + 1}</td><td><b className="mono">{p.product_code}</b></td><td className="text-[12.5px]">{p.product_name}</td>
+                    <td className="num">{nf(p.qty_m)}</td><td>{dmy(p.due_date)}{p.priority === 0 ? ' · gấp' : ''}</td><td>{dmy(p.committed_date)}</td>
+                    <td className={`num ${x.qty !== p.qty_m ? 'font-semibold' : ''}`}>{x.qty !== p.qty_m ? nf(x.qty) : '—'}</td>
+                    <td>{x.due !== p.due_date || x.prio !== p.priority ? <b>{dmy(x.due)}{x.prio === 0 ? ' · gấp' : ''}</b> : '—'}</td>
+                    <td>{x.l ? <Pill tone={x.l.kind === 'REMOVE' ? 'bad' : 'warn'}>{KIND[x.l.kind]}</Pill> : ''}</td>
+                  </tr>
+                );
+              })}
+              {adds.map((l, i) => (
+                <tr key={l.id} className="bg-ok-soft">
+                  <td>{(planLines ?? []).length + i + 1}</td><td><b className="mono">{l.product_code}</b></td><td className="text-[12.5px]">{l.product_name}</td>
+                  <td className="num">—</td><td>—</td><td>—</td>
+                  <td className="num font-semibold">{nf(l.qty_m)}</td><td><b>{dmy(l.due_date)}{l.priority === 0 ? ' · gấp' : ''}</b></td>
+                  <td><Pill tone="ok">{KIND.ADD}</Pill></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="border-t border-line px-4 py-2 text-[12.5px] text-muted">Cột sau hiệu chỉnh tính theo các dòng đề xuất đã lưu bên dưới; duyệt xong MES mới áp vào kế hoạch.</p>
       </section>
 
       {canEdit ? (
@@ -131,22 +184,30 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
       <section className="card overflow-x-auto" id="mrp-hieu-chinh">
         <div className="card-h"><span>Bảng MRP hiệu chỉnh</span><span className="flex flex-wrap items-center justify-end gap-3"><span className="text-[12.5px] font-normal text-muted">{rv.applied
           ? `đã áp khi duyệt${rv.at ? ` ${df(rv.at, true)}` : ''}`
-          : 'xem trước: MES chạy thử với các dòng đề xuất (chưa đổi gì), so với lần chạy MRP gần nhất của kế hoạch'}</span>
-          {!rv.error && mrpRows.length > 0 && <a href={`/ke-hoach/dieu-chinh/${id}/excel`} className="btn btn-sm" id="xuat-excel-mrp" download><FileSpreadsheet size={14} />Xuất Excel</a>}</span></div>
-        {rv.error ? <p className="px-4 py-3 text-[13.5px] text-muted">Chưa tính được: {rv.error}</p> : mrpRows.length === 0 ? <Empty>Không đổi nhu cầu vật tư (đổi hạn giao, hoặc chưa có dòng).</Empty> : (
+          : `chạy thử với các dòng đề xuất (chưa đổi gì)${rv.at ? ` · chạy lúc ${df(rv.at, true)}${rv.by_name ? ` (${rv.by_name})` : ''}` : ''}`}</span>
+          {canRun && (lines ?? []).length > 0 && (
+            <form id="chay-mrp-hieu-chinh"><input type="hidden" name="id" value={id} />
+              <SubmitButton className="btn btn-sm btn-pri" formAction={runAdjMrp} pendingText="Đang chạy MRP…">Chạy MRP hiệu chỉnh</SubmitButton></form>
+          )}
+          {!rv.error && tbl.length > 0 && <a href={`/ke-hoach/dieu-chinh/${id}/excel`} className="btn btn-sm" id="xuat-excel-mrp" download><FileSpreadsheet size={14} />Xuất Excel</a>}</span></div>
+        {rv.error ? <p className="px-4 py-3 text-[13.5px] text-muted">Chưa tính được: {rv.error}</p> : tbl.length === 0 ? <Empty>Chưa có kết quả MRP (đề xuất chưa có dòng hoặc kế hoạch chưa chạy MRP).</Empty> : (
           <table className="tbl">
-            <thead><tr><th>Vật tư</th><th className="num">Nhu cầu cũ</th><th className="num">Nhu cầu mới</th><th className="num">Tăng/giảm</th>
-              <th className="num">Tồn + đang về</th><th className="num">Đã duyệt mua</th><th className="num">Đề xuất chưa duyệt</th><th className="num">Mua thêm</th><th className="num">Tồn dự kiến</th><th>MES xử lý</th></tr></thead>
-            <tbody>{mrpRows.map((x) => (
-              <tr key={x.code}><td><b>{x.code}</b><div className="text-[12px] text-muted">{x.name}</div></td>
-                <td className="num">{nf(x.old_need, 2)}</td><td className="num">{nf(x.new_need, 2)}</td>
-                <td className={`num ${x.delta > 0 ? 'text-bad' : ''}`}>{x.delta > 0 ? '+' : ''}{nf(x.delta, 2)}</td>
-                <td className="num">{nf(x.available + x.incoming, 2)}</td><td className="num">{nf(x.approved, 2)}</td>
-                <td className="num">{x.pending_after !== x.pending_before ? <><s className="text-muted">{nf(x.pending_before, 2)}</s> → <b>{nf(x.pending_after, 2)}</b></> : nf(x.pending_after, 2)}</td>
-                <td className={`num ${x.buy_more > 0 ? 'font-semibold text-bad' : ''}`}>{nf(x.buy_more, 2)} {x.uom}</td>
-                <td className="num">{nf(x.projected_after, 2)}</td>
-                <td><Pill tone={ACTION[x.action]?.[1] ?? 'mute'}>{ACTION[x.action]?.[0] ?? x.action}</Pill></td></tr>
-            ))}</tbody>
+            <thead><tr><th>Vật tư</th><th className="num">MRP ban đầu</th><th className="num">MRP hiện tại</th><th className="num">Chênh lệch</th>
+              <th className="num">Tồn kho</th><th className="num">Hàng về</th><th className="num">Đã đề xuất</th><th className="num">Dự phòng tồn kho</th>
+              <th className="num">Thiếu</th><th className="num">Đề xuất mua</th><th className="num">Tồn sau SX</th><th>MES xử lý</th></tr></thead>
+            <tbody>{tbl.map((x) => {
+              const act = actionOf.get(x.code);
+              return (
+                <tr key={x.code}><td><b>{x.code}</b><div className="text-[12px] text-muted">{x.name} · {x.uom}</div></td>
+                  <td className="num">{nf(x.mrp_old, 2)}</td><td className="num">{nf(x.mrp_new, 2)}</td>
+                  <td className={`num ${x.diff > 0 ? 'text-bad' : x.diff < 0 ? 'text-ok' : 'text-muted'}`}>{x.diff > 0 ? '+' : ''}{nf(x.diff, 2)}</td>
+                  <td className="num">{n2(x.available)}</td><td className="num">{n2(x.incoming)}</td><td className="num">{n2(x.requested)}</td>
+                  <td className="num">{n2(x.reserve)}</td><td className={`num ${(x.shortage ?? 0) > 0 ? 'text-bad' : ''}`}>{n2(x.shortage)}</td>
+                  <td className={`num ${x.suggest > 0 ? 'font-semibold text-bad' : ''}`}>{nf(x.suggest, 2)}</td>
+                  <td className={`num ${(x.projected_after ?? 0) < 0 ? 'text-bad' : ''}`}>{n2(x.projected_after)}</td>
+                  <td>{act ? <Pill tone={ACTION[act]?.[1] ?? 'mute'}>{ACTION[act]?.[0] ?? act}</Pill> : ''}</td></tr>
+              );
+            })}</tbody>
           </table>
         )}
         {cuts.length > 0 && (
@@ -156,7 +217,8 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
           </div>
         )}
         <p className="border-t border-line px-4 py-3 text-[12.5px] text-muted">
-          Đã duyệt mua: đơn mua, đề xuất mua của kế hoạch này Giám đốc đã duyệt (giữ nguyên, không giảm). Chưa duyệt: nháp hoặc đang duyệt, MES giảm phần thừa (làm tròn theo bội số đóng gói, hết thì hủy đơn / đề xuất).
+          MRP ban đầu: cấp SX theo lần chạy MRP gần nhất của kế hoạch (trước hiệu chỉnh); MRP hiện tại: cấp SX sau hiệu chỉnh. Đã đề xuất: đề xuất mua, đơn mua chưa nhận hàng. Thiếu = MRP hiện tại + dự phòng − tồn − hàng về − đã đề xuất; đề xuất mua làm tròn theo MOQ, bội số đóng gói; tồn sau SX = tồn + về + đã đề xuất + mua − MRP hiện tại − dự phòng.
+          Đơn mua, đề xuất mua Giám đốc đã duyệt giữ nguyên; chưa duyệt (nháp, đang duyệt) MES giảm phần thừa khi duyệt (làm tròn theo bội số đóng gói, hết thì hủy).
           {(rv.po?.count ?? 0) > 0 ? <> Mua thêm: MES đã lập đơn mua {(rv.po?.po_ids ?? []).map((pid, i) => <span key={pid}>{i > 0 && ', '}<Link className="link" href={`/don-mua/${pid}`}>{rv.po?.po_nos?.[i]}</Link></span>)}, chờ NV mua kiểm tra.</>
             : (rv.buy_count ?? 0) > 0 && <> Mua thêm: duyệt xong MES tự lập đơn mua, NV mua kiểm tra → TP Mua → Giám đốc duyệt.</>}
         </p>

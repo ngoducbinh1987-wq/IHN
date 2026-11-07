@@ -6,6 +6,8 @@ import { XLSX_TYPE, buildXlsx, xlsxDisposition } from '@/lib/xlsx';
 
 type MrpRow = { code: string; name: string; uom: string; old_need: number; new_need: number; delta: number; available: number; incoming: number; approved: number;
   pending_before: number; pending_after: number; buy_more: number; projected_after: number; action: string };
+type TblRow = { code: string; name: string; uom: string; mrp_old: number; mrp_new: number; diff: number; available: number | null; incoming: number | null;
+  requested: number | null; reserve: number | null; shortage: number | null; suggest: number; projected_after: number | null };
 type Cut = { doc_type?: string; pr_no: string; status: string; material_code: string; uom: string; old: number; new: number };
 
 const ACTION: Record<string, string> = {
@@ -24,19 +26,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!a) return new NextResponse('Không tìm thấy đề xuất hiệu chỉnh', { status: 404 });
   const { data, error } = await db.schema('app').rpc('adj_mrp', { p_adj: id });
   if (error) return new NextResponse(`Không tính được bảng MRP: ${error.message}`, { status: 400 });
-  const rv = (data ?? {}) as { rows?: MrpRow[]; reductions?: Cut[]; applied?: boolean; at?: string; error?: string };
+  const rv = (data ?? {}) as { rows?: MrpRow[]; table?: TblRow[]; reductions?: Cut[]; applied?: boolean; at?: string; error?: string };
   if (rv.error) return new NextResponse(`Chưa tính được bảng MRP: ${rv.error}`, { status: 400 });
 
-  const head = ['Mã vật tư', 'Tên vật tư', 'ĐVT', 'Nhu cầu cũ', 'Nhu cầu mới', 'Tăng/giảm', 'Tồn', 'Đang về', 'Tồn + đang về', 'Đã duyệt mua',
-    'Đề xuất chưa duyệt (trước)', 'Đề xuất chưa duyệt (sau)', 'Mua thêm', 'Tồn dự kiến', 'MES xử lý'];
-  const rows = (rv.rows ?? []).map((x) => [x.code, x.name, x.uom, n(x.old_need), n(x.new_need), n(x.delta), n(x.available), n(x.incoming),
-    (n(x.available) ?? 0) + (n(x.incoming) ?? 0), n(x.approved), n(x.pending_before), n(x.pending_after), n(x.buy_more), n(x.projected_after), ACTION[x.action] ?? x.action]);
-  const state = rv.applied ? `Đã áp khi duyệt${rv.at ? ` ${new Date(rv.at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}` : ''}` : 'Xem trước (chưa đổi gì), so với lần chạy MRP gần nhất của kế hoạch';
+  const act = new Map((rv.rows ?? []).map((x) => [x.code, x.action]));
+  const head = ['Mã vật tư', 'Tên vật tư', 'ĐVT', 'MRP ban đầu', 'MRP hiện tại', 'Chênh lệch', 'Tồn kho', 'Hàng về', 'Đã đề xuất', 'Dự phòng tồn kho',
+    'Thiếu', 'Đề xuất mua', 'Tồn sau SX', 'MES xử lý'];
+  const rows = (rv.table ?? []).map((x) => [x.code, x.name, x.uom, n(x.mrp_old), n(x.mrp_new), n(x.diff), n(x.available), n(x.incoming),
+    n(x.requested), n(x.reserve), n(x.shortage), n(x.suggest), n(x.projected_after), act.has(x.code) ? ACTION[act.get(x.code) as string] ?? act.get(x.code) : '']);
+  const state = rv.applied ? `Đã áp khi duyệt${rv.at ? ` ${new Date(rv.at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}` : ''}` : 'Chạy thử (chưa đổi gì), MRP ban đầu = lần chạy MRP gần nhất của kế hoạch';
   const sheets = [{
     name: 'Bảng MRP hiệu chỉnh',
     title: `Bảng MRP hiệu chỉnh ${a.adj_no} · kế hoạch ${a.plan_no} · ${state}`,
     rows: [head, ...rows],
-    widths: [14, 30, 7, 13, 13, 13, 12, 12, 14, 13, 16, 16, 13, 13, 30],
+    widths: [14, 30, 7, 13, 13, 13, 12, 12, 13, 14, 12, 13, 13, 30],
   }];
   const cuts = rv.reductions ?? [];
   if (cuts.length) sheets.push({
