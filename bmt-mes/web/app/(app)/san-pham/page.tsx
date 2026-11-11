@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 export const metadata = { title: 'Sản phẩm & Spec' };
 
 type Row = {
-  id: string; code: string; group_code: string; group_name: string; description: string; default_brand: string;
+  id: string; code: string; group_code: string; group_name: string; description: string; sales_name: string | null; default_brand: string;
   version: number; spec_status: string; total_kgkm: number; od_mm: number; rdc_calc: number; rdc_limit: number | null;
   pilot_rdc: number | null; rdc_over: boolean;
 };
@@ -29,13 +29,13 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const me = await requirePerm('spec', 'view');
   const tab = TABS.find((t) => t.key === sp.tab) ?? TABS[0];
   const supabase = await createClient();
-  let query = supabase.schema('app').from('v_products').select('id, code, group_name, description, default_brand, version, spec_status, total_kgkm, od_mm, rdc_calc, rdc_limit, rdc_over').order('code');
+  let query = supabase.schema('app').from('v_products').select('id, code, group_name, description, sales_name, default_brand, version, spec_status, total_kgkm, od_mm, rdc_calc, rdc_limit, rdc_over').order('code');
   if (sp.nhom && GROUPS.includes(sp.nhom)) query = query.eq('group_code', sp.nhom);
   if (sp.th && BRANDS.includes(sp.th)) query = query.eq('default_brand', sp.th);
   if (tab.st === 'rdc') query = query.eq('rdc_over', true);
   else if (tab.st) query = query.eq('spec_status', tab.st);
   const q = (sp.q ?? '').replace(/[,()*%\\]/g, ' ').trim();
-  if (q) query = query.or(`code.ilike.*${q}*,description.ilike.*${q}*`);
+  if (q) query = query.or(`code.ilike.*${q}*,description.ilike.*${q}*,sales_name.ilike.*${q}*`);
   const { data, error } = await query.returns<Row[]>();
   const href = (o: { tab?: string; nhom?: string | null; th?: string | null }) => {
     const p = new URLSearchParams();
@@ -49,7 +49,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <Toolbar title="Sản phẩm & Spec" reload={href({})} search={{ placeholder: 'Tìm mã hoặc quy cách', value: sp.q }} hidden={{ tab: sp.tab, nhom: sp.nhom, th: sp.th }}
+      <Toolbar title="Sản phẩm & Spec" reload={href({})} search={{ placeholder: 'Tìm mã, mô tả hoặc quy cách', value: sp.q }} hidden={{ tab: sp.tab, nhom: sp.nhom, th: sp.th }}
         add={can(me, 'spec', 'create') ? { href: '/san-pham/moi', label: 'Thêm spec mới' } : undefined} />
       <Tabs active={tab.key} items={TABS.map((t) => ({ key: t.key, label: t.label, href: href({ tab: t.key }) }))} />
       <Flash ok={sp.ok} err={sp.err ?? error?.message} />
@@ -65,11 +65,12 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       <div className="card overflow-x-auto">
         {data && data.length > 0 ? (
           <table className="tbl">
-            <thead><tr><th>Mã SP</th><th>Quy cách</th><th>Nhóm</th><th>Thương hiệu</th><th className="num">kg/km</th><th className="num">OD mm</th><th className="num">Rdc tính</th><th className="num">Giới hạn</th><th>Spec</th>{me.is_admin && <th className="text-center">Sửa</th>}</tr></thead>
+            <thead><tr><th>Mã SP</th><th>Mô tả sản phẩm</th><th>Quy cách</th><th>Nhóm</th><th>Thương hiệu</th><th className="num">kg/km</th><th className="num">OD mm</th><th className="num">Rdc tính</th><th className="num">Giới hạn</th><th>Spec</th>{me.is_admin && <th className="text-center">Sửa</th>}</tr></thead>
             <tbody>
               {data.map((r) => (
                 <tr key={r.id}>
                   <td className="whitespace-nowrap"><Link className="mono text-[14px] font-medium text-brand hover:underline" href={`/san-pham/${encodeURIComponent(r.code)}`}>{r.code}</Link></td>
+                  <td className="min-w-[260px] text-[13px]">{r.sales_name ?? <span className="text-muted">—</span>}</td>
                   <td className="whitespace-nowrap">{r.description}</td>
                   <td className="whitespace-nowrap text-muted">{r.group_name}</td>
                   <td className="whitespace-nowrap">{r.default_brand}</td>

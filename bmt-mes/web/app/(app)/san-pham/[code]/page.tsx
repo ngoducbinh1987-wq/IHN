@@ -72,7 +72,7 @@ export default async function ProductDetail({ params, searchParams }:
 
   return (
     <>
-      <Toolbar title={<><span className="mono text-[22px]">{code}</span> <span className="text-muted">· {p.description}</span></>}
+      <Toolbar title={<><span className="mono text-[22px]">{code}</span> <span className="text-muted">· {p.sales_name ?? p.description}</span></>}
         actions={<>
           {editable && can(me, 'spec', 'create') && (
             <form action={submitSpec}>{hidden}<input type="hidden" name="version" value={spec.version} />
@@ -123,7 +123,7 @@ export default async function ProductDetail({ params, searchParams }:
         <details className="mb-4 rounded border border-line bg-surface px-4 py-2 text-[14px]" id="admin-doi-ma">
           <summary className="cursor-pointer font-medium text-brand">Quản trị hệ thống: đổi mã sản phẩm {code}</summary>
           <form action={adminRenameProduct} className="mt-2 flex flex-wrap items-end gap-2">{hidden}<input type="hidden" name="product_id" value={p.id} />
-            <label className="w-[220px] text-[13px]"><span className="req">Mã mới</span><input className="inp mono block w-full" name="new_code" required placeholder="VD: CFR-2C-1P0" pattern="[A-Za-z0-9][A-Za-z0-9.\-]*" title="Chữ IN HOA, số, dấu chấm, gạch ngang" /></label>
+            <label className="w-[220px] text-[13px]"><span className="req">Mã mới</span><input className="inp mono block w-full" name="new_code" required placeholder="VD: F120-KV10S2LZ" pattern="[A-Za-z0-9][A-Za-z0-9.\-]*" title="Chữ IN HOA, số, dấu chấm, gạch ngang" /></label>
             <label className="min-w-[260px] flex-1 text-[13px]"><span className="req">Lý do đổi mã</span><input className="inp block w-full" name="reason" required /></label>
             <SubmitButton className="btn btn-sm btn-pri">Đổi mã sản phẩm</SubmitButton>
           </form>
@@ -145,6 +145,7 @@ export default async function ProductDetail({ params, searchParams }:
               {reasonField}
               {pv?.error && <div className="rounded border-l-4 border-bad bg-bad/10 px-3 py-2 text-[13.5px]" id="tam-tinh"><b>Tạm tính chưa được:</b> {pv.error.message}</div>}
               {preview && <PreviewBox before={{ ...spec, ...(res ?? {}) }} after={{ ...preview.spec, ...(preview.res ?? {}) }} issues={preview.issues ?? []} href={`/san-pham/${encodeURIComponent(code)}?v=${specId}&tab=thong-so`} />}
+              {p.sales_name && <div className="lbl" id="mo-ta-san-pham">Mô tả sản phẩm (đã chốt)<div className="inp bg-sunk">{p.sales_name}</div></div>}
               <div className="lbl">Quy cách (MES tự đặt)<div className="inp bg-sunk">{p.description}</div><span className="text-[12px] text-muted">Theo quy tắc: tiết diện × số lõi (số cặp), cách điện/vỏ, chống nhiễu. Đổi thông số rồi Lưu thì tên tự đổi.</span></div>
               <SpecFields s={formVals} coreCodes={[...new Set((cores ?? []).map((c) => c.code as string))]} bom={preview?.bom ?? ((bom ?? []) as SpecBomLine[])} perPallet={perPallet} bomIssues={(bomIss as string[] | null) ?? null} />
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
