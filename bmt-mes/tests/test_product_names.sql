@@ -9,9 +9,9 @@ begin
 end $$;
 create function pg_temp.name_of(p_code text) returns text language sql as $$ select description from master.products where code = p_code $$;
 
-select pg_temp.ok(pg_temp.name_of('CFR-2C-0P75') = '2×0.75 mm² SI/vỏ LSZH, không shield', 'CFR-2C-0P75: 2×0.75 mm² SI/vỏ LSZH, không shield');
-select pg_temp.ok(pg_temp.name_of('SFR-2P-1') = '2P×2×1 mm² SI/vỏ LSZH, shield AL/PET + drain', 'SFR-2P-1: 2P×2×1 mm² SI/vỏ LSZH, shield AL/PET + drain');
-select pg_temp.ok(pg_temp.name_of('CTL-1P-A14') = '1P×2×AWG14 HDPE/vỏ PVC, shield AL/PET + drain', 'CTL-1P-A14: 1P×2×AWG14 HDPE/vỏ PVC, shield AL/PET + drain');
+select pg_temp.ok(pg_temp.name_of('HOME-KV075X2LZ') = '2×0.75 mm² SI/vỏ LSZH, không shield', 'HOME-KV075X2LZ: 2×0.75 mm² SI/vỏ LSZH, không shield');
+select pg_temp.ok(pg_temp.name_of('F120-KV10S4LZ') = '2P×2×1 mm² SI/vỏ LSZH, shield AL/PET + drain', 'F120-KV10S4LZ: 2P×2×1 mm² SI/vỏ LSZH, shield AL/PET + drain');
+select pg_temp.ok(pg_temp.name_of('CTRL-KVAWG14S2PVC') = '1P×2×AWG14 HDPE/vỏ PVC, shield AL/PET + drain', 'CTRL-KVAWG14S2PVC: 1P×2×AWG14 HDPE/vỏ PVC, shield AL/PET + drain');
 select pg_temp.ok(pg_temp.name_of('PVC-1C-1') = '1×1 mm² PVC/không vỏ, không shield', 'PVC-1C-1: 1×1 mm² PVC/không vỏ, không shield');
 select pg_temp.ok(not exists (select 1 from master.products where current_spec_id is not null and description is distinct from master.spec_name(current_spec_id)),
   'Mọi mã có spec hiện hành: tên đúng quy tắc');

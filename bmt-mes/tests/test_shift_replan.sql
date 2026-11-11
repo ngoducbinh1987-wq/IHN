@@ -89,15 +89,15 @@ insert into plan.production_plans (plan_no, period_label, status) values ('KH-RP
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-RP-1';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, m_per_pack, pack_type, brand, due_date, committed_date)
 select pg_temp.v('plan'), p.id, p.current_spec_id, q, 500, 'Bobin gỗ', 'KAVIX', pg_temp.today() + dd, pg_temp.today() + cd
-from (values ('PFR-2C-1P5', 10000, 10, 8), ('SFR-2P-1', 5000, 12, null)) v(code, q, dd, cd) join master.products p on p.code = v.code;
+from (values ('PFR-2C-1P5', 10000, 10, 8), ('F120-KV10S4LZ', 5000, 12, null)) v(code, q, dd, cd) join master.products p on p.code = v.code;
 insert into t select 'l1', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'PFR-2C-1P5';
-insert into t select 'l2', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'SFR-2P-1';
+insert into t select 'l2', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'F120-KV10S4LZ';
 insert into plan.schedule_versions (plan_id, version, is_current, base_date, params, reason, status, created_at)
 values (pg_temp.v('plan'), 1, true, pg_temp.today() - 3, '{"S":405,"SPD":1,"seq":{"x":1}}', 'thử', 'APPROVED', now() - interval '1 day');
 insert into t select 'v1', id from plan.schedule_versions where plan_id = pg_temp.v('plan') and version = 1;
 insert into plan.schedule_orders (version_id, plan_line_id, label, product_code, qty_m, finish_date)
 values (pg_temp.v('v1'), pg_temp.v('l1'), 'D01', 'PFR-2C-1P5', 10000, pg_temp.today() + 6),
-       (pg_temp.v('v1'), pg_temp.v('l2'), 'D02', 'SFR-2P-1', 5000, pg_temp.today() + 9);
+       (pg_temp.v('v1'), pg_temp.v('l2'), 'D02', 'F120-KV10S4LZ', 5000, pg_temp.today() + 9);
 -- TP SX đang có bản lịch đề xuất (sẽ cũ khi MES tính lại)
 insert into plan.schedule_versions (plan_id, version, is_current, base_date, params, reason, status, created_by)
 values (pg_temp.v('plan'), 2, false, pg_temp.today() - 3, '{"S":405,"SPD":1}', 'TP SX xếp lại', 'PROPOSED', (select id from core.profiles where employee_code = 'RP_SXTP'));
@@ -124,7 +124,7 @@ create function pg_temp.save(p_run uuid, p_seq jsonb, p_q1 numeric, p_f1 date, p
   select format($q$select app.kh_replan_save(%L, %L, %L, %L, '[]', %L)::text$q$, p_run, pg_temp.today() - 3,
     jsonb_build_object('S', 405, 'SPD', 1, 'seq', p_seq),
     jsonb_build_array(jsonb_build_object('plan_line_id', pg_temp.v('l1'), 'label', 'D01', 'product_code', 'PFR-2C-1P5', 'qty_m', p_q1, 'finish_date', p_f1),
-                      jsonb_build_object('plan_line_id', pg_temp.v('l2'), 'label', 'D02', 'product_code', 'SFR-2P-1', 'qty_m', 5000, 'finish_date', p_f2)),
+                      jsonb_build_object('plan_line_id', pg_temp.v('l2'), 'label', 'D02', 'product_code', 'F120-KV10S4LZ', 'qty_m', 5000, 'finish_date', p_f2)),
     jsonb_build_object('machines', jsonb_build_array(jsonb_build_object('machine', 'BUN-01', 'planned', 10000, 'actual', 8000, 'slips', 1, 'missing', false),
                                                      jsonb_build_object('machine', 'TWS-01', 'planned', 3000, 'actual', 0, 'slips', 0, 'missing', true)),
                        'missing', jsonb_build_array('TWS-01')))

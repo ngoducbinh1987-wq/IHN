@@ -85,18 +85,18 @@ select pg_temp.ok(not exists (select 1 from master.product_specs s join master.b
   'Lõi trắng silicone dùng silicone tự nhiên: không còn hạt màu trắng SI-W');
 
 select pg_temp.as_user('E_KTTP');
--- (B) CFR-4C-0P75: lõi Nâu, Trắng, Đen, Trắng → Nâu 1 lõi, Đen 1 lõi, không Xanh dương
-insert into t values ('c4', pg_temp.draft('CFR-4C-0P75'));
+-- (B) HOME-KV075X4LZ: lõi Nâu, Trắng, Đen, Trắng → Nâu 1 lõi, Đen 1 lõi, không Xanh dương
+insert into t values ('c4', pg_temp.draft('HOME-KV075X4LZ'));
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('c4'), '{"core_colors":["Nâu","Trắng","Đen","Trắng"]}')$q$);
 select pg_temp.ok(pg_temp.q(pg_temp.v('c4'), 'SI-C1') is null and pg_temp.q(pg_temp.v('c4'), 'SI-W') is null,
-  'CFR-4C-0P75 Nâu-Trắng-Đen-Trắng: bỏ màu Xanh dương, không pha màu lõi trắng');
+  'HOME-KV075X4LZ Nâu-Trắng-Đen-Trắng: bỏ màu Xanh dương, không pha màu lõi trắng');
 select pg_temp.ok(abs(pg_temp.q(pg_temp.v('c4'), 'SI-C0') - 0.01 * pg_temp.q(pg_temp.v('c4'), 'SIL-9710G') / 4) < 0.00001
   and abs(pg_temp.q(pg_temp.v('c4'), 'SI-C2') - 0.01 * pg_temp.q(pg_temp.v('c4'), 'SIL-9710G') / 4) < 0.00001,
   'Màu Nâu, Đen mỗi màu = 1 % silicone của 1 lõi');
 select pg_temp.ok(abs(pg_temp.grp(pg_temp.v('c4'), 'INS') - (select ins_kgkm from master.spec_results where spec_id = pg_temp.v('c4'))) < 0.00001
   and abs(pg_temp.q(pg_temp.v('c4'), 'DCBP-50') / pg_temp.q(pg_temp.v('c4'), 'SIL-9710G') - 0.015) < 0.0001,
   'Tổng silicone + DCBP + màu = định mức cách điện; DCBP giữ 1,5 % silicone');
-select pg_temp.ok(cardinality(master.bom_issues(pg_temp.v('c4'))) = 0, 'CFR-4C-0P75 sau khi lưu: BOM khớp');
+select pg_temp.ok(cardinality(master.bom_issues(pg_temp.v('c4'))) = 0, 'HOME-KV075X4LZ sau khi lưu: BOM khớp');
 select pg_temp.ok((select abs(l.startup_per_lot - 0.01 * (select l2.startup_per_lot from master.bom_lines l2 join master.materials m2 on m2.id = l2.material_id where l2.bom_id = l.bom_id and m2.code = 'SIL-9710G') / 4) < 0.0001
                      from master.bom_lines l join master.bom_headers h on h.id = l.bom_id join master.materials m on m.id = l.material_id
                     where h.spec_id = pg_temp.v('c4') and m.code = 'SI-C2'),
@@ -141,7 +141,7 @@ select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('c4'), '{"wire_m
 select pg_temp.ok(pg_temp.q(pg_temp.v('c4'), 'CU-030') is null, 'Bỏ cỡ sợi Ø0,30: dòng CU-030 bị bỏ');
 
 -- (E) HDPE: CTL 2 cặp Trắng + Đen → HD-W, HD-B mỗi màu 2 % × 2/4 HDPE
-insert into t values ('ctl', pg_temp.draft('CTL-2P-A18'));
+insert into t values ('ctl', pg_temp.draft('CTRL-KVAWG18S4PVC'));
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('ctl'), '{}')$q$);
 select pg_temp.ok(abs(pg_temp.q(pg_temp.v('ctl'), 'HD-W') - 0.02 * 2 * pg_temp.q(pg_temp.v('ctl'), 'HDPE-I') / 4) < 0.00001
   and abs(pg_temp.q(pg_temp.v('ctl'), 'HD-B') - 0.02 * 2 * pg_temp.q(pg_temp.v('ctl'), 'HDPE-I') / 4) < 0.00001

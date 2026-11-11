@@ -54,11 +54,11 @@ select pg_temp.ok(not exists (select 1 from master.product_specs s where s.statu
                                and not exists (select 1 from unnest(master.bom_issues(s.id)) x where x like 'Chưa có vật tư sợi đồng%')),
   'Mọi spec còn hiệu lực: BOM khớp thông số (số lượng, vật liệu, màu lõi, nhãn, bobin, không dòng thừa)');
 
--- Spec 2 lõi silicone (CFR-2C-1 nếu có) – lập phiên bản nháp để sửa
+-- Spec 2 lõi silicone (HOME-KV10X2LZ nếu có) – lập phiên bản nháp để sửa
 insert into t select 'rel', p.current_spec_id from master.products p join master.product_specs s on s.id = p.current_spec_id
  where s.cores = 2 and s.insulation = 'SIL' and s.sheath <> 'Không'
    and not exists (select 1 from master.product_specs x where x.product_id = p.id and x.id <> s.id and x.status in ('DRAFT','PILOT_PENDING','PILOT','PENDING_APPROVAL'))
- order by (p.code = 'CFR-2C-1') desc, p.code limit 1;
+ order by (p.code = 'HOME-KV10X2LZ') desc, p.code limit 1;
 insert into t select 'prod', product_id from master.product_specs where id = pg_temp.v('rel');
 select set_config('bmt.allow_release', 'on', true);
 update master.product_specs set status = 'RELEASED' where id = pg_temp.v('rel') and status <> 'RELEASED';

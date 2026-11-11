@@ -98,13 +98,13 @@ await page.goto(`${BASE}/vat-tu`);
 await page.screenshot({ path: `${SHOTS}/02-vat-tu.png`, fullPage: false });
 await ctx.close();
 
-// 4. TP Kỹ thuật/QA gửi duyệt spec PFR-2C-1P5; SFR-2P-1 (Rdc vượt) không có nút gửi hợp lệ
+// 4. TP Kỹ thuật/QA gửi duyệt spec PFR-2C-1P5; F120-KV10S4LZ (Rdc vượt) không có nút gửi hợp lệ
 [ctx, page] = await ctxFor();
 await login(page, 'kt.tp@bmt.test');
-await page.goto(`${BASE}/san-pham/SFR-2P-1`);
-if (!(await page.textContent('body')).includes('Chưa đủ điều kiện phát hành')) fail('SFR-2P-1 phải báo chưa đủ điều kiện');
+await page.goto(`${BASE}/san-pham/F120-KV10S4LZ`);
+if (!(await page.textContent('body')).includes('Chưa đủ điều kiện phát hành')) fail('F120-KV10S4LZ phải báo chưa đủ điều kiện');
 await clickNav(page, 'button:has-text("Gửi duyệt phát hành")');
-ok(`SFR-2P-1 bị chặn gửi duyệt → ${(await flash(page)).slice(0, 90)}…`);
+ok(`F120-KV10S4LZ bị chặn gửi duyệt → ${(await flash(page)).slice(0, 90)}…`);
 await page.goto(`${BASE}/san-pham/PFR-2C-1P5`);
 await clickNav(page, 'button:has-text("Gửi duyệt phát hành")');
 await expectOk(page, 'TP KT/QA gửi duyệt spec PFR-2C-1P5');

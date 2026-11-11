@@ -101,12 +101,12 @@ values ('KH-Q48', 'Thử 4800', date_trunc('month', pg_temp.today())::date, pg_t
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-Q48';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, m_per_pack, pack_type, brand, due_date)
 select pg_temp.v('plan'), p.id, p.current_spec_id, q, 500, 'Bobin gỗ', 'KAVIX', pg_temp.today() + dd
-from (values ('PFR-2C-1P5', 10000, -1), ('SFR-2P-1', 5000, 3)) v(code, q, dd) join master.products p on p.code = v.code;
+from (values ('PFR-2C-1P5', 10000, -1), ('F120-KV10S4LZ', 5000, 3)) v(code, q, dd) join master.products p on p.code = v.code;
 insert into t select 'l_late', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'PFR-2C-1P5';
-insert into t select 'l_risk', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'SFR-2P-1';
+insert into t select 'l_risk', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'F120-KV10S4LZ';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, m_per_pack, pack_type, brand, due_date, committed_date, committed_by, committed_at)
 select pg_temp.v('plan'), p.id, p.current_spec_id, 3000, 500, 'Bobin gỗ', 'KAVIX', pg_temp.today() + 30, pg_temp.today() + 25, pg_temp.uid('Q_SXTP'), now()
-from master.products p where p.code = (select code from master.products where code not in ('PFR-2C-1P5', 'SFR-2P-1') and current_spec_id is not null order by code limit 1);
+from master.products p where p.code = (select code from master.products where code not in ('PFR-2C-1P5', 'F120-KV10S4LZ') and current_spec_id is not null order by code limit 1);
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand, status, plan_line_id)
 select 'LSX-Q48', p.id, p.current_spec_id, (select h.id from master.bom_headers h where h.spec_id = p.current_spec_id limit 1), 10000, 500, 'Bobin gỗ', 'KAVIX', 'RELEASED',
        pg_temp.v('l_late')

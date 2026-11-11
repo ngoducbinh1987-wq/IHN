@@ -53,9 +53,9 @@ create function pg_temp.q(p_spec uuid, p_code text) returns numeric language sql
   select sum(l.qty_per_basis) from master.bom_lines l join master.bom_headers h on h.id = l.bom_id join master.materials m on m.id = l.material_id
    where h.spec_id = p_spec and m.code = p_code $$;
 
--- Mô phỏng chuẩn của anh Bình: CFR-2C-0P75 16×0,24 bước 21,21; CFR-2C-1 19×0,24 + 2×0,20 bước 25
-insert into t select 's075', current_spec_id from master.products where code = 'CFR-2C-0P75';
-insert into t select 's1', current_spec_id from master.products where code = 'CFR-2C-1';
+-- Mô phỏng chuẩn của anh Bình: HOME-KV075X2LZ 16×0,24 bước 21,21; HOME-KV10X2LZ 19×0,24 + 2×0,20 bước 25
+insert into t select 's075', current_spec_id from master.products where code = 'HOME-KV075X2LZ';
+insert into t select 's1', current_spec_id from master.products where code = 'HOME-KV10X2LZ';
 select set_config('bmt.admin_spec_edit', 'on', true);
 select set_config('bmt.allow_release', 'on', true);
 update master.product_specs set status = 'RELEASED' where id in (pg_temp.v('s075'), pg_temp.v('s1')) and status <> 'RELEASED';
@@ -103,7 +103,7 @@ select pg_temp.ok((select bool_and(abs(r.metal_kgkm / s.cores / s.lay_factor - r
                      from master.product_specs s join master.spec_results r on r.spec_id = s.id,
                           master.product_specs s1 join master.spec_results r1 on r1.spec_id = s1.id
                     where s1.id = pg_temp.v('s1') and s.core_code = 'M1' and s.status <> 'OBSOLETE'),
-  'Đồng mỗi lõi (bỏ K) mọi mã 1,0 mm² = mã chuẩn CFR-2C-1');
+  'Đồng mỗi lõi (bỏ K) mọi mã 1,0 mm² = mã chuẩn HOME-KV10X2LZ');
 select pg_temp.ok((select bool_and(abs(pg_temp.q(s.id, 'CU-020') - r.metal_kgkm * 2 * 0.04 / (19 * 0.0576 + 2 * 0.04)) < 0.00001
                                    and abs(pg_temp.q(s.id, 'CU-024') - r.metal_kgkm * 19 * 0.0576 / (19 * 0.0576 + 2 * 0.04)) < 0.00001)
                      from master.product_specs s join master.spec_results r on r.spec_id = s.id where s.core_code = 'M1' and s.status <> 'OBSOLETE'),

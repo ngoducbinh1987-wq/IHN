@@ -62,7 +62,7 @@ select pg_temp.ok(not exists (select 1 from master.bom_lines l join master.bom_h
 insert into t select 'rel', p.current_spec_id from master.products p join master.product_specs s on s.id = p.current_spec_id
  where s.cores = 2
    and not exists (select 1 from master.product_specs x where x.product_id = p.id and x.id <> s.id and x.status in ('DRAFT','PILOT_PENDING','PILOT','PENDING_APPROVAL'))
- order by (s.status = 'RELEASED') desc, p.code limit 1;
+ order by (s.status = 'RELEASED') desc, (p.code like 'HOME-%') desc, p.code limit 1;
 select set_config('bmt.allow_release', 'on', true);
 update master.product_specs set status = 'RELEASED' where id = pg_temp.v('rel') and status <> 'RELEASED';
 select set_config('bmt.allow_release', 'off', true);

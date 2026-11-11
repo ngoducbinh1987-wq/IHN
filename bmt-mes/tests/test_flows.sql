@@ -68,7 +68,7 @@ select pg_temp.fails($$update master.bom_lines set qty_per_basis = 1 where bom_i
 select pg_temp.fails($$update master.product_specs set status = 'RELEASED' where id = (select current_spec_id from master.products where code = 'SIF-1C-1P5')$$, 'luồng duyệt', 'Không phát hành spec ngoài luồng duyệt');
 select pg_temp.fails($$select master.release_spec((select current_spec_id from master.products where code = 'SIF-1C-1P5'))$$, 'qua quy trình duyệt', 'Không gọi thẳng hàm phát hành spec');
 select pg_temp.as_user('U_KTTP');
-select pg_temp.fails($$select wf.submit('SPEC_NEW', (select current_spec_id from master.products where code = 'SFR-2P-1'), 'SPEC SFR-2P-1 v1')$$, 'Rdc', 'SFR-2P-1 Rdc vượt: chặn gửi duyệt');
+select pg_temp.fails($$select wf.submit('SPEC_NEW', (select current_spec_id from master.products where code = 'F120-KV10S4LZ'), 'SPEC F120-KV10S4LZ v1')$$, 'Rdc', 'F120-KV10S4LZ Rdc vượt: chặn gửi duyệt');
 -- Phiên bản mới từ spec đã phát hành
 select pg_temp.as_user('U_KTNV');
 insert into t select 'spec_v2', master.new_spec_version((select v from t where k='spec_pfr'), 'MINOR');
@@ -102,7 +102,7 @@ select pg_temp.ok((select budget_vnd from plan.mrp_runs where id = (select v fro
 insert into plan.production_plans (plan_no, period_label) values ('KH-SFR', 'Thử');
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
 select pp.id, p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from plan.production_plans pp, master.products p
- where pp.plan_no = 'KH-SFR' and p.code = 'SFR-2P-1';
+ where pp.plan_no = 'KH-SFR' and p.code = 'F120-KV10S4LZ';
 select pg_temp.fails($$select plan.run_mrp((select id from plan.production_plans where plan_no = 'KH-SFR'))$$, 'Spec chưa phát hành', 'MRP chính thức chặn spec chưa phát hành');
 select pg_temp.fails($$select plan.create_pr_from_mrp((select v from t where k='run1'))$$, 'được phê duyệt', 'Chưa duyệt kế hoạch thì không sinh PR');
 -- Quy trình 28/10/2026: TP SX lập kế hoạch tháng, chạy MRP → Giám đốc duyệt → Chủ tịch HĐQT chốt
@@ -204,7 +204,7 @@ select pg_temp.ok((select count(*) from integ.sync_queue where entity = 'STOCK_D
 select pg_temp.as_user('U_SXKH');
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
 select 'LSX-T2', p.id, p.current_spec_id, h.id, 1000, 500, 'Bobin gỗ', 'KAVIX'
-from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'SFR-2P-1';
+from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'F120-KV10S4LZ';
 select pg_temp.fails($$select mfg.release_wo((select id from mfg.work_orders where wo_no = 'LSX-T2'))$$, 'qua quy trình duyệt', 'Kế hoạch SX không tự phát lệnh ngoài quy trình');
 select pg_temp.as_user('U_SXTP');
 select pg_temp.fails($$select mfg.release_wo((select id from mfg.work_orders where wo_no = 'LSX-T2'))$$, 'spec chưa phát hành', 'Chặn phát lệnh SX khi spec chưa phát hành');

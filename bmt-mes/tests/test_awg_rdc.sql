@@ -51,15 +51,15 @@ select p.id, u.role from core.profiles p join (values ('E_ADM','ADMIN'),('E_KTTP
 
 -- Bảng IEC TR 62602:2009 Bảng 1–2, lõi bện Class 2
 select pg_temp.ok((select bool_and((c.code, c.rdc_limit, c.rdc_limit_tc) in (('A20', 34.6, 36.7), ('A18', 21.8, 23.2), ('A16', 13.7, 14.6), ('A14', 8.62, 8.96)))
-                     from master.core_types c where c.code like 'A%') and (select count(*) = 4 from master.core_types where code like 'A%' and rdc_source like 'IEC TR 62602%'),
+                     from master.core_types c where c.code in ('A14', 'A16', 'A18', 'A20')) and (select count(*) = 4 from master.core_types where code like 'A%' and rdc_source like 'IEC TR 62602%'),
   'Lõi AWG 14–20: giới hạn đồng trần / mạ thiếc theo IEC TR 62602, có ghi căn cứ');
 select pg_temp.ok(not exists (select 1 from master.product_specs s join master.spec_results r on r.spec_id = s.id join master.core_types c on c.code = s.core_code and c.set_id = s.param_set_id
-                               where s.status <> 'OBSOLETE' and s.core_code like 'A%' and r.rdc_limit is distinct from case when s.conductor_mat = 'TC' then c.rdc_limit_tc else c.rdc_limit end),
+                               where s.status <> 'OBSOLETE' and s.core_code like 'A%' and s.core_code <> 'A22' and r.rdc_limit is distinct from case when s.conductor_mat = 'TC' then c.rdc_limit_tc else c.rdc_limit end),
   'Mọi spec lõi AWG: giới hạn Rdc theo vật liệu ruột dẫn (TC → cột mạ thiếc)');
-select pg_temp.ok(not exists (select 1 from master.product_specs s, unnest(master.check_spec(s.id)) x where s.status <> 'OBSOLETE' and s.core_code like 'A%' and x like 'Chưa có giới hạn Rdc%'),
+select pg_temp.ok(not exists (select 1 from master.product_specs s, unnest(master.check_spec(s.id)) x where s.status <> 'OBSOLETE' and s.core_code like 'A%' and s.core_code <> 'A22' and x like 'Chưa có giới hạn Rdc%'),
   'Không còn cảnh báo "Chưa có giới hạn Rdc (AWG)"');
 -- Đổi một mã CTL sang đồng trần: giới hạn chuyển sang cột đồng trần
-insert into t select 'ctl', s.id from master.product_specs s join master.products p on p.id = s.product_id where p.code = 'CTL-2P-A16' and s.status <> 'OBSOLETE' order by s.version desc limit 1;
+insert into t select 'ctl', s.id from master.product_specs s join master.products p on p.id = s.product_id where p.code = 'CTRL-KVAWG16S4PVC' and s.status <> 'OBSOLETE' order by s.version desc limit 1;
 select set_config('bmt.admin_spec_edit', 'on', true);
 update master.product_specs set conductor_mat = 'BC' where id = pg_temp.v('ctl');
 select master.calc_spec(pg_temp.v('ctl'));

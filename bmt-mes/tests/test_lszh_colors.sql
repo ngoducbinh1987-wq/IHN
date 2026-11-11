@@ -12,7 +12,7 @@ end $$;
 set client_min_messages = notice;
 
 create temp view v as
-select s.id, p.code, s.brand, coalesce(s.shield, false) shield, s.sheath_color, r.sheath_kgkm,
+select s.id, p.code, s.brand, (s.brand = 'KAVIX' and p.code like 'HOME-%') green, coalesce(s.shield, false) shield, s.sheath_color, r.sheath_kgkm,
        (select string_agg(m.code, ',' order by m.code) from master.bom_lines l join master.bom_headers h on h.id = l.bom_id join master.materials m on m.id = l.material_id
          where h.spec_id = s.id and master.bom_group(m.code, m.group_code, l.operation_code) = 'SH') sh_codes,
        (select coalesce(sum(l.qty_per_basis), 0) from master.bom_lines l join master.bom_headers h on h.id = l.bom_id join master.materials m on m.id = l.material_id
@@ -29,10 +29,10 @@ select pg_temp.ok(not exists (select 1 from master.materials where code in ('LS-
 select pg_temp.ok((select compound_code = 'LSZH-O' and material_code is null from master.pigment_rules where kind = 'SH' and family = 'LSZH' and color = 'ral 2004')
    and (select compound_code = 'LSZH-G' and material_code is null from master.pigment_rules where kind = 'SH' and family = 'LSZH' and color = 'ral 6037'),
   'Bảng màu vỏ: LSZH RAL 2004 → LSZH-O, RAL 6037 → LSZH-G, không hạt màu');
-select pg_temp.ok(not exists (select 1 from v where master.norm_color(sheath_color) <> case when brand = 'KAVIX' and not shield then 'ral 6037' else 'ral 2004' end)
+select pg_temp.ok(not exists (select 1 from v where master.norm_color(sheath_color) <> case when green then 'ral 6037' else 'ral 2004' end)
    and exists (select 1 from v where brand = 'KAVIX' and shield) and exists (select 1 from v where brand = 'KAVIX' and not shield),
-  'Spec vỏ LSZH: HEIZKA, KAVIX chống nhiễu RAL 2004; KAVIX không chống nhiễu RAL 6037');
-select pg_temp.ok(not exists (select 1 from v where sh_codes is distinct from case when brand = 'KAVIX' and not shield then 'LSZH-G' else 'LSZH-O' end),
+  'Spec vỏ LSZH: HEIZKA, KAVIX F120 (chống nhiễu và không) RAL 2004; KAVIX HOMESAFE RAL 6037');
+select pg_temp.ok(not exists (select 1 from v where sh_codes is distinct from case when green then 'LSZH-G' else 'LSZH-O' end),
   'BOM vỏ LSZH: chỉ một hạt vỏ pha sẵn đúng màu (cam LSZH-O / xanh LSZH-G), không hạt màu');
 select pg_temp.ok(not exists (select 1 from v where abs(sh_qty - sheath_kgkm) > 0.0005), 'Hạt vỏ = định mức vỏ');
 select pg_temp.ok(not exists (select 1 from v, unnest(master.bom_issues(v.id)) x where x like '%vỏ%' or x like '%Vỏ%'),
@@ -40,13 +40,13 @@ select pg_temp.ok(not exists (select 1 from v, unnest(master.bom_issues(v.id)) x
 
 -- Đổi màu một spec KAVIX sang RAL 2004 → BOM đổi LSZH-O, báo sai màu thương hiệu; đổi lại thì hết
 select set_config('bmt.admin_spec_edit', 'on', true);
-create temp table k as select id from v where brand = 'KAVIX' and not shield order by code limit 1;
+create temp table k as select id from v where green order by code limit 1;
 update master.product_specs set sheath_color = 'RAL 2004' where id = (select id from k);
 select master.sync_bom((select id from k));
 select pg_temp.ok((select sh_codes = 'LSZH-O' and abs(sh_qty - sheath_kgkm) < 0.0005 from v where id = (select id from k)),
-  'KAVIX không chống nhiễu đổi RAL 2004: BOM đổi sang LSZH-O, đủ định mức vỏ');
+  'KAVIX HOMESAFE đổi RAL 2004: BOM đổi sang LSZH-O, đủ định mức vỏ');
 select pg_temp.ok(exists (select 1 from unnest(master.bom_issues((select id from k))) x where x like 'Vỏ LSZH thương hiệu KAVIX (cáp không chống nhiễu) phải màu RAL 6037%'),
-  'KAVIX không chống nhiễu vỏ RAL 2004: báo sai màu');
+  'KAVIX HOMESAFE vỏ RAL 2004: báo sai màu');
 update master.product_specs set sheath_color = 'RAL 6037' where id = (select id from k);
 select master.sync_bom((select id from k));
 select pg_temp.ok((select sh_codes = 'LSZH-G' from v where id = (select id from k))
@@ -54,6 +54,9 @@ select pg_temp.ok((select sh_codes = 'LSZH-G' from v where id = (select id from 
   'Đổi lại RAL 6037: LSZH-G, hết báo');
 -- KAVIX chống nhiễu đổi RAL 6037 → báo phải RAL 2004
 create temp table ks as select id from v where brand = 'KAVIX' and shield order by code limit 1;
+select pg_temp.ok(exists (select 1 from v where brand = 'KAVIX' and code like 'F120-%' and not shield and master.norm_color(sheath_color) = 'ral 2004'
+                           and sh_codes = 'LSZH-O' and not exists (select 1 from unnest(master.bom_issues(v.id)) x where x like '%Vỏ%')),
+  'F120 không chống nhiễu (mã mới): vỏ cam RAL 2004, LSZH-O, không báo lỗi');
 update master.product_specs set sheath_color = 'RAL 6037' where id = (select id from ks);
 select pg_temp.ok(exists (select 1 from unnest(master.bom_issues((select id from ks))) x where x like 'Vỏ LSZH thương hiệu KAVIX (cáp chống nhiễu) phải màu RAL 2004%'),
   'KAVIX chống nhiễu vỏ RAL 6037: báo phải RAL 2004');

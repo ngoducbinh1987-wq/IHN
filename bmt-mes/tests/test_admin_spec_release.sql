@@ -49,14 +49,14 @@ insert into core.user_roles (user_id, role_code)
 select p.id, u.role from core.profiles p join (values ('L_ADM','ADMIN'),('L_KTTP','KT_TP')) u(code, role) on u.code = p.employee_code;
 
 -- Ba mã có BOM, giới hạn Rdc, chưa chứng từ nào dùng, chưa có phiên bản khác: mở phiên bản nháp mới cho từng mã
-insert into t select 'p' || row_number() over (order by p.code), p.id from master.products p
+insert into t select 'p' || row_number() over (order by (p.code like 'HOME-%') desc, p.code), p.id from master.products p
  join master.spec_results sr on sr.spec_id = p.current_spec_id
  where sr.rdc_limit is not null and sr.rdc_calc <= sr.rdc_limit
    and exists (select 1 from master.bom_headers h join master.bom_lines l on l.bom_id = h.id where h.spec_id = p.current_spec_id)
    and not exists (select 1 from master.product_specs s where s.product_id = p.id and s.id <> p.current_spec_id)
    and not exists (select 1 from plan.plan_lines l where l.product_id = p.id)
    and not exists (select 1 from mfg.work_orders w where w.product_id = p.id)
- order by p.code limit 3;
+ order by (p.code like 'HOME-%') desc, p.code limit 3;
 insert into t select 'v' || substr(k, 2), (select current_spec_id from master.products where id = t.v) from t where k like 'p%';
 update master.product_specs set status = 'DRAFT' where id in (select v from t where k like 'v%') and status not in ('RELEASED', 'DRAFT');
 select pg_temp.as_user('L_ADM');
