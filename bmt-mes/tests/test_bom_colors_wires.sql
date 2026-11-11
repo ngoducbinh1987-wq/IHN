@@ -122,7 +122,7 @@ select pg_temp.ok(pg_temp.q(pg_temp.v('c4'), 'LS-G') is null and pg_temp.q(pg_te
   and abs(pg_temp.q(pg_temp.v('c4'), 'LSZH-O') - (select sheath_kgkm from master.spec_results where spec_id = pg_temp.v('c4'))) < 0.00001
   and abs(pg_temp.grp(pg_temp.v('c4'), 'SH') - (select sheath_kgkm from master.spec_results where spec_id = pg_temp.v('c4'))) < 0.00001,
   'Vỏ đổi RAL 2004: hạt vỏ LSZH-G → LSZH-O (pha màu sẵn) = định mức vỏ, không hạt màu');
-select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('c4'))) x where x like 'Vỏ LSZH thương hiệu KAVIX phải màu RAL 6037%'),
+select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('c4'))) x where x like 'Vỏ LSZH thương hiệu KAVIX (cáp không chống nhiễu) phải màu RAL 6037%'),
   'KAVIX vỏ LSZH RAL 2004: đối chiếu BOM báo sai màu theo thương hiệu');
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('c4'), '{"sheath_color":"Tím"}')$q$);
 select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('c4'))) x where x like 'Màu vỏ "Tím" chưa có trong bảng màu vỏ%'), 'Màu vỏ chưa có trong bảng: báo');
