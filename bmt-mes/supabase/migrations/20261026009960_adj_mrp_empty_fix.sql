@@ -1,4 +1,4 @@
--- Sửa lỗi migration 9700: khi bảng MRP hiệu chỉnh chưa tính được (đề xuất nháp chưa có dòng, đề xuất đã hủy, lỗi kiểm tra)
+-- Sửa lỗi migration 9700 (số 9960): khi bảng MRP hiệu chỉnh chưa tính được (đề xuất nháp chưa có dòng, đề xuất đã hủy, lỗi kiểm tra)
 -- app.adj_mrp / plan.adj_preview trả 'rows', 'table' là CHUỖI "[]" (jsonb_build_object('rows', '[]') không ép kiểu)
 -- thay vì mảng rỗng → trang /ke-hoach/dieu-chinh/[id] gọi .map trên chuỗi và sập (phát hiện 11/11/2026 khi chạy E2E;
 -- trên Supabase lúc đó có 1 đề xuất nháp chưa có dòng). Vá bằng replace trên định nghĩa hàm, báo lỗi nếu không thấy đoạn cần vá.
