@@ -115,11 +115,15 @@ select pg_temp.ok(cardinality(master.bom_issues(pg_temp.v('c4'))) = 0, 'Lưu l�
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('c4'), '{"core_colors":["Nâu","","Nâu","Xanh dương","Nâu","Xanh dương"]}')$q$);
 select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('c4'))) x where x like 'Chưa khai màu lõi 2%'), 'Thiếu màu một lõi: báo chưa khai');
 
--- (C) Màu vỏ: RAL 6037 → RAL 2004 đổi hạt màu vỏ, giữ 2 %
+-- (C) Màu vỏ (migration 9800: LSZH pha màu sẵn): RAL 6037 → RAL 2004 đổi hạt vỏ LSZH-G → LSZH-O, không hạt màu;
+--     KAVIX phải RAL 6037 → đối chiếu BOM báo sai màu theo thương hiệu
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('c4'), '{"core_colors":["Nâu","Xanh dương","Nâu","Xanh dương","Nâu","Xanh dương"],"sheath_color":"RAL 2004"}')$q$);
-select pg_temp.ok(pg_temp.q(pg_temp.v('c4'), 'LS-G') is null and abs(pg_temp.q(pg_temp.v('c4'), 'LS-O') - 0.02 * pg_temp.q(pg_temp.v('c4'), 'LSZH-S')) < 0.00001
+select pg_temp.ok(pg_temp.q(pg_temp.v('c4'), 'LS-G') is null and pg_temp.q(pg_temp.v('c4'), 'LS-O') is null and pg_temp.q(pg_temp.v('c4'), 'LSZH-G') is null
+  and abs(pg_temp.q(pg_temp.v('c4'), 'LSZH-O') - (select sheath_kgkm from master.spec_results where spec_id = pg_temp.v('c4'))) < 0.00001
   and abs(pg_temp.grp(pg_temp.v('c4'), 'SH') - (select sheath_kgkm from master.spec_results where spec_id = pg_temp.v('c4'))) < 0.00001,
-  'Vỏ đổi RAL 2004: hạt màu LS-G → LS-O = 2 % hạt vỏ, tổng = định mức vỏ');
+  'Vỏ đổi RAL 2004: hạt vỏ LSZH-G → LSZH-O (pha màu sẵn) = định mức vỏ, không hạt màu');
+select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('c4'))) x where x like 'Vỏ LSZH thương hiệu KAVIX phải màu RAL 6037%'),
+  'KAVIX vỏ LSZH RAL 2004: đối chiếu BOM báo sai màu theo thương hiệu');
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('c4'), '{"sheath_color":"Tím"}')$q$);
 select pg_temp.ok(exists (select 1 from unnest(master.bom_issues(pg_temp.v('c4'))) x where x like 'Màu vỏ "Tím" chưa có trong bảng màu vỏ%'), 'Màu vỏ chưa có trong bảng: báo');
 
