@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026009900_v_users_invoker: danh sách người dùng chạy theo quyền người xem.
+-- Kiểm thử migration 20261026009950_v_users_invoker: danh sách người dùng chạy theo quyền người xem.
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 set client_min_messages = warning;
 begin;

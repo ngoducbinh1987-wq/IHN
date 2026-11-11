@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026009910_adj_mrp_empty_fix: nhánh "chưa tính được" của bảng MRP hiệu chỉnh trả MẢNG rỗng.
+-- Kiểm thử migration 20261026009960_adj_mrp_empty_fix: nhánh "chưa tính được" của bảng MRP hiệu chỉnh trả MẢNG rỗng.
 -- Chạy được bằng psql hoặc Supabase SQL Editor / MCP execute_sql. Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 begin;
 do $$
