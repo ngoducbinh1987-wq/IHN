@@ -29,10 +29,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const rv = (data ?? {}) as { rows?: MrpRow[]; table?: TblRow[]; reductions?: Cut[]; applied?: boolean; at?: string; error?: string };
   if (rv.error) return new NextResponse(`Chưa tính được bảng MRP: ${rv.error}`, { status: 400 });
 
-  const act = new Map((rv.rows ?? []).map((x) => [x.code, x.action]));
+  const act = new Map((Array.isArray(rv.rows) ? rv.rows : []).map((x) => [x.code, x.action]));
   const head = ['Mã vật tư', 'Tên vật tư', 'ĐVT', 'MRP ban đầu', 'MRP hiện tại', 'Chênh lệch', 'Tồn kho', 'Hàng về', 'Đã đề xuất', 'Dự phòng tồn kho',
     'Thiếu', 'Đề xuất mua', 'Tồn sau SX', 'MES xử lý'];
-  const rows = (rv.table ?? []).map((x) => [x.code, x.name, x.uom, n(x.mrp_old), n(x.mrp_new), n(x.diff), n(x.available), n(x.incoming),
+  const rows = (Array.isArray(rv.table) ? rv.table : []).map((x) => [x.code, x.name, x.uom, n(x.mrp_old), n(x.mrp_new), n(x.diff), n(x.available), n(x.incoming),
     n(x.requested), n(x.reserve), n(x.shortage), n(x.suggest), n(x.projected_after), act.has(x.code) ? ACTION[act.get(x.code) as string] ?? act.get(x.code) : '']);
   const state = rv.applied ? `Đã áp khi duyệt${rv.at ? ` ${new Date(rv.at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}` : ''}` : 'Chạy thử (chưa đổi gì), MRP ban đầu = lần chạy MRP gần nhất của kế hoạch';
   const sheets = [{
@@ -41,7 +41,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     rows: [head, ...rows],
     widths: [14, 30, 7, 13, 13, 13, 12, 12, 13, 14, 12, 13, 13, 30],
   }];
-  const cuts = rv.reductions ?? [];
+  const cuts = (Array.isArray(rv.reductions) ? rv.reductions : []);
   if (cuts.length) sheets.push({
     name: 'Đơn, đề xuất mua giảm',
     title: `${rv.applied ? 'Đơn mua / đề xuất mua đã giảm' : 'Đơn mua / đề xuất mua sẽ giảm khi duyệt'} · ${a.adj_no}`,

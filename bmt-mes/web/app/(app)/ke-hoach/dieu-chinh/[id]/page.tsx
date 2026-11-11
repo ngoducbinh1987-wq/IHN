@@ -48,8 +48,8 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
     supabase.schema('app').rpc('adj_mrp', { p_adj: id }),
   ]);
   const rv = (impactRows ?? {}) as Revise;
-  const mrpRows = rv.rows ?? [];
-  const tbl = rv.table ?? [];
+  const mrpRows = (Array.isArray(rv.rows) ? rv.rows : []);
+  const tbl = (Array.isArray(rv.table) ? rv.table : []);
   const actionOf = new Map(mrpRows.map((x) => [x.code, x.action]));
   const canRun = a.status === 'DRAFT' || a.status === 'PENDING_APPROVAL';
   const n2 = (v: number | null | undefined) => (v === null || v === undefined ? '—' : nf(v, 2));
@@ -65,7 +65,7 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
   };
   const totalNow = (planLines ?? []).reduce((t, p) => t + Number(p.qty_m), 0);
   const totalAfter = (planLines ?? []).reduce((t, p) => t + Number(after(p).qty), 0) + adds.reduce((t, l) => t + Number(l.qty_m ?? 0), 0);
-  const cuts = rv.reductions ?? [];
+  const cuts = (Array.isArray(rv.reductions) ? rv.reductions : []);
   const draft = a.status === 'DRAFT';
   // Người lập sửa khi nháp; Chủ tịch (người đang duyệt) sửa khi chờ duyệt, ghi lịch sử duyệt
   const { data: reviewEdit } = a.status === 'PENDING_APPROVAL'

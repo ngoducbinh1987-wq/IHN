@@ -355,8 +355,8 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
     const d = (x: string | null) => (x ? `${x.slice(8, 10)}/${x.slice(5, 7)}` : '—');
     type R = { code: string; uom: string; buy_more: number; pending_before: number; pending_after: number; action: string };
     const rv = (imp ?? {}) as { rows?: R[]; reductions?: { pr_no: string; material_code: string; old: number; new: number; uom: string }[]; error?: string; applied?: boolean };
-    const buy = (rv.rows ?? []).filter((x) => Number(x.buy_more) > 0);
-    const keep = (rv.rows ?? []).filter((x) => x.action === 'KEEP');
+    const buy = (Array.isArray(rv.rows) ? rv.rows : []).filter((x) => Number(x.buy_more) > 0);
+    const keep = (Array.isArray(rv.rows) ? rv.rows : []).filter((x) => x.action === 'KEEP');
     return (
       <div className="flex flex-col gap-3">
         <Field label="Kế hoạch">{adj?.plan_no}</Field>
@@ -375,10 +375,10 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
         <Field label="MRP hiệu chỉnh">{rv.error ? <span className="text-muted">Chưa tính được: {rv.error}</span> : (
           <div className="flex flex-col gap-1">
             <span className={buy.length ? 'text-bad' : ''}>{buy.length ? `Mua thêm: ${buy.map((x) => `${x.code} ${nf(x.buy_more, 1)} ${x.uom}`).join(', ')}` : 'Không phải mua thêm'}</span>
-            {(rv.reductions ?? []).length > 0 && <span>{rv.applied ? 'Đã giảm' : 'Giảm khi duyệt'} đề xuất mua chưa duyệt: {(rv.reductions ?? []).map((c) => `${c.pr_no} ${c.material_code} ${nf(c.old, 1)} → ${nf(c.new, 1)} ${c.uom}`).join('; ')}</span>}
+            {(Array.isArray(rv.reductions) ? rv.reductions : []).length > 0 && <span>{rv.applied ? 'Đã giảm' : 'Giảm khi duyệt'} đề xuất mua chưa duyệt: {(Array.isArray(rv.reductions) ? rv.reductions : []).map((c) => `${c.pr_no} ${c.material_code} ${nf(c.old, 1)} → ${nf(c.new, 1)} ${c.uom}`).join('; ')}</span>}
             {keep.length > 0 && <span className="text-muted">Giữ nguyên (Giám đốc đã duyệt mua): {keep.map((x) => x.code).join(', ')}</span>}
             <span><Link className="link" href={`/ke-hoach/dieu-chinh/${a.doc_id}#mrp-hieu-chinh`}>Xem bảng MRP hiệu chỉnh</Link>
-              {(rv.rows ?? []).length > 0 && <> · <a className="link" href={`/ke-hoach/dieu-chinh/${a.doc_id}/excel`} download>Xuất Excel</a></>}</span>
+              {(Array.isArray(rv.rows) ? rv.rows : []).length > 0 && <> · <a className="link" href={`/ke-hoach/dieu-chinh/${a.doc_id}/excel`} download>Xuất Excel</a></>}</span>
           </div>)}</Field>
       </div>
     );
