@@ -6,6 +6,8 @@ cd "$(dirname "$0")/../.."
 SHOTS=${1:-$(mktemp -d)}
 dev/local_stack.sh up
 source dev/.env.local-stack
+# Dữ liệu nền E2E: tốc độ máy đã duyệt (lịch máy không còn tốc độ giả định)
+psql "host=/tmp port=5433 user=postgres dbname=${DB:-bmt_app}" -q -v ON_ERROR_STOP=1 -f web/tests/e2e_seed.sql >/dev/null
 curl -sf -X POST http://localhost:54321/auth/v1/admin/users -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "apikey: $SERVICE_ROLE_KEY" \
   -H 'Content-Type: application/json' -d '{"email":"admin@bmt.test","password":"Admin@12345","email_confirm":true}' >/dev/null
 cd web
