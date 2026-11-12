@@ -47,7 +47,7 @@ select pg_temp.expect('Minh lưu lịch máy', $q$select app.kh_save_schedule((s
   'Lịch đầu')$q$, true);
 select pg_temp.expect('Đổi ngày bắt đầu khi đã có lịch → chặn', $q$select app.kh_set_sched_start((select id from plan.production_plans limit 1), date '2026-11-03')$q$, false, 'Đã có lịch');
 select pg_temp.expect('Minh lập đơn phát sinh mức C', $q$select app.kh_create_change((select id from plan.production_plans limit 1),
-  '{"product_code":"PFR-2C-1","qty_m":3000,"due_date":"2026-11-10","priority":"0"}', '{}', 'C',
+  '{"product_code":"HOME-KV10X2FP","qty_m":3000,"due_date":"2026-11-10","priority":"0"}', '{}', 'C',
   '[{"role":"SX_TP","label":"Quản lý SX lập"},{"role":"KT_TP","label":"TP Kỹ thuật/QA cho ý kiến"},{"role":"BGD","label":"Giám đốc duyệt"}]')$q$, true);
 select pg_temp.expect('Minh duyệt thay bước KT → chặn', $q$select app.kh_change_step((select id from plan.change_requests limit 1), 'approve')$q$, false, 'chờ TP Kỹ thuật');
 select pg_temp.expect('Minh nhập báo cáo ca → chặn', $q$select app.kh_save_report(date '2026-11-02', 'EXT-SI-01', '{}')$q$, false, 'vận hành');
@@ -60,7 +60,7 @@ select pg_temp.expect('Lực sửa phút đổi máy', $q$select app.kh_save_cha
 select pg_temp.expect('Lực sửa tốc độ mặc định ngoài khoảng → chặn (đã bỏ)', $q$select app.kh_save_rates('[{"op_code":"CD1","rate_small":500,"rate_large":80}]', 'x')$q$, false, 'Đã bỏ tốc độ mặc định');
 select pg_temp.expect('Nhật ký có 4 dòng', 'do $x$ begin if (select count(*) from app.v_kh_param_log where at >= now()) <> 4 then raise exception ''sai số dòng %'', (select count(*) from app.v_kh_param_log where at >= now()); end if; end $x$', true);
 select pg_temp.expect('Lực cho ý kiến KT', $q$select app.kh_change_step((select id from plan.change_requests limit 1), 'approve', 'Đồng ý, cần purge')$q$, true);
-select pg_temp.expect('Lực duyệt mẫu đầu ca: đạt', $q$select app.kh_sample(date '2026-11-02', 'EXT-SI-01', 'A', '[{"kind":"Đầu ca","product_code":"PFR-2C-1","status":"PENDING"}]', 0, 'OK')$q$, true);
+select pg_temp.expect('Lực duyệt mẫu đầu ca: đạt', $q$select app.kh_sample(date '2026-11-02', 'EXT-SI-01', 'A', '[{"kind":"Đầu ca","product_code":"HOME-KV10X2FP","status":"PENDING"}]', 0, 'OK')$q$, true);
 select pg_temp.expect('Lực phát lệnh → chặn', $q$select app.kh_release_day((select id from plan.production_plans limit 1), date '2026-11-02', null, '[]', '[]')$q$, false, 'TP SX');
 
 -- Minh (người lập) duyệt bước Giám đốc của chính đề nghị mình → chặn

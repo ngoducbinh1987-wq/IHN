@@ -37,7 +37,7 @@ select pg_temp.ok((select max_value = 200 from master.machine_ranges rg join mas
   'Tốc độ cuốn tối đa 200 m/phút');
 
 -- ================================================================ 2. Kg hỗn hợp/km cáp
-insert into t select 'sif', id from master.products where code = 'SIF-1C-1P5';
+insert into t select 'sif', id from master.products where code = 'HOME-KV15X1SI';
 insert into t select 'pvc', id from master.products where group_code = 'PVC' order by code limit 1;
 select pg_temp.ok(plan.mix_kg_km((select current_spec_id from master.products where id = (select v from t where k = 'sif'))) > 0, 'Mã silicone có kg hỗn hợp cần trộn / km cáp');
 select pg_temp.ok(plan.mix_kg_km((select current_spec_id from master.products where id = (select v from t where k = 'pvc'))) is null, 'Mã PVC không cần trộn silicone');
@@ -79,7 +79,7 @@ values ((select v from t where k = 'plan'), 1, true, pg_temp.today(),
         '{"S":420,"SPD":1,"workdays":[1,2,3,4,5,6,7],"shifts":[{"code":"A","start_time":"08:00","end_time":"17:00","break_min":60}]}', 'Thử');
 insert into t select 'ver', id from plan.schedule_versions where plan_id = (select v from t where k = 'plan') and version = 1;
 insert into plan.schedule_orders (version_id, plan_line_id, label, product_code, qty_m, meta)
-values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'D01', 'SIF-1C-1P5', 1000, '{"cores":["Đỏ"]}');
+values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'D01', 'HOME-KV15X1SI', 1000, '{"cores":["Đỏ"]}');
 insert into plan.schedule_slots (version_id, plan_line_id, op_code, color, machine_code, start_min, run_start_min, end_min, setup_min, meters, rate, speed)
 values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'CD0', null, 'SIL-MIX', 0, 0, 100, 0, 1000, 10, 10),
        ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'CD2', 'Đỏ', 'EXT-SI-01', 100, 100, 200, 0, 1000, 10, 10),
@@ -90,7 +90,7 @@ values ((select v from t where k = 'plan'), 2, false, pg_temp.today(),
         '{"S":420,"SPD":1,"workdays":[1,2,3,4,5,6,7],"shifts":[{"code":"A","start_time":"08:00","end_time":"17:00","break_min":60}]}', 'Thử cũ');
 insert into t select 'old', id from plan.schedule_versions where plan_id = (select v from t where k = 'plan') and version = 2;
 insert into plan.schedule_orders (version_id, plan_line_id, label, product_code, qty_m, meta)
-values ((select v from t where k = 'old'), (select v from t where k = 'line'), 'D01', 'SIF-1C-1P5', 1000, '{"cores":["Đỏ"]}');
+values ((select v from t where k = 'old'), (select v from t where k = 'line'), 'D01', 'HOME-KV15X1SI', 1000, '{"cores":["Đỏ"]}');
 insert into plan.schedule_slots (version_id, plan_line_id, op_code, color, machine_code, start_min, run_start_min, end_min, setup_min, meters, rate, speed)
 values ((select v from t where k = 'old'), (select v from t where k = 'line'), 'CD2', 'Đỏ', 'EXT-SI-01', 100, 100, 200, 0, 1000, 10, 10);
 

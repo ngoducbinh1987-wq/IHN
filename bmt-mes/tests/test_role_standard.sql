@@ -50,12 +50,12 @@ select p.id, u.role from core.profiles p join (values ('R_ADMIN','ADMIN'),('R_BG
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('R_CT')] where (doc_type = 'PLAN' and seq = 2) or (doc_type = 'PO' and seq = 3);
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('R_BGD')] where doc_type = 'PLAN' and seq = 1;
 
--- Spec PFR-2C-1P5 phát hành (nếu chưa) để có lệnh SX
+-- Spec HOME-KV15X2FP phát hành (nếu chưa) để có lệnh SX
 do $$ begin
-  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5') <> 'RELEASED' then
+  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'HOME-KV15X2FP') <> 'RELEASED' then
     perform set_config('request.jwt.claim.sub', (select id::text from core.profiles where employee_code = 'R_ADMIN'), true);
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1P5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'HOME-KV15X2FP'));
     perform set_config('bmt.wf_release', 'off', true);
   end if;
 end $$;
@@ -140,13 +140,13 @@ select pg_temp.ok((select status from purchase.purchase_requests where pr_no = '
 -- ================================================================ E. Lệnh SX, phát lệnh, phiếu lĩnh theo định mức
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
 select 'R-LSX-1', p.id, p.current_spec_id, h.id, 3500, 500, 'Bobin gỗ', 'KAVIX'
-from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1P5';
+from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'HOME-KV15X2FP';
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
 select 'R-LSX-2', p.id, p.current_spec_id, h.id, 1000, 500, 'Bobin gỗ', 'KAVIX'
-from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1P5';
+from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'HOME-KV15X2FP';
 select pg_temp.as_user('R_VH');
 select pg_temp.fails($$select mfg.release_wo((select id from mfg.work_orders where wo_no = 'R-LSX-2'))$$, 'qua quy trình duyệt', 'Công nhân không gọi thẳng hàm phát lệnh SX');
-select pg_temp.fails($$select master.release_spec((select current_spec_id from master.products where code = 'SIF-1C-1P5'))$$, 'qua quy trình duyệt', 'Không gọi thẳng hàm phát hành spec');
+select pg_temp.fails($$select master.release_spec((select current_spec_id from master.products where code = 'HOME-KV15X1SI'))$$, 'qua quy trình duyệt', 'Không gọi thẳng hàm phát hành spec');
 select pg_temp.fails($$select inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'))$$, 'Không có quyền', 'Công nhân không lập phiếu lĩnh');
 select pg_temp.as_user('R_SXTP');
 select pg_temp.fails($$select inv.create_wo_issue((select id from mfg.work_orders where wo_no = 'R-LSX-1'))$$, 'chưa phát lệnh', 'Lệnh chưa phát thì không lĩnh');
@@ -222,7 +222,7 @@ select pg_temp.ok((select reviewed_by_name is not null and wo_no = 'R-LSX-1' and
 select pg_temp.ok((select issued_kg > 0 and not finished and not over_limit from app.copper_balance() where wo_no = 'R-LSX-1'),
   'Cân bằng đồng: lệnh đang chạy chưa đánh giá vượt ngưỡng');
 insert into inv.lots (lot_no, item_kind, product_id, spec_id, uom, qc_status)
-select 'R-BB-1', 'FG', p.id, p.current_spec_id, 'm', 'PENDING' from master.products p where p.code = 'PFR-2C-1P5';
+select 'R-BB-1', 'FG', p.id, p.current_spec_id, 'm', 'PENDING' from master.products p where p.code = 'HOME-KV15X2FP';
 insert into mfg.wo_outputs (wo_op_id, lot_id, qty_m)
 select o.id, (select id from inv.lots where lot_no = 'R-BB-1'), 3500 from mfg.wo_operations o join mfg.work_orders w on w.id = o.wo_id
  where w.wo_no = 'R-LSX-1' and o.op_code = 'CD6';
@@ -268,7 +268,7 @@ select pg_temp.as_user('R_SXKH');
 insert into plan.production_plans (plan_no, period_label, material_need_date) values ('R-KH-1', 'Thử 2200', current_date + 30);
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
 select pp.id, p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from plan.production_plans pp, master.products p
- where pp.plan_no = 'R-KH-1' and p.code = 'PFR-2C-1P5';
+ where pp.plan_no = 'R-KH-1' and p.code = 'HOME-KV15X2FP';
 insert into t select 'run', plan.run_mrp((select id from plan.production_plans where plan_no = 'R-KH-1'));
 select pg_temp.as_user('R_MUANV');
 select pg_temp.fails($$select wf.submit('PLAN', (select id from plan.production_plans where plan_no = 'R-KH-1'), 'R-KH-1')$$, 'quyền', 'NV mua hàng không gửi duyệt kế hoạch tháng');

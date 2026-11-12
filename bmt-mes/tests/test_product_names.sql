@@ -11,20 +11,20 @@ create function pg_temp.name_of(p_code text) returns text language sql as $$ sel
 
 select pg_temp.ok(pg_temp.name_of('HOME-KV075X2LZ') = '2×0.75 mm² SI/vỏ LSZH, không shield', 'HOME-KV075X2LZ: 2×0.75 mm² SI/vỏ LSZH, không shield');
 select pg_temp.ok(pg_temp.name_of('F120-KV10S4LZ') = '2P×2×1 mm² SI/vỏ LSZH, shield AL/PET + drain', 'F120-KV10S4LZ: 2P×2×1 mm² SI/vỏ LSZH, shield AL/PET + drain');
-select pg_temp.ok(pg_temp.name_of('CTRL-KVAWG14S2PVC') = '1P×2×AWG14 HDPE/vỏ PVC, shield AL/PET + drain', 'CTRL-KVAWG14S2PVC: 1P×2×AWG14 HDPE/vỏ PVC, shield AL/PET + drain');
-select pg_temp.ok(pg_temp.name_of('PVC-1C-1') = '1×1 mm² PVC/không vỏ, không shield', 'PVC-1C-1: 1×1 mm² PVC/không vỏ, không shield');
+select pg_temp.ok(pg_temp.name_of('CTRL-KVAWG14S2PC') = '1P×2×AWG14 HDPE/vỏ PVC, shield AL/PET + drain', 'CTRL-KVAWG14S2PC: 1P×2×AWG14 HDPE/vỏ PVC, shield AL/PET + drain');
+select pg_temp.ok(pg_temp.name_of('HOME-KV10X1PC') = '1×1 mm² PVC/không vỏ, không shield', 'HOME-KV10X1PC: 1×1 mm² PVC/không vỏ, không shield');
 select pg_temp.ok(not exists (select 1 from master.products where current_spec_id is not null and description is distinct from master.spec_name(current_spec_id)),
   'Mọi mã có spec hiện hành: tên đúng quy tắc');
 select pg_temp.ok(not exists (select 1 from master.products where current_spec_id is not null
                                and description !~ '^[0-9]+(P×2)?×(AWG[0-9]+|[0-9.]+ mm²) (SI|HDPE|PVC)/(vỏ [A-Z-]+|không vỏ), (không shield|shield AL/PET( \+ drain)?)$'),
   'Mọi tên có tiết diện, số lõi/cặp, cách điện, vỏ, chống nhiễu');
 -- Gõ tay tên khác: MES đặt lại theo spec
-update master.products set description = 'Tên gõ tay' where code = 'PFR-2C-1';
-select pg_temp.ok(pg_temp.name_of('PFR-2C-1') = '2×1 mm² SI/vỏ FR-PVC, không shield', 'Gõ tay tên khác: MES đặt lại theo quy tắc');
+update master.products set description = 'Tên gõ tay' where code = 'HOME-KV10X2FP';
+select pg_temp.ok(pg_temp.name_of('HOME-KV10X2FP') = '2×1 mm² SI/vỏ FR-PVC, không shield', 'Gõ tay tên khác: MES đặt lại theo quy tắc');
 -- Sửa thông số spec hiện hành (bật shield): tên đổi theo
 select set_config('bmt.admin_spec_edit', 'on', true);
-update master.product_specs s set shield = true, drain_wires = 7 from master.products p where p.current_spec_id = s.id and p.code = 'PFR-2C-1';
-select pg_temp.ok(pg_temp.name_of('PFR-2C-1') = '2×1 mm² SI/vỏ FR-PVC, shield AL/PET + drain', 'Sửa spec hiện hành (thêm shield): tên tự đổi');
+update master.product_specs s set shield = true, drain_wires = 7 from master.products p where p.current_spec_id = s.id and p.code = 'HOME-KV10X2FP';
+select pg_temp.ok(pg_temp.name_of('HOME-KV10X2FP') = '2×1 mm² SI/vỏ FR-PVC, shield AL/PET + drain', 'Sửa spec hiện hành (thêm shield): tên tự đổi');
 select pg_temp.ok(not has_function_privilege('anon', 'master.spec_name(uuid)', 'execute'), 'anon không gọi master.spec_name');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;

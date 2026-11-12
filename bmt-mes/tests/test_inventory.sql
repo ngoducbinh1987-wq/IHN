@@ -74,7 +74,7 @@ select pg_temp.fails($$select app.admin_upsert_user(pg_temp.uid('KTT'), 'X', 'KT
 -- ================================================================ 1. Chuẩn bị: spec phát hành, PO đã duyệt
 select set_config('bmt.wf_release', 'on', true);   -- chạy thử: phát hành spec như khi luồng duyệt hoàn tất
 select master.release_spec(p.current_spec_id) from master.products p join master.product_specs s on s.id = p.current_spec_id
- where p.code = 'PFR-2C-1P5' and s.status <> 'RELEASED';   -- trên Supabase spec đã phát hành sẵn
+ where p.code = 'HOME-KV15X2FP' and s.status <> 'RELEASED';   -- trên Supabase spec đã phát hành sẵn
 insert into core.partners (code, name, is_supplier, partner_type) values ('NCC-T', 'NCC thử', true, 'SUPPLIER');
 insert into purchase.purchase_orders (po_no, supplier_id, status) select 'PO-K1', id, 'APPROVED' from core.partners where code = 'NCC-T';
 insert into purchase.po_lines (po_id, line_no, material_id, qty, unit_price)
@@ -149,7 +149,7 @@ select pg_temp.ok((select available = 280 from inv.v_material_availability where
 select pg_temp.as_user('QLSX');
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
 select 'LSX-K1', p.id, p.current_spec_id, h.id, 1000, 500, 'Bobin gỗ', 'KAVIX'
-from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1P5';
+from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'HOME-KV15X2FP';
 select mfg.release_wo((select id from mfg.work_orders where wo_no = 'LSX-K1'));
 select set_config('bmt.wf_release', 'off', true);
 select pg_temp.as_user('NV1');
@@ -293,13 +293,13 @@ reset role;
 update master.operators set keeps_fg = (code = 'NV3') where code in ('NV1', 'NV2', 'NV3', 'NV4', 'NV5');
 select pg_temp.as_user('KD');
 select pg_temp.ok((select store_coils = 2 and free_coils = 2 and store_m = 985 from app.v_fg_stock
-                   where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m = 500),
+                   where product_code = 'HOME-KV15X2FP' and brand = 'KAVIX' and pack_m = 500),
   'Tồn thành phẩm đếm theo cuộn: 2 cuộn quy cách 500 m (985 m) đã nhập kho, giao được');
 insert into t select 'dv', app.delivery_save(null, jsonb_build_object('customer_name', 'Đại lý thử', 'ship_date', pg_temp.today(),
-  'items', jsonb_build_array(jsonb_build_object('product_code', 'PFR-2C-1P5', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 3))));
+  'items', jsonb_build_array(jsonb_build_object('product_code', 'HOME-KV15X2FP', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 3))));
 select pg_temp.fails($$select app.delivery_submit((select v from t where k = 'dv'))$$, 'chỉ còn 2 cuộn', 'Không gửi lệnh giao quá số cuộn trong kho');
 select app.delivery_save((select v from t where k = 'dv'), jsonb_build_object('customer_name', 'Đại lý thử', 'ship_date', pg_temp.today(),
-  'items', jsonb_build_array(jsonb_build_object('product_code', 'PFR-2C-1P5', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 1))));
+  'items', jsonb_build_array(jsonb_build_object('product_code', 'HOME-KV15X2FP', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 1))));
 insert into t select 'dv_req', app.delivery_submit((select v from t where k = 'dv'));
 select pg_temp.ok((select jsonb_array_length(flow_snapshot -> 'steps') = 1 and flow_snapshot #>> '{steps,0,role}' = 'BGD'
                    from wf.approval_requests where id = (select v from t where k = 'dv_req')),
@@ -396,7 +396,7 @@ select pg_temp.ok((select count(*) = 2 and sum(h.qty) = 50 from inv.handling_uni
 
 -- ================================================================ 20. Hàng khách trả + hủy (TP Kỹ thuật/QA)
 select pg_temp.as_user('NV5');
-insert into t select 'ret', inv.customer_return((select id from master.products where code = 'PFR-2C-1P5'), 'KAVIX', 50, null, null, 'Vỏ trầy');
+insert into t select 'ret', inv.customer_return((select id from master.products where code = 'HOME-KV15X2FP'), 'KAVIX', 50, null, null, 'Vỏ trầy');
 select pg_temp.ok((select l.qc_status = 'QUARANTINE' and h.location_id = inv.loc('KTP-RET') from inv.stock_doc_lines dl join inv.lots l on l.id = dl.lot_id
   join inv.handling_units h on h.id = dl.hu_id where dl.doc_id = (select v from t where k = 'ret')), 'Hàng trả về: khu hàng trả, cách ly');
 select pg_temp.fails(format($$select inv.reclass_hu(%L, true, null, null, 'Hủy')$$, (select hu_id from inv.stock_doc_lines where doc_id = (select v from t where k = 'ret'))),

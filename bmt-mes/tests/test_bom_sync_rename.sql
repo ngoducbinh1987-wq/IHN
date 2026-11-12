@@ -58,7 +58,7 @@ select pg_temp.ok(not exists (select 1 from master.product_specs s where s.statu
 insert into t select 'rel', p.current_spec_id from master.products p join master.product_specs s on s.id = p.current_spec_id
  where s.cores = 2 and s.insulation = 'SIL' and s.sheath <> 'Không' and not coalesce(s.shield, false)
    and not exists (select 1 from master.product_specs x where x.product_id = p.id and x.id <> s.id and x.status in ('DRAFT','PILOT_PENDING','PILOT','PENDING_APPROVAL'))
- order by (p.code = 'HOME-KV10X2LZ') desc, (p.code like 'HOME-%') desc, p.code limit 1;
+ order by (p.code = 'HOME-KV10X2LZ') desc, (p.code like 'HOME-%LZ') desc, p.code limit 1;
 insert into t select 'prod', product_id from master.product_specs where id = pg_temp.v('rel');
 select set_config('bmt.allow_release', 'on', true);
 update master.product_specs set status = 'RELEASED' where id = pg_temp.v('rel') and status <> 'RELEASED';

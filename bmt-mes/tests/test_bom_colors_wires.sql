@@ -141,7 +141,7 @@ select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('c4'), '{"wire_m
 select pg_temp.ok(pg_temp.q(pg_temp.v('c4'), 'CU-030') is null, 'Bỏ cỡ sợi Ø0,30: dòng CU-030 bị bỏ');
 
 -- (E) HDPE: CTL 2 cặp Trắng + Đen → HD-W, HD-B mỗi màu 2 % × 2/4 HDPE
-insert into t values ('ctl', pg_temp.draft('CTRL-KVAWG18S4PVC'));
+insert into t values ('ctl', pg_temp.draft('CTRL-KVAWG18S4PC'));
 select pg_temp.as_api($q$select app.update_spec_draft(pg_temp.v('ctl'), '{}')$q$);
 select pg_temp.ok(abs(pg_temp.q(pg_temp.v('ctl'), 'HD-W') - 0.02 * 2 * pg_temp.q(pg_temp.v('ctl'), 'HDPE-I') / 4) < 0.00001
   and abs(pg_temp.q(pg_temp.v('ctl'), 'HD-B') - 0.02 * 2 * pg_temp.q(pg_temp.v('ctl'), 'HDPE-I') / 4) < 0.00001

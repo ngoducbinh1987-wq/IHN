@@ -48,7 +48,7 @@ declare v_lot uuid; v_hu uuid;
 begin
   insert into inv.lots (lot_no, item_kind, product_id, spec_id, wip_stage, brand, uom, qc_status)
   select 'T36-' || p_kind || '-' || coalesce(p_stage, 'TP'), p_kind, p.id, p.current_spec_id, p_stage, 'KAVIX', 'm', 'PASSED'
-  from master.products p where p.code = 'PFR-2C-1P5' returning id into v_lot;
+  from master.products p where p.code = 'HOME-KV15X2FP' returning id into v_lot;
   v_hu := inv.new_hu(v_lot, 'REEL', p_qty, inv.wh(p_wh), inv.loc(p_loc));
   perform inv.bal_add(inv.wh(p_wh), inv.loc(p_loc), v_lot, v_hu, p_qty);
 end $$;
@@ -67,19 +67,19 @@ update wf.approval_steps set assignee_ids = array[pg_temp.uid('P_CT')] where doc
 update wf.approval_steps set assignee_ids = array[pg_temp.uid('P_GD')] where doc_type = 'PLAN_ADJ' and seq = 1;
 update wf.approval_steps set enabled = true where doc_type = 'PLAN' and seq = 2;
 
--- Spec PFR-2C-1P5 phát hành (database mới chưa phát hành)
+-- Spec HOME-KV15X2FP phát hành (database mới chưa phát hành)
 do $$ begin
-  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5') <> 'RELEASED' then
+  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'HOME-KV15X2FP') <> 'RELEASED' then
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1P5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'HOME-KV15X2FP'));
   end if;
 end $$;
--- Kế hoạch tháng đã duyệt: PFR-2C-1P5 10.000 m hạn giao +20 ngày
+-- Kế hoạch tháng đã duyệt: HOME-KV15X2FP 10.000 m hạn giao +20 ngày
 insert into plan.production_plans (plan_no, period_label, material_need_date, status) values ('KH-T36', 'Thử 3600', pg_temp.today() + 10, 'DRAFT');
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-T36';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand, due_date)
 select (select v from t where k = 'plan'), p.id, p.current_spec_id, 10000, 1, 500, 'Bobin gỗ', 'KAVIX', pg_temp.today() + 20
-from master.products p where p.code = 'PFR-2C-1P5';
+from master.products p where p.code = 'HOME-KV15X2FP';
 insert into t select 'line', id from plan.plan_lines where plan_id = (select v from t where k = 'plan');
 update plan.production_plans set status = 'APPROVED' where id = (select v from t where k = 'plan');
 
@@ -98,12 +98,12 @@ select pg_temp.ok((select fg_m = 1000 and cv_m = 500 and bl_m = 0 and lb_m = 100
   'Trừ tồn từng tầng: 10.000 − 1.000 TP = 9.000 m đóng gói; − 500 cáp CV = 8.500 bọc vỏ, xoắn; − 2.000 m lõi ÷ 2 lõi = 7.500 m bọc cách điện, bện');
 select pg_temp.ok((select abs(ml.theoretical - round(bl.qty_per_basis * 7.5, 4)) < 0.001
                    from plan.mrp_lines ml join master.materials m on m.id = ml.material_id and m.code = 'CU-024'
-                   join master.bom_lines bl on bl.material_id = m.id and bl.bom_id = (select h.id from master.bom_headers h join master.products p on p.current_spec_id = h.spec_id where p.code = 'PFR-2C-1P5' limit 1)
+                   join master.bom_lines bl on bl.material_id = m.id and bl.bom_id = (select h.id from master.bom_headers h join master.products p on p.current_spec_id = h.spec_id where p.code = 'HOME-KV15X2FP' limit 1)
                    where ml.run_id = (select v from t where k = 'run')),
   'Đồng (CD1) tính trên 7.500 m còn phải bện, không phải 10.000 m kế hoạch');
 select pg_temp.ok((select abs(ml.theoretical - round(bl.qty_per_basis * 8.5, 4)) < 0.001
                    from plan.mrp_lines ml join master.materials m on m.id = ml.material_id and m.code = 'PVC-FR'
-                   join master.bom_lines bl on bl.material_id = m.id and bl.bom_id = (select h.id from master.bom_headers h join master.products p on p.current_spec_id = h.spec_id where p.code = 'PFR-2C-1P5' limit 1)
+                   join master.bom_lines bl on bl.material_id = m.id and bl.bom_id = (select h.id from master.bom_headers h join master.products p on p.current_spec_id = h.spec_id where p.code = 'HOME-KV15X2FP' limit 1)
                    where ml.run_id = (select v from t where k = 'run'))
   and (select ml.theoretical = 18 from plan.mrp_lines ml join master.materials m on m.id = ml.material_id and m.code = 'REEL-W' where ml.run_id = (select v from t where k = 'run')),
   'Nhựa vỏ (CD5) tính trên 8.500 m; bobin gỗ đóng gói 9.000 m ÷ 500 = 18 bộ');
@@ -135,7 +135,7 @@ select pg_temp.fails($$select app.adj_create((select v from t where k = 'plan'),
 insert into t select 'adj', app.adj_create((select v from t where k = 'plan'), 'Khách ABC đặt thêm, đổi hạn');
 select pg_temp.fails($$select app.adj_submit((select v from t where k = 'adj'))$$, 'chưa có dòng', 'Phiếu chưa có dòng thì không gửi được');
 select app.adj_save((select v from t where k = 'adj'), null, jsonb_build_array(
-  jsonb_build_object('kind', 'ADD', 'product_code', 'pfr-2c-1p5', 'qty_m', 3000, 'due_date', pg_temp.today() + 30, 'note', 'Đơn ABC-12'),
+  jsonb_build_object('kind', 'ADD', 'product_code', 'home-kv15x2fp', 'qty_m', 3000, 'due_date', pg_temp.today() + 30, 'note', 'Đơn ABC-12'),
   jsonb_build_object('kind', 'QTY', 'plan_line_id', (select v from t where k = 'line'), 'qty_m', 12000),
   jsonb_build_object('kind', 'DUE', 'plan_line_id', (select v from t where k = 'line'), 'due_date', pg_temp.today() + 15)));
 select pg_temp.ok((select count(*) = 3 and bool_and(old_qty_m is not distinct from case kind when 'ADD' then null else 10000 end)
@@ -178,7 +178,7 @@ select pg_temp.fails($$select app.adj_submit((select v from t where k = 'adj2'))
 
 -- ================================================================ 4. Đơn phát sinh: Chủ tịch HĐQT không duyệt, Giám đốc duyệt (quy trình 28/10/2026)
 insert into t select 'dps', app.kh_create_change((select v from t where k = 'plan'),
-  '{"product_code":"PFR-2C-1P5","qty_m":500,"priority":"1","due_date":"2099-01-01"}', '{"placed":true,"slack":-1,"newly":["x"]}', 'B', '[]');
+  '{"product_code":"HOME-KV15X2FP","qty_m":500,"priority":"1","due_date":"2099-01-01"}', '{"placed":true,"slack":-1,"newly":["x"]}', 'B', '[]');
 select pg_temp.ok((select jsonb_array_length(steps) = 2 and steps->1->>'role' = 'BGD' and steps::text not like '%Chủ tịch%'
                    from plan.change_requests where id = (select v from t where k = 'dps')),
   'Đơn phát sinh mức B: lập → Giám đốc (không có bước Chủ tịch HĐQT)');
@@ -188,11 +188,11 @@ select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp
 select pg_temp.as_user('P_CT');
 select pg_temp.fails($$select app.kh_change_step((select v from t where k = 'dps'), 'approve', null)$$, 'Chủ tịch HĐQT không duyệt', 'Chủ tịch không duyệt lô phát sinh');
 select pg_temp.as_user('P_GD');
-select pg_temp.fails($$select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"PFR-2C-1P5","qty_m":400,"priority":"1","due_date":"2099-01-01"}',
+select pg_temp.fails($$select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"HOME-KV15X2FP","qty_m":400,"priority":"1","due_date":"2099-01-01"}',
   '{"placed":true,"slack":-1,"newly":["x"]}', ' ')$$, 'lý do', 'Giám đốc sửa đơn phát sinh phải ghi lý do');
-select pg_temp.fails($$select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"PFR-2C-1P5","qty_m":400,"priority":"0","br":true,"due_date":"2099-01-01"}',
+select pg_temp.fails($$select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"HOME-KV15X2FP","qty_m":400,"priority":"0","br":true,"due_date":"2099-01-01"}',
   '{"placed":true,"slack":-1,"newly":["x"]}', 'Gấp')$$, 'cần mức C', 'Sửa làm đơn cần mức cao hơn (chen vùng khóa): phải trả lại lập lại');
-select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"PFR-2C-1P5","qty_m":400,"priority":"1","due_date":"2099-01-05"}',
+select app.kh_change_edit((select v from t where k = 'dps'), '{"product_code":"HOME-KV15X2FP","qty_m":400,"priority":"1","due_date":"2099-01-05"}',
   '{"placed":true,"slack":2,"newly":[]}', 'Khách chỉ cần 400 m');
 select pg_temp.ok((select (payload->>'qty_m')::numeric = 400 and payload->>'due_date' = '2099-01-05' and jsonb_array_length(steps->1->'edits') = 1
                    from plan.change_requests where id = (select v from t where k = 'dps'))
@@ -206,7 +206,7 @@ insert into plan.schedule_versions (plan_id, version, is_current, base_date, par
 values ((select v from t where k = 'plan'), 1, true, pg_temp.today(), '{}', 'thử');
 insert into t select 'ver', id from plan.schedule_versions where plan_id = (select v from t where k = 'plan');
 insert into plan.schedule_orders (version_id, plan_line_id, label, product_code, qty_m, finish_date)
-values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'D01', 'PFR-2C-1P5', 12000, pg_temp.today() + 12);
+values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'D01', 'HOME-KV15X2FP', 12000, pg_temp.today() + 12);
 insert into plan.schedule_slots (version_id, plan_line_id, op_code, machine_code, start_min, run_start_min, end_min, meters, rate, speed)
 values ((select v from t where k = 'ver'), (select v from t where k = 'line'), 'CD1', 'BUN-01', 0, 10, 400, 10000, 25, 25);
 select pg_temp.ok((select eta_date = pg_temp.today() + 12 from app.v_kh_plan_lines where id = (select v from t where k = 'line')), 'Ngày dự kiến xong lấy từ lịch máy đang dùng');

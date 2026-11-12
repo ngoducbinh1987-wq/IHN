@@ -59,7 +59,7 @@ select pg_temp.ok(not exists (select 1 from master.product_specs s join master.s
 select pg_temp.ok(not exists (select 1 from master.product_specs s, unnest(master.check_spec(s.id)) x where s.status <> 'OBSOLETE' and s.core_code like 'A%' and s.core_code <> 'A22' and x like 'Chưa có giới hạn Rdc%'),
   'Không còn cảnh báo "Chưa có giới hạn Rdc (AWG)"');
 -- Đổi một mã CTL sang đồng trần: giới hạn chuyển sang cột đồng trần
-insert into t select 'ctl', s.id from master.product_specs s join master.products p on p.id = s.product_id where p.code = 'CTRL-KVAWG16S4PVC' and s.status <> 'OBSOLETE' order by s.version desc limit 1;
+insert into t select 'ctl', s.id from master.product_specs s join master.products p on p.id = s.product_id where p.code = 'CTRL-KVAWG16S4PC' and s.status <> 'OBSOLETE' order by s.version desc limit 1;
 select set_config('bmt.admin_spec_edit', 'on', true);
 update master.product_specs set conductor_mat = 'BC' where id = pg_temp.v('ctl');
 select master.calc_spec(pg_temp.v('ctl'));
@@ -68,6 +68,6 @@ update master.product_specs set conductor_mat = 'TC' where id = pg_temp.v('ctl')
 select master.calc_spec(pg_temp.v('ctl'));
 select pg_temp.ok((select rdc_limit = 14.6 from master.spec_results where spec_id = pg_temp.v('ctl')), 'Lõi AWG16 mạ thiếc: giới hạn 14,6 Ω/km');
 select pg_temp.ok((select rdc_limit = 19.5 from master.spec_results r join master.product_specs s on s.id = r.spec_id join master.products p on p.id = s.product_id
-                    where p.code = 'PFR-2C-1' and s.status <> 'OBSOLETE' order by s.version desc limit 1), 'Lõi mét (M1) giữ giới hạn cũ 19,5 Ω/km');
+                    where p.code = 'HOME-KV10X2FP' and s.status <> 'OBSOLETE' order by s.version desc limit 1), 'Lõi mét (M1) giữ giới hạn cũ 19,5 Ω/km');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;

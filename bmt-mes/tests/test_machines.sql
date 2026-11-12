@@ -257,7 +257,7 @@ reset role;
 delete from master.machine_speeds where machine_id in (select id from master.machines where machine_type = 'BUNCHER');
 select pg_temp.as_user('M_KTTP');
 set local role authenticated;
-insert into t select 'p15', id from master.products where code = 'SIF-1C-1P5';
+insert into t select 'p15', id from master.products where code = 'HOME-KV15X1SI';
 insert into t select 'p6', p.id from master.products p join master.product_specs s on s.id = p.current_spec_id join master.core_types ct on ct.code = s.core_code and ct.set_id = s.param_set_id
   where ct.nominal_mm2 > 4 and upper(s.insulation) like 'SIL%' order by p.code limit 1;
 insert into t select 'pvc', p.id from master.products p join master.product_specs s on s.id = p.current_spec_id where upper(coalesce(s.insulation, '')) not like 'SIL%' order by p.code limit 1;

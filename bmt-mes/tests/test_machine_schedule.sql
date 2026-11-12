@@ -81,7 +81,7 @@ insert into t select 'cm', id from mfg.maint_work_orders where machine_id = (sel
 insert into plan.production_plans (plan_no, period_label, status) values ('KH-MA1', 'Thử máy hỏng', 'APPROVED');
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-MA1';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
-select (select v from t where k = 'plan'), p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'PFR-2C-1P5';
+select (select v from t where k = 'plan'), p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'HOME-KV15X2FP';
 insert into t select 'line', id from plan.plan_lines where plan_id = (select v from t where k = 'plan');
 insert into plan.schedule_versions (plan_id, version, is_current, base_date, params, reason)
 values ((select v from t where k = 'plan'), 1, true, pg_temp.today(),
@@ -201,7 +201,7 @@ select pg_temp.ok((select count(*) from mfg.machine_status_log where shift_repor
 select pg_temp.as_user('Y_VH');
 select pg_temp.fails($$select app.kh_late_alert((select v from t where k = 'plan'), 'x', array['D01'])$$, 'Quản lý SX', 'Chỉ Quản lý SX gửi cảnh báo trễ');
 select pg_temp.as_user('Y_SXTP');
-select app.kh_late_alert((select v from t where k = 'plan'), 'Xếp lại lịch (EXT-SI-02 hỏng)', array['D01 PFR-2C-1P5 xong 05/11, hạn 03/11']);
+select app.kh_late_alert((select v from t where k = 'plan'), 'Xếp lại lịch (EXT-SI-02 hỏng)', array['D01 HOME-KV15X2FP xong 05/11, hạn 03/11']);
 select pg_temp.ok(pg_temp.nt('Y_BGD', 'Cảnh báo đỏ: 1 lô trễ hạn giao (KH-MA1)') = 1, 'Lô trễ hạn sau khi xếp lại: cảnh báo đỏ Giám đốc');
 
 do $$ begin raise exception E'KET_QUA_OK (đã rollback, không để lại dữ liệu) — % kiểm tra đạt:\n%', (select count(*) from r), (select string_agg(n||'. '||msg, E'\n' order by n) from r); end $$;

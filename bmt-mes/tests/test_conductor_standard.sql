@@ -67,9 +67,9 @@ select master.set_spec_layers(pg_temp.v('s1'), '{"wire_mix":[{"n":19,"d":0.24},{
 select master.calc_spec(pg_temp.v('s075')); select master.calc_spec(pg_temp.v('s1'));
 -- Một mã 1,0 mm² và một mã 0,75 còn quy cách cũ (để chắc chắn có mã cần sửa cả khi chạy lại trên dữ liệu đã chuẩn hóa)
 select master.set_spec_layers(s.id, '{"wire_mix":[{"n":20,"d":0.24}]}') from master.product_specs s join master.products p on p.id = s.product_id
- where p.code = 'PFR-4C-1' and s.status <> 'OBSOLETE';
+ where p.code = 'HOME-KV10X4FP' and s.status <> 'OBSOLETE';
 select master.set_spec_layers(s.id, '{"wire_mix":[{"n":15,"d":0.24}]}') from master.product_specs s join master.products p on p.id = s.product_id
- where p.code = 'PFR-4C-0P75' and s.status <> 'OBSOLETE';
+ where p.code = 'HOME-KV075X4FP' and s.status <> 'OBSOLETE';
 select set_config('bmt.admin_spec_edit', 'off', true);
 select pg_temp.ok(exists (select 1 from master.materials where code = 'CU-020' and group_code = 'CONDUCTOR'), 'Có vật tư sợi đồng trần Ø0,20 (CU-020)');
 create temp table lay as select id, lay_factor, cores, status from master.product_specs where core_code in ('M0.75', 'M1');
@@ -77,7 +77,7 @@ create temp table lay as select id, lay_factor, cores, status from master.produc
 with x as (insert into plan.production_plans (plan_no, period_label) values ('KH-CS1', 'Thử') returning id) insert into t select 'plan', id from x;
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, m_per_pack, pack_type, brand)
 select pg_temp.v('plan'), s.product_id, s.id, 1000, 500, s.pack_type, s.brand from master.product_specs s join master.products p on p.id = s.product_id
- where p.code = 'PFR-4C-1' and s.status <> 'OBSOLETE' order by s.version desc limit 1;
+ where p.code = 'HOME-KV10X4FP' and s.status <> 'OBSOLETE' order by s.version desc limit 1;
 update plan.production_plans set mrp_stale = false where id = pg_temp.v('plan');
 
 -- Quyền

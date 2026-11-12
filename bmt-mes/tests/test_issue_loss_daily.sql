@@ -63,11 +63,11 @@ update master.operators set profile_id = null where profile_id is not null;
 insert into inv.carriers (code, carrier_type, tare_kg, owner, status) values
   ('D901', 'B630', 20, 'BMT', 'EMPTY'), ('D902', 'B630', 20, 'BMT', 'EMPTY'), ('D903', 'B630', 20, 'BMT', 'EMPTY');
 
--- Lệnh SX PFR-2C-1P5 (2 lõi): bện, bọc cách điện silicone, bọc vỏ, đóng gói
+-- Lệnh SX HOME-KV15X2FP (2 lõi): bện, bọc cách điện silicone, bọc vỏ, đóng gói
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand, status)
 select 'LSX-DL1', p.id, p.current_spec_id, (select h.id from master.bom_headers h where h.spec_id = p.current_spec_id limit 1),
        3000, 500, 'Bobin gỗ', 'KAVIX', 'RELEASED'
-from master.products p where p.code = 'PFR-2C-1P5';
+from master.products p where p.code = 'HOME-KV15X2FP';
 insert into t select 'wo', id from mfg.work_orders where wo_no = 'LSX-DL1';
 insert into mfg.wo_operations (wo_id, op_code, seq, planned_m)
 select (select v from t where k = 'wo'), o.code, o.seq, 6000 from master.operations o where o.code in ('CD1', 'CD2', 'CD5', 'CD6');

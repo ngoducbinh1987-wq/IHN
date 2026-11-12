@@ -92,9 +92,9 @@ create function pg_temp.poq(p_adj uuid, p_code text) returns numeric language sq
 $$;
 
 do $$ begin
-  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5') <> 'RELEASED' then
+  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'HOME-KV15X2FP') <> 'RELEASED' then
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1P5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'HOME-KV15X2FP'));
   end if;
 end $$;
 
@@ -129,7 +129,7 @@ insert into plan.production_plans (plan_no, period_label, material_need_date, st
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-T45';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand, due_date)
 select pg_temp.v('plan'), p.id, p.current_spec_id, 10000, 1, 500, 'Bobin gỗ', 'KAVIX', pg_temp.today() + 20
-from master.products p where p.code = 'PFR-2C-1P5';
+from master.products p where p.code = 'HOME-KV15X2FP';
 insert into t select 'line', id from plan.plan_lines where plan_id = pg_temp.v('plan');
 update plan.production_plans set status = 'APPROVED' where id = pg_temp.v('plan');
 insert into t select 'run0', app.plan_run_mrp(pg_temp.v('plan'));

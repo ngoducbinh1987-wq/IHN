@@ -63,12 +63,12 @@ update wf.approval_steps set enabled = true, assignee_ids = array[pg_temp.uid('G
 update wf.approval_steps set assignee_ids = '{}' where doc_type in ('PR', 'PO', 'SAFETY_STOCK');
 update wf.approval_flows set submit_user_ids = '{}' where doc_type in ('PR', 'SAFETY_STOCK');
 
--- Spec mẫu đã phát hành (database mới: phát hành PFR-2C-1P5 trong giao dịch)
+-- Spec mẫu đã phát hành (database mới: phát hành HOME-KV15X2FP trong giao dịch)
 do $$ begin
-  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5') <> 'RELEASED' then
+  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'HOME-KV15X2FP') <> 'RELEASED' then
     perform set_config('request.jwt.claim.sub', (select id::text from core.profiles where employee_code = 'G_ADMIN'), true);
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1P5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'HOME-KV15X2FP'));
     perform set_config('bmt.wf_release', '', true);
   end if;
 end $$;
@@ -175,7 +175,7 @@ select pg_temp.ok(not exists (select 1 from inv.alert_log al join master.materia
 insert into plan.production_plans (plan_no, period_label, status) values ('KH-G1', 'Thử dự phòng', 'APPROVED');
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-G1';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
-select pg_temp.v('plan'), p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'PFR-2C-1P5';
+select pg_temp.v('plan'), p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'HOME-KV15X2FP';
 insert into t select 'line', id from plan.plan_lines where plan_id = pg_temp.v('plan');
 select pg_temp.as_user('G_SXTP');
 insert into t select 'run', app.plan_run_mrp(pg_temp.v('plan'));
@@ -192,7 +192,7 @@ values (pg_temp.v('plan'), 1, true, pg_temp.today(),
         '{"S":420,"SPD":1,"workdays":[1,2,3,4,5,6,7],"shifts":[{"code":"A","start_time":"08:00","end_time":"17:00","break_min":60}]}', 'Thử');
 insert into t select 'ver1', id from plan.schedule_versions where plan_id = pg_temp.v('plan');
 insert into plan.schedule_orders (version_id, plan_line_id, label, product_code, qty_m, meta)
-values (pg_temp.v('ver1'), pg_temp.v('line'), 'D01', 'PFR-2C-1P5', 1000, '{"cores":["Đỏ","Đen"]}');
+values (pg_temp.v('ver1'), pg_temp.v('line'), 'D01', 'HOME-KV15X2FP', 1000, '{"cores":["Đỏ","Đen"]}');
 insert into plan.schedule_slots (version_id, plan_line_id, op_code, color, machine_code, start_min, run_start_min, end_min, setup_min, meters, rate, speed)
 values (pg_temp.v('ver1'), pg_temp.v('line'), 'CD1', null, 'BUN-01', 0, 10, 210, 10, 2000, 10, 10),
        (pg_temp.v('ver1'), pg_temp.v('line'), 'CD2', 'Đỏ', 'EXT-SI-01', 210, 220, 420, 10, 1000, 5, 5);

@@ -89,14 +89,14 @@ insert into plan.production_plans (plan_no, period_label, status) values ('KH-RP
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-RP-1';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, m_per_pack, pack_type, brand, due_date, committed_date)
 select pg_temp.v('plan'), p.id, p.current_spec_id, q, 500, 'Bobin gỗ', 'KAVIX', pg_temp.today() + dd, pg_temp.today() + cd
-from (values ('PFR-2C-1P5', 10000, 10, 8), ('F120-KV10S4LZ', 5000, 12, null)) v(code, q, dd, cd) join master.products p on p.code = v.code;
-insert into t select 'l1', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'PFR-2C-1P5';
+from (values ('HOME-KV15X2FP', 10000, 10, 8), ('F120-KV10S4LZ', 5000, 12, null)) v(code, q, dd, cd) join master.products p on p.code = v.code;
+insert into t select 'l1', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'HOME-KV15X2FP';
 insert into t select 'l2', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'F120-KV10S4LZ';
 insert into plan.schedule_versions (plan_id, version, is_current, base_date, params, reason, status, created_at)
 values (pg_temp.v('plan'), 1, true, pg_temp.today() - 3, '{"S":405,"SPD":1,"seq":{"x":1}}', 'thử', 'APPROVED', now() - interval '1 day');
 insert into t select 'v1', id from plan.schedule_versions where plan_id = pg_temp.v('plan') and version = 1;
 insert into plan.schedule_orders (version_id, plan_line_id, label, product_code, qty_m, finish_date)
-values (pg_temp.v('v1'), pg_temp.v('l1'), 'D01', 'PFR-2C-1P5', 10000, pg_temp.today() + 6),
+values (pg_temp.v('v1'), pg_temp.v('l1'), 'D01', 'HOME-KV15X2FP', 10000, pg_temp.today() + 6),
        (pg_temp.v('v1'), pg_temp.v('l2'), 'D02', 'F120-KV10S4LZ', 5000, pg_temp.today() + 9);
 -- TP SX đang có bản lịch đề xuất (sẽ cũ khi MES tính lại)
 insert into plan.schedule_versions (plan_id, version, is_current, base_date, params, reason, status, created_by)
@@ -123,7 +123,7 @@ select pg_temp.ok(pg_temp.api_val($q$select app.replan_due()::text$q$) not like 
 create function pg_temp.save(p_run uuid, p_seq jsonb, p_q1 numeric, p_f1 date, p_f2 date) returns text language sql as $$
   select format($q$select app.kh_replan_save(%L, %L, %L, %L, '[]', %L)::text$q$, p_run, pg_temp.today() - 3,
     jsonb_build_object('S', 405, 'SPD', 1, 'seq', p_seq),
-    jsonb_build_array(jsonb_build_object('plan_line_id', pg_temp.v('l1'), 'label', 'D01', 'product_code', 'PFR-2C-1P5', 'qty_m', p_q1, 'finish_date', p_f1),
+    jsonb_build_array(jsonb_build_object('plan_line_id', pg_temp.v('l1'), 'label', 'D01', 'product_code', 'HOME-KV15X2FP', 'qty_m', p_q1, 'finish_date', p_f1),
                       jsonb_build_object('plan_line_id', pg_temp.v('l2'), 'label', 'D02', 'product_code', 'F120-KV10S4LZ', 'qty_m', 5000, 'finish_date', p_f2)),
     jsonb_build_object('machines', jsonb_build_array(jsonb_build_object('machine', 'BUN-01', 'planned', 10000, 'actual', 8000, 'slips', 1, 'missing', false),
                                                      jsonb_build_object('machine', 'TWS-01', 'planned', 3000, 'actual', 0, 'slips', 0, 'missing', true)),
@@ -146,7 +146,7 @@ select pg_temp.ok((select status = 'DONE' and (result ->> 'slower')::int = 1 and
   'So ngày xong từng lô: D01 chậm 2 ngày (vẫn kịp ngày chốt), D02 nhanh 2 ngày');
 select pg_temp.ok(pg_temp.nt('RP_BGD', 'Tiến độ sau ca 1 % · KH-RP-1: 1 lô chậm, 1 lô nhanh') = 1 and pg_temp.nt('RP_SXTP', 'Tiến độ sau ca 1 %: 1 lô chậm, 1 lô nhanh') = 1,
   'Báo Giám đốc, TP SX lô nhanh / chậm');
-select pg_temp.ok((select body like '%D01 PFR-2C-1P5: xong % → % (chậm 2 ngày; kịp chốt %' and body like '%BUN-01 8.000/10.000 m (80 %)%' and body like '%Chưa có phiếu hoàn thành: TWS-01%'
+select pg_temp.ok((select body like '%D01 HOME-KV15X2FP: xong % → % (chậm 2 ngày; kịp chốt %' and body like '%BUN-01 8.000/10.000 m (80 %)%' and body like '%Chưa có phiếu hoàn thành: TWS-01%'
   from wf.notifications n join core.profiles p on p.id = n.user_id where p.employee_code = 'RP_BGD' and n.title like 'Tiến độ sau ca 1%'),
   'Nội dung: ngày xong cũ → mới, so ngày chốt, máy đạt / lịch, máy chưa có phiếu');
 select pg_temp.api_fails(pg_temp.save(pg_temp.v('run1'), '{"x":1}', 10000, pg_temp.today() + 8, pg_temp.today() + 7), 'không còn hiệu lực', 'Một lượt chỉ lưu một lần');

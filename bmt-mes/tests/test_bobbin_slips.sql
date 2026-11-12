@@ -51,11 +51,11 @@ update master.operators set profile_id = (select id from core.profiles where emp
 insert into inv.carriers (code, carrier_type, tare_kg, owner, status) values
   ('B901', 'B630', 20, 'BMT', 'EMPTY'), ('B902', 'B630', 20, 'BMT', 'EMPTY'), ('B903', 'B630', 20, 'BMT', 'EMPTY');
 
--- Lệnh SX đã phát: PFR-2C-1P5 1.000 m, công đoạn bện, bọc cách điện, bọc vỏ, đóng gói
+-- Lệnh SX đã phát: HOME-KV15X2FP 1.000 m, công đoạn bện, bọc cách điện, bọc vỏ, đóng gói
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand, status)
 select 'LSX-BS1', p.id, p.current_spec_id, (select h.id from master.bom_headers h where h.spec_id = p.current_spec_id limit 1),
        1000, 500, 'Bobin gỗ', 'KAVIX', 'RELEASED'
-from master.products p where p.code = 'PFR-2C-1P5';
+from master.products p where p.code = 'HOME-KV15X2FP';
 insert into t select 'wo', id from mfg.work_orders where wo_no = 'LSX-BS1';
 insert into mfg.wo_operations (wo_id, op_code, seq, planned_m)
 select (select v from t where k = 'wo'), o.code, o.seq, 2000 from master.operations o where o.code in ('CD1', 'CD2', 'CD5', 'CD6');
@@ -85,7 +85,7 @@ insert into t select 'lot1', id from inv.lots where lot_no = (select j ->> 'lot_
 select pg_temp.ok((select (j ->> 'estimated')::boolean and (j ->> 'net_kg')::numeric = 100
                           and abs((j ->> 'qty_m')::numeric - round(100 / (r.metal_kgkm / s.cores) * 1000, 1)) < 0.01
                    from s1, master.products p join master.spec_results r on r.spec_id = p.current_spec_id
-                   join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5'),
+                   join master.product_specs s on s.id = p.current_spec_id where p.code = 'HOME-KV15X2FP'),
   'Bện: kg tịnh = cân − bì; mét ước tính từ kg ÷ kg/km ruột một lõi');
 select pg_temp.ok((select qc_status = 'PENDING' and item_kind = 'WIP' and wip_stage = 'CB' from inv.lots where id = (select v from t where k = 'lot1')),
   'Bobin BTP vừa nhập ở trạng thái Chờ QC (không còn tự Đạt)');

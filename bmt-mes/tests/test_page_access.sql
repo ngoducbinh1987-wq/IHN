@@ -154,12 +154,12 @@ begin
   insert into plan.production_plans (plan_no, period_label, period_month, material_need_date, status)
   values ('KH-T47', 'Thử 4700', v_m, v_m + 5, 'APPROVED') returning id into v_plan;
   insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
-  select v_plan, id, current_spec_id, 2000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products where code = 'PFR-2C-1P5' returning id into v_line;
+  select v_plan, id, current_spec_id, 2000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products where code = 'HOME-KV15X2FP' returning id into v_line;
   insert into mfg.work_orders (wo_no, plan_line_id, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand, status)
   select 'LSX-T47', v_line, p.id, p.current_spec_id, (select h.id from master.bom_headers h where h.spec_id = p.current_spec_id limit 1),
-         2000, 500, 'Bobin gỗ', 'KAVIX', 'RELEASED' from master.products p where p.code = 'PFR-2C-1P5' returning id into v_wo;
+         2000, 500, 'Bobin gỗ', 'KAVIX', 'RELEASED' from master.products p where p.code = 'HOME-KV15X2FP' returning id into v_wo;
   insert into mfg.wo_operations (wo_id, op_code, seq, planned_m) values (v_wo, 'CD6', 6, 2000) returning id into v_op;
-  insert into inv.lots (lot_no, item_kind, product_id, uom, qc_status) select 'T47-FG', 'FG', id, 'm', 'PASSED' from master.products where code = 'PFR-2C-1P5' returning id into v_lot;
+  insert into inv.lots (lot_no, item_kind, product_id, uom, qc_status) select 'T47-FG', 'FG', id, 'm', 'PASSED' from master.products where code = 'HOME-KV15X2FP' returning id into v_lot;
   insert into mfg.wo_outputs (wo_op_id, lot_id, qty_m) values (v_op, v_lot, 500);
   if not ((app.shared_overview() -> 'plan' ->> 'total_m')::numeric = 2000 and (app.shared_overview() -> 'plan' ->> 'done_m')::numeric = 500) then
     raise exception 'FAIL: Sản lượng tháng này: 500 / 2.000 m thành phẩm — được %', app.shared_overview() -> 'plan';

@@ -74,22 +74,22 @@ update wf.approval_steps set assignee_ids = array[pg_temp.uid('E_CT')] where doc
 update wf.approval_flows set submit_role = null, submit_user_ids = '{}' where doc_type in ('PLAN', 'PR', 'PLAN_ADJ');
 
 do $$ begin
-  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5') <> 'RELEASED' then
+  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'HOME-KV15X2FP') <> 'RELEASED' then
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1P5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'HOME-KV15X2FP'));
   end if;
-  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-2P5') <> 'RELEASED' then
+  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'HOME-KV25X2FP') <> 'RELEASED' then
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-2P5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'HOME-KV25X2FP'));
   end if;
 end $$;
 insert into plan.production_plans (plan_no, period_label, material_need_date, status) values ('KH-T44', 'Thử 4400', pg_temp.today() + 10, 'DRAFT');
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-T44';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
 select pg_temp.v('plan'), p.id, p.current_spec_id, q, 1, 500, 'Bobin gỗ', 'KAVIX'
-from master.products p join (values ('PFR-2C-1P5', 10000), ('PFR-2C-2P5', 5000)) x(code, q) on x.code = p.code;
-insert into t select 'l15', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'PFR-2C-1P5';
-insert into t select 'l25', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'PFR-2C-2P5';
+from master.products p join (values ('HOME-KV15X2FP', 10000), ('HOME-KV25X2FP', 5000)) x(code, q) on x.code = p.code;
+insert into t select 'l15', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'HOME-KV15X2FP';
+insert into t select 'l25', l.id from plan.plan_lines l join master.products p on p.id = l.product_id where l.plan_id = pg_temp.v('plan') and p.code = 'HOME-KV25X2FP';
 
 -- ================================================================ 1. Kế hoạch nháp: người lập sửa bảng MRP trước khi gửi
 select pg_temp.as_user('E_SXTP');
@@ -133,12 +133,12 @@ select pg_temp.ok((select qty_m = 6000 from plan.plan_lines where id = pg_temp.v
   'Giám đốc (bước 1, trước chỉ Chủ tịch) sửa sản lượng dòng kế hoạch 5.000 → 6.000 m');
 select pg_temp.ok((select count(*) = 2 from plan.mrp_runs where plan_id = pg_temp.v('plan')) and not (select mrp_stale from plan.production_plans where id = pg_temp.v('plan')),
   'Sửa dòng thì MES chạy lại MRP ngay (không để kế hoạch "cần chạy lại")');
-select pg_temp.ok((select comment like '[Sửa khi duyệt] PFR-2C-2P5: sản lượng 5.000 → 6.000 m%' from wf.approval_actions where request_id = pg_temp.v('req') order by id desc limit 1),
-  'Lịch sử duyệt ghi sửa sản lượng PFR-2C-2P5');
+select pg_temp.ok((select comment like '[Sửa khi duyệt] HOME-KV25X2FP: sản lượng 5.000 → 6.000 m%' from wf.approval_actions where request_id = pg_temp.v('req') order by id desc limit 1),
+  'Lịch sử duyệt ghi sửa sản lượng HOME-KV25X2FP');
 select pg_temp.ok((select summary like '%đã chỉnh khi duyệt%' from wf.approval_requests where id = pg_temp.v('req')), 'Tóm tắt yêu cầu duyệt ghi "đã chỉnh khi duyệt"');
--- Bobin gỗ: nhu cầu đổi (thêm 1.000 m) → điều chỉnh cũ không còn đúng, MES dùng số mới; đồng PFR-2C-1P5 + 2P5 cũng đổi
+-- Bobin gỗ: nhu cầu đổi (thêm 1.000 m) → điều chỉnh cũ không còn đúng, MES dùng số mới; đồng HOME-KV15X2FP + 2P5 cũng đổi
 select pg_temp.ok((pg_temp.mrp('REEL-W')).orig_suggest_qty is null, 'Vật tư đổi nhu cầu (bobin gỗ) dùng số MRP mới, bỏ điều chỉnh cũ');
--- vật tư không đổi nhu cầu: chỉ có ở PFR-2C-1P5? Kiểm tổng quát: mọi dòng giữ điều chỉnh đều có số gốc = số MRP mới tính
+-- vật tư không đổi nhu cầu: chỉ có ở HOME-KV15X2FP? Kiểm tổng quát: mọi dòng giữ điều chỉnh đều có số gốc = số MRP mới tính
 select pg_temp.ok(not exists (select 1 from plan.mrp_lines ml where ml.run_id = (select id from plan.mrp_runs where plan_id = pg_temp.v('plan') order by run_at desc limit 1)
                                and ml.orig_suggest_qty is not null and ml.adjusted_by is null),
   'Dòng giữ điều chỉnh có người sửa, số gốc');

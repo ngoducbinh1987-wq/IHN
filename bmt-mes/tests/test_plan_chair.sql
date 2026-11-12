@@ -80,7 +80,7 @@ do $$
 declare c text;
 begin
   perform set_config('bmt.wf_release', 'on', true);
-  foreach c in array array['PFR-2C-1P5', 'SIF-1C-1P5'] loop
+  foreach c in array array['HOME-KV15X2FP', 'HOME-KV15X1SI'] loop
     if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = c) <> 'RELEASED' then
       perform master.release_spec((select current_spec_id from master.products where code = c));
     end if;
@@ -88,13 +88,13 @@ begin
   perform set_config('bmt.wf_release', 'off', true);
 end $$;
 
--- Kế hoạch tháng: PFR-2C-1P5 10.000 m, SIF-1C-1P5 5.000 m
+-- Kế hoạch tháng: HOME-KV15X2FP 10.000 m, HOME-KV15X1SI 5.000 m
 select pg_temp.as_user('H_SXTP');
 insert into plan.production_plans (plan_no, period_label, material_need_date) values ('KH-T42', 'Thử 4200', pg_temp.today() + 10);
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-T42';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
 select (select v from t where k = 'plan'), p.id, p.current_spec_id, x.qty, 1, x.mpp, x.pack, 'KAVIX'
-from (values ('PFR-2C-1P5', 10000, 500, 'Bobin gỗ'), ('SIF-1C-1P5', 5000, 200, 'Cuộn PE')) x(code, qty, mpp, pack)
+from (values ('HOME-KV15X2FP', 10000, 500, 'Bobin gỗ'), ('HOME-KV15X1SI', 5000, 200, 'Cuộn PE')) x(code, qty, mpp, pack)
 join master.products p on p.code = x.code;
 insert into t select 'run1', plan.run_mrp((select v from t where k = 'plan'));
 
@@ -105,14 +105,14 @@ select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp
   'Gửi duyệt: Giám đốc nhận thông báo trước, Chủ tịch chưa nhận');
 select pg_temp.as_user('H_CT');
 select pg_temp.fails($$select wf.act((select v from t where k = 'req'), 'APPROVE')$$, 'cần vai trò', 'Chủ tịch không duyệt thay bước Giám đốc');
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Tăng')$$,
+select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('HOME-KV15X2FP'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Tăng')$$,
   'Chỉ người đang duyệt bước', 'Đang ở bước Giám đốc: Chủ tịch chưa sửa được');
 -- 27/10/2026 (migration 4400): người đang giữ bước duyệt nào cũng được sửa (Giám đốc ở bước 1); chi tiết ở test_reviewer_edit.sql
 select pg_temp.as_user('H_GD');
 select pg_temp.ok(app.can_review_edit('PLAN', (select v from t where k = 'plan')), 'Giám đốc (bước 1) được sửa kế hoạch khi duyệt');
 -- TP SX không sửa được dòng khi đã gửi duyệt (RLS chỉ cho sửa khi Nháp)
 select pg_temp.as_user('H_SXTP');
-select pg_temp.ok(pg_temp.api_rows(format($$update plan.plan_lines set qty_m = 1 where id = %L$$, pg_temp.line('PFR-2C-1P5'))) = '0',
+select pg_temp.ok(pg_temp.api_rows(format($$update plan.plan_lines set qty_m = 1 where id = %L$$, pg_temp.line('HOME-KV15X2FP'))) = '0',
   'TP SX không sửa dòng kế hoạch khi đang chờ duyệt');
 select pg_temp.as_user('H_GD');
 select wf.act((select v from t where k = 'req'), 'APPROVE', 'Đồng ý');
@@ -123,17 +123,17 @@ select pg_temp.fails($$select wf.act((select v from t where k = 'req'), 'APPROVE
 
 -- ================================================================ 3. Chủ tịch chỉnh khi chốt
 select pg_temp.as_user('H_SXTP');
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Tăng')$$,
+select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('HOME-KV15X2FP'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Tăng')$$,
   'Người lập không sửa', 'TP SX không sửa ở bước chốt');
 select pg_temp.as_user('H_CT');
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', ' ')$$,
+select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('HOME-KV15X2FP'), null, 12000, 1, 'Bobin gỗ', 500, 'KAVIX', ' ')$$,
   'lý do', 'Chủ tịch sửa phải ghi lý do');
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 0, 1, 'Bobin gỗ', 500, 'KAVIX', 'x')$$,
+select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('HOME-KV15X2FP'), null, 0, 1, 'Bobin gỗ', 500, 'KAVIX', 'x')$$,
   'lớn hơn 0', 'Sản lượng 0: phải dùng Bỏ mã');
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 10000, 1, 'Bobin gỗ', 500, 'KAVIX', 'x')$$,
+select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('HOME-KV15X2FP'), null, 10000, 1, 'Bobin gỗ', 500, 'KAVIX', 'x')$$,
   'Không có thay đổi', 'Không thay đổi gì thì báo');
-select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 12000, 2, 'Bobin gỗ', 500, 'KAVIX', 'Khách tăng đơn');
-select pg_temp.ok((select qty_m = 12000 and run_lots = 2 from plan.plan_lines where id = pg_temp.line('PFR-2C-1P5')), 'Chủ tịch tăng sản lượng PFR-2C-1P5 lên 12.000 m');
+select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('HOME-KV15X2FP'), null, 12000, 2, 'Bobin gỗ', 500, 'KAVIX', 'Khách tăng đơn');
+select pg_temp.ok((select qty_m = 12000 and run_lots = 2 from plan.plan_lines where id = pg_temp.line('HOME-KV15X2FP')), 'Chủ tịch tăng sản lượng HOME-KV15X2FP lên 12.000 m');
 select pg_temp.ok((select count(*) from plan.mrp_runs where plan_id = (select v from t where k = 'plan')) = 2
   and not (select mrp_stale from plan.production_plans where id = (select v from t where k = 'plan'))
   and (select total_m from plan.mrp_runs where plan_id = (select v from t where k = 'plan') order by run_at desc, id limit 1) = 17000,
@@ -141,21 +141,21 @@ select pg_temp.ok((select count(*) from plan.mrp_runs where plan_id = (select v 
 select pg_temp.ok((select summary like 'Thử 4200: 2 SKU, 17.000 m%' from wf.approval_requests where id = (select v from t where k = 'req')),
   'Tóm tắt hồ sơ duyệt cập nhật theo số mới');
 -- Thêm mã: chưa phát hành spec thì chặn; mã đã có thì chặn; mã đã phát hành thì thêm được
--- Mã chưa phát hành spec: TP KT/QA tạo mã thử mới (spec nháp sao từ PFR-2C-1P5)
+-- Mã chưa phát hành spec: TP KT/QA tạo mã thử mới (spec nháp sao từ HOME-KV15X2FP)
 select pg_temp.as_user('H_KTTP');
-insert into t select 'draft_spec', app.create_spec('ZZT-42-1P5', null, 'Mã thử 4200', (select current_spec_id from master.products where code = 'PFR-2C-1P5'));
+insert into t select 'draft_spec', app.create_spec('ZZT-42-1P5', null, 'Mã thử 4200', (select current_spec_id from master.products where code = 'HOME-KV15X2FP'));
 insert into t select 'draft_prod', product_id from master.product_specs where id = (select v from t where k = 'draft_spec');
 select pg_temp.as_user('H_CT');
 select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select v from t where k = 'draft_prod'), 3000, 1, 'Bobin gỗ', 500, 'KAVIX', 'Thêm')$$,
   'chưa phát hành spec', 'Thêm mã chưa phát hành spec vào kế hoạch chính thức: chặn');
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select id from master.products where code = 'SIF-1C-1P5'), 3000, 1, 'Cuộn PE', 200, 'KAVIX', 'Thêm')$$,
+select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select id from master.products where code = 'HOME-KV15X1SI'), 3000, 1, 'Cuộn PE', 200, 'KAVIX', 'Thêm')$$,
   'đã có trong kế hoạch', 'Thêm mã đã có: chặn, sửa dòng có sẵn');
 -- Bỏ mã SIF rồi thêm lại với số khác
-select app.plan_chair_remove_line(pg_temp.line('SIF-1C-1P5'), 'Chuyển sang tháng sau');
-select pg_temp.ok(pg_temp.line('SIF-1C-1P5') is null, 'Chủ tịch bỏ mã SIF-1C-1P5');
-select pg_temp.fails($$select app.plan_chair_remove_line(pg_temp.line('PFR-2C-1P5'), 'Bỏ hết')$$, 'ít nhất một mã', 'Không bỏ mã cuối cùng: dùng Trả lại');
-select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select id from master.products where code = 'SIF-1C-1P5'), 3000, 1, 'Cuộn PE', 200, 'HEIZKA', 'Làm 3.000 m nhãn HEIZKA');
-select pg_temp.ok((select qty_m = 3000 and brand = 'HEIZKA' from plan.plan_lines where id = pg_temp.line('SIF-1C-1P5')), 'Chủ tịch thêm mã SIF-1C-1P5 3.000 m');
+select app.plan_chair_remove_line(pg_temp.line('HOME-KV15X1SI'), 'Chuyển sang tháng sau');
+select pg_temp.ok(pg_temp.line('HOME-KV15X1SI') is null, 'Chủ tịch bỏ mã HOME-KV15X1SI');
+select pg_temp.fails($$select app.plan_chair_remove_line(pg_temp.line('HOME-KV15X2FP'), 'Bỏ hết')$$, 'ít nhất một mã', 'Không bỏ mã cuối cùng: dùng Trả lại');
+select app.plan_chair_save_line((select v from t where k = 'plan'), null, (select id from master.products where code = 'HOME-KV15X1SI'), 3000, 1, 'Cuộn PE', 200, 'HEIZKA', 'Làm 3.000 m nhãn HEIZKA');
+select pg_temp.ok((select qty_m = 3000 and brand = 'HEIZKA' from plan.plan_lines where id = pg_temp.line('HOME-KV15X1SI')), 'Chủ tịch thêm mã HOME-KV15X1SI 3.000 m');
 select pg_temp.ok((select string_agg(action, ',' order by id) from plan.plan_chair_edits where plan_id = (select v from t where k = 'plan')) = 'EDIT,REMOVE,ADD'
   and (select count(*) from app.v_plan_chair_edits where plan_id = (select v from t where k = 'plan') and edited_by_name = 'Test h_ct') = 3,
   'Lịch sử chỉnh: sửa, bỏ, thêm (người, lý do)');
@@ -166,11 +166,11 @@ select pg_temp.ok((select count(*) from plan.mrp_runs where plan_id = (select v 
 -- ================================================================ 4. Chốt
 select wf.act((select v from t where k = 'req'), 'APPROVE', 'Chốt');
 select pg_temp.ok((select status from plan.production_plans where id = (select v from t where k = 'plan')) = 'APPROVED', 'Chủ tịch chốt: kế hoạch Đã duyệt');
-select pg_temp.ok((select body like 'PFR-2C-1P5: 10.000 → 12.000 m (Test h_ct); SIF-1C-1P5: bỏ (5.000 m) (Test h_ct); SIF-1C-1P5: thêm 3.000 m (Test h_ct)%' from wf.notifications
+select pg_temp.ok((select body like 'HOME-KV15X2FP: 10.000 → 12.000 m (Test h_ct); HOME-KV15X1SI: bỏ (5.000 m) (Test h_ct); HOME-KV15X1SI: thêm 3.000 m (Test h_ct)%' from wf.notifications
                    where user_id = pg_temp.uid('H_SXTP') and title = 'Kế hoạch đã được chỉnh khi duyệt: KH-T42')
   and exists (select 1 from wf.notifications where user_id = pg_temp.uid('H_GD') and title = 'Kế hoạch đã được chỉnh khi duyệt: KH-T42'),
   'Chốt xong báo TP SX và Giám đốc các dòng Chủ tịch đã chỉnh');
-select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('PFR-2C-1P5'), null, 13000, 1, 'Bobin gỗ', 500, 'KAVIX', 'x')$$,
+select pg_temp.fails($$select app.plan_chair_save_line((select v from t where k = 'plan'), pg_temp.line('HOME-KV15X2FP'), null, 13000, 1, 'Bobin gỗ', 500, 'KAVIX', 'x')$$,
   'không ở trạng thái chờ duyệt', 'Đã chốt: không sửa trực tiếp nữa (dùng phiếu điều chỉnh)');
 select pg_temp.as_user('H_SXTP');
 select pg_temp.ok((select count(*) > 0 from purchase.po_lines l join purchase.purchase_orders po on po.id = l.po_id
@@ -182,7 +182,7 @@ select pg_temp.ok((select count(*) > 0 from purchase.po_lines l join purchase.pu
 insert into plan.production_plans (plan_no, period_label, material_need_date) values ('KH-T42B', 'Thử 4200 B', pg_temp.today() + 10);
 insert into t select 'plan2', id from plan.production_plans where plan_no = 'KH-T42B';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
-select (select v from t where k = 'plan2'), p.id, p.current_spec_id, 2000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'PFR-2C-1P5';
+select (select v from t where k = 'plan2'), p.id, p.current_spec_id, 2000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'HOME-KV15X2FP';
 select plan.run_mrp((select v from t where k = 'plan2'));
 insert into t select 'req2', wf.submit('PLAN', (select v from t where k = 'plan2'), 'KH-T42B', 'Thử');
 select pg_temp.as_user('H_GD');

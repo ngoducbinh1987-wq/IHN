@@ -75,9 +75,9 @@ update wf.approval_steps set assignee_ids = array[pg_temp.uid('P_MUATP')] where 
 update wf.approval_steps set assignee_ids = '{}' where doc_type = 'STOCK_OPEN';
 update master.operators set keeps_fg = (code = 'NV3') where code in ('NV1', 'NV2', 'NV3', 'NV4', 'NV5');
 do $$ begin
-  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'PFR-2C-1P5') <> 'RELEASED' then
+  if (select s.status from master.products p join master.product_specs s on s.id = p.current_spec_id where p.code = 'HOME-KV15X2FP') <> 'RELEASED' then
     perform set_config('bmt.wf_release', 'on', true);
-    perform master.release_spec((select current_spec_id from master.products where code = 'PFR-2C-1P5'));
+    perform master.release_spec((select current_spec_id from master.products where code = 'HOME-KV15X2FP'));
   end if;
 end $$;
 -- NCC ưu tiên cho đồng (vật tư khác chưa có NCC): MES chia đơn mua theo NCC
@@ -109,7 +109,7 @@ select pg_temp.as_user('P_SXTP');
 insert into plan.production_plans (plan_no, period_label, material_need_date) values ('KH-T51', 'Thử 5200', pg_temp.today() + 20);
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-T51';
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
-select pg_temp.v('plan'), p.id, p.current_spec_id, 10000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'PFR-2C-1P5';
+select pg_temp.v('plan'), p.id, p.current_spec_id, 10000, 1, 500, 'Bobin gỗ', 'KAVIX' from master.products p where p.code = 'HOME-KV15X2FP';
 insert into t select 'run', plan.run_mrp(pg_temp.v('plan'));
 insert into t select 'plan_req', wf.submit('PLAN', pg_temp.v('plan'), 'KH-T51', 'Thử');
 select pg_temp.ok(not exists (select 1 from purchase.purchase_orders where plan_id = pg_temp.v('plan')), 'Chưa chốt kế hoạch: chưa sinh đơn mua');
@@ -301,21 +301,21 @@ select pg_temp.ok((select unit_price is null and amount is null and need_qty is 
 reset role;
 insert into inv.carriers (code, carrier_type, tare_kg, owner, status) values ('P951', 'B800', 25, 'BMT', 'EMPTY'), ('P952', 'B800', 25, 'BMT', 'EMPTY');
 select pg_temp.as_user('P_KT');
-select pg_temp.fails($$select inv.create_opening(inv.wh('KBTP'), pg_temp.today(), '[{"code":"PFR-2C-1P5","stage":"CD5","carrier":"P999","qty":1600,"gross_kg":200}]')$$,
+select pg_temp.fails($$select inv.create_opening(inv.wh('KBTP'), pg_temp.today(), '[{"code":"HOME-KV15X2FP","stage":"CD5","carrier":"P999","qty":1600,"gross_kg":200}]')$$,
   'số bobin', 'BTP tồn đầu kỳ: bobin phải khai báo ở Kho → Bobin');
-select pg_temp.fails($$select inv.create_opening(inv.wh('KBTP'), pg_temp.today(), '[{"code":"PFR-2C-1P5","stage":"CD5","carrier":"P951","qty":1600}]')$$,
+select pg_temp.fails($$select inv.create_opening(inv.wh('KBTP'), pg_temp.today(), '[{"code":"HOME-KV15X2FP","stage":"CD5","carrier":"P951","qty":1600}]')$$,
   'kg cân', 'BTP tồn đầu kỳ: bắt buộc kg cân');
 insert into t select 'op_wip', inv.create_opening(inv.wh('KBTP'), pg_temp.today(),
-  '[{"code":"PFR-2C-1P5","stage":"CD5","carrier":"P951","qty":1600,"gross_kg":200},{"code":"PFR-2C-1P5","stage":"CB","carrier":"P952","gross_kg":75}]');
+  '[{"code":"HOME-KV15X2FP","stage":"CD5","carrier":"P951","qty":1600,"gross_kg":200},{"code":"HOME-KV15X2FP","stage":"CB","carrier":"P952","gross_kg":75}]');
 select pg_temp.ok((select count(*) = 2 from inv.stock_doc_lines where doc_id = pg_temp.v('op_wip'))
   and (select h.qty = 1600 and h.gross_kg = 200 and h.tare_kg = 25 and l.wip_stage = 'CV' and l.weight_kg = 175
        from inv.handling_units h join inv.lots l on l.id = h.lot_id join inv.carriers c on c.id = h.carrier_id where c.code = 'P951')
   and (select h.qty > 0 and l.wip_stage = 'CB' from inv.handling_units h join inv.lots l on l.id = h.lot_id join inv.carriers c on c.id = h.carrier_id where c.code = 'P952'),
   'Tồn đầu kỳ BTP: mỗi bobin một dòng, công đoạn, kg (trừ bì), ruột bện ước tính mét từ kg');
-select pg_temp.fails($$select inv.create_opening(inv.wh('KBTP'), pg_temp.today(), '[{"code":"PFR-2C-1P5","stage":"CD5","carrier":"P951","qty":10,"gross_kg":30}]')$$,
+select pg_temp.fails($$select inv.create_opening(inv.wh('KBTP'), pg_temp.today(), '[{"code":"HOME-KV15X2FP","stage":"CD5","carrier":"P951","qty":10,"gross_kg":30}]')$$,
   'đang chờ duyệt', 'Một bobin không nằm ở hai phiếu tồn đầu kỳ');
 insert into t select 'op_fg', inv.create_opening(inv.wh('KTP'), pg_temp.today(),
-  '[{"code":"PFR-2C-1P5","brand":"KAVIX","pack_m":500,"coils":4,"pack_type":"Bobin gỗ"},{"code":"PFR-2C-1P5","brand":"KAVIX","pack_m":500,"coils":1,"m_each":60}]');
+  '[{"code":"HOME-KV15X2FP","brand":"KAVIX","pack_m":500,"coils":4,"pack_type":"Bobin gỗ"},{"code":"HOME-KV15X2FP","brand":"KAVIX","pack_m":500,"coils":1,"m_each":60}]');
 select pg_temp.ok((select count(*) = 5 from inv.stock_doc_lines where doc_id = pg_temp.v('op_fg'))
   and (select count(*) = 4 from inv.stock_doc_lines dl join inv.handling_units h on h.id = dl.hu_id
        where dl.doc_id = pg_temp.v('op_fg') and h.qty = 500 and h.pack_m = 500 and not h.is_remnant and h.location_id = inv.loc('KTP-A'))
@@ -332,7 +332,7 @@ select pg_temp.ok((select status = 'IN_USE' and current_hu_id is not null from i
 reset role;
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand, status)
 select 'LSX-T51', p.id, p.current_spec_id, (select h.id from master.bom_headers h where h.spec_id = p.current_spec_id limit 1), 1500, 500, 'Bobin gỗ', 'KAVIX', 'RELEASED'
-from master.products p where p.code = 'PFR-2C-1P5';
+from master.products p where p.code = 'HOME-KV15X2FP';
 insert into t select 'wo', id from mfg.work_orders where wo_no = 'LSX-T51';
 insert into mfg.wo_operations (wo_id, op_code, seq, planned_m) select pg_temp.v('wo'), o.code, o.seq, 1500 from master.operations o where o.code in ('CD5', 'CD6');
 select pg_temp.as_user('P_KT');
@@ -364,35 +364,35 @@ select qa.release_lot(pg_temp.v('slip_lot'), 'PASS', null);
 -- ================================================================ B3. Phiếu nhập kho thành phẩm (Kế toán SX nhập từ phiếu giấy người giữ kho TP ký)
 select pg_temp.as_user('P_KT');
 select pg_temp.ok((select putaway_coils = 3 and store_coils = 4 and free_coils = 4 from app.v_fg_stock
-                   where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m = 500),
+                   where product_code = 'HOME-KV15X2FP' and brand = 'KAVIX' and pack_m = 500),
   'Tồn TP theo chủng loại: 3 cuộn QC Đạt chờ nhập kho, 4 cuộn đã lưu kho giao được');
-select pg_temp.fails($$select app.fg_putaway('{"keeper_code":"NV1","items":[{"product_code":"PFR-2C-1P5","brand":"KAVIX","pack_m":500,"coils":2}]}')$$,
+select pg_temp.fails($$select app.fg_putaway('{"keeper_code":"NV1","items":[{"product_code":"HOME-KV15X2FP","brand":"KAVIX","pack_m":500,"coils":2}]}')$$,
   'giữ kho thành phẩm', 'Người ký nhập kho TP phải là người giữ kho TP khai báo ở Nhân sự xưởng');
-select pg_temp.fails($$select app.fg_putaway('{"keeper_code":"NV3","items":[{"product_code":"PFR-2C-1P5","brand":"KAVIX","pack_m":500,"coils":5}]}')$$,
+select pg_temp.fails($$select app.fg_putaway('{"keeper_code":"NV3","items":[{"product_code":"HOME-KV15X2FP","brand":"KAVIX","pack_m":500,"coils":5}]}')$$,
   'chỉ có 3 cuộn', 'Không nhập kho quá số cuộn QC Đạt đang chờ');
-select app.fg_putaway('{"keeper_code":"NV3","paper_no":"NK-01","items":[{"product_code":"PFR-2C-1P5","brand":"KAVIX","pack_m":500,"coils":3}]}');
+select app.fg_putaway('{"keeper_code":"NV3","paper_no":"NK-01","items":[{"product_code":"HOME-KV15X2FP","brand":"KAVIX","pack_m":500,"coils":3}]}');
 select pg_temp.ok((select putaway_coils = 0 and store_coils = 7 and free_coils = 7 and store_m = 3500 from app.v_fg_stock
-                   where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m = 500)
+                   where product_code = 'HOME-KV15X2FP' and brand = 'KAVIX' and pack_m = 500)
   and (select receiver_code = 'NV3' and paper_no = 'NK-01' from inv.stock_docs where doc_no like 'NKTP-%' order by created_at desc limit 1),
   'Nhập kho TP: 3 cuộn sang khu lưu, tồn giao được 7 cuộn (3.500 m); phiếu ghi người giữ kho ký');
 
 -- ================================================================ B4. Lệnh giao: Giám đốc sửa khi duyệt, xuất theo phiếu giấy
 select pg_temp.as_user('P_VH');
-select pg_temp.fails($$select app.delivery_save(null, '{"customer_name":"X","items":[{"product_code":"PFR-2C-1P5","brand":"KAVIX","pack_m":500,"coils":1}]}')$$,
+select pg_temp.fails($$select app.delivery_save(null, '{"customer_name":"X","items":[{"product_code":"HOME-KV15X2FP","brand":"KAVIX","pack_m":500,"coils":1}]}')$$,
   'Kinh doanh hoặc Kế toán SX', 'Công nhân không lập lệnh giao');
 select pg_temp.as_user('P_KD');
 insert into t select 'dv', app.delivery_save(null, jsonb_build_object('customer_name', 'Đại lý Hòa Bình', 'ship_date', pg_temp.today() + 1,
-  'items', jsonb_build_array(jsonb_build_object('product_code', 'PFR-2C-1P5', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 5))));
+  'items', jsonb_build_array(jsonb_build_object('product_code', 'HOME-KV15X2FP', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 5))));
 insert into t select 'dv_req', app.delivery_submit(pg_temp.v('dv'));
-select pg_temp.ok((select free_coils = 2 and committed_coils = 5 from app.v_fg_stock where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m = 500),
+select pg_temp.ok((select free_coils = 2 and committed_coils = 5 from app.v_fg_stock where product_code = 'HOME-KV15X2FP' and brand = 'KAVIX' and pack_m = 500),
   'Lệnh giao chờ duyệt: 5 cuộn đã hứa giao, còn 2 cuộn giao được');
-insert into t select 'dv2', app.delivery_save(null, '{"customer_name":"Khách B","items":[{"product_code":"PFR-2C-1P5","brand":"KAVIX","pack_m":500,"coils":3}]}');
+insert into t select 'dv2', app.delivery_save(null, '{"customer_name":"Khách B","items":[{"product_code":"HOME-KV15X2FP","brand":"KAVIX","pack_m":500,"coils":3}]}');
 select pg_temp.fails($$select app.delivery_submit(pg_temp.v('dv2'))$$, 'chỉ còn 2 cuộn', 'Lệnh giao sau không lấy cuộn đã hứa cho lệnh trước');
 select app.delivery_cancel(pg_temp.v('dv2'), 'Khách đổi ngày');
 select pg_temp.ok((select status = 'CANCELLED' from sales.deliveries where id = pg_temp.v('dv2')), 'Hủy lệnh giao nháp có lý do');
 select pg_temp.as_user('P_GD');
 select app.delivery_save(pg_temp.v('dv'), jsonb_build_object('customer_name', 'Đại lý Hòa Bình', 'ship_date', pg_temp.today(),
-  'items', jsonb_build_array(jsonb_build_object('product_code', 'PFR-2C-1P5', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 4))));
+  'items', jsonb_build_array(jsonb_build_object('product_code', 'HOME-KV15X2FP', 'brand', 'KAVIX', 'pack_m', 500, 'coils', 4))));
 select pg_temp.ok(exists (select 1 from wf.approval_actions where request_id = pg_temp.v('dv_req') and comment like '[Sửa khi duyệt]%× 4%')
   and (select summary like '%4 cuộn%' from wf.approval_requests where id = pg_temp.v('dv_req')),
   'Giám đốc sửa số cuộn, ngày giao khi duyệt: ghi lịch sử, báo người lập');
@@ -412,18 +412,18 @@ select pg_temp.ok((select status = 'SHIPPED' and giver_code = 'NV3' from sales.d
   'Xuất 3/4 cuộn theo phiếu giấy: MES chọn cuộn lô cũ trước (tồn đầu kỳ), không cần quét QR');
 select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title like 'Đã xuất giao%' and body like '%Giao thiếu%3/4%'),
   'Giao thiếu: Giám đốc được báo');
-select pg_temp.ok((select free_coils = 4 and committed_coils = 0 from app.v_fg_stock where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m = 500),
+select pg_temp.ok((select free_coils = 4 and committed_coils = 0 from app.v_fg_stock where product_code = 'HOME-KV15X2FP' and brand = 'KAVIX' and pack_m = 500),
   'Sau khi xuất: còn 4 cuộn giao được, không còn cuộn hứa giao');
 
 -- ================================================================ B5. Cắt cuộn, hàng khách trả theo phiếu giấy
 select app.fg_split(jsonb_build_object('hu_id', (select h.id from inv.handling_units h where h.lot_id = pg_temp.v('slip_lot') and h.status = 'ACTIVE' order by h.hu_no limit 1),
   'parts', jsonb_build_array(200), 'reason', 'Khách cần 200 m', 'keeper_code', 'NV3', 'paper_no', 'CC-01'));
-select pg_temp.ok((select count(*) = 1 from app.v_fg_stock where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m is null and store_coils = 3 and store_m = 560)
-  and (select free_coils = 3 from app.v_fg_stock where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m = 500),
+select pg_temp.ok((select count(*) = 1 from app.v_fg_stock where product_code = 'HOME-KV15X2FP' and brand = 'KAVIX' and pack_m is null and store_coils = 3 and store_m = 560)
+  and (select free_coils = 3 from app.v_fg_stock where product_code = 'HOME-KV15X2FP' and brand = 'KAVIX' and pack_m = 500),
   'Cắt cuộn 500 m: còn 3 cuộn đủ quy cách; đoạn 200 m, phần còn 300 m, đoạn lẻ 60 m tính là cuộn lẻ');
-select app.fg_customer_return(jsonb_build_object('product_id', (select id from master.products where code = 'PFR-2C-1P5'), 'brand', 'KAVIX', 'qty_m', 120,
+select app.fg_customer_return(jsonb_build_object('product_id', (select id from master.products where code = 'HOME-KV15X2FP'), 'brand', 'KAVIX', 'qty_m', 120,
   'note', 'Khách trả lỗi vỏ', 'keeper_code', 'NV3', 'paper_no', 'TL-01'));
-select pg_temp.ok((select hold_coils >= 1 from app.v_fg_stock where product_code = 'PFR-2C-1P5' and brand = 'KAVIX' and pack_m is null),
+select pg_temp.ok((select hold_coils >= 1 from app.v_fg_stock where product_code = 'HOME-KV15X2FP' and brand = 'KAVIX' and pack_m is null),
   'Hàng khách trả vào khu cách ly, không tính vào tồn giao được');
 
 -- ================================================================ B6. Phế vào kho phế; đối soát cuối ngày; cảnh báo ngày chưa đối soát

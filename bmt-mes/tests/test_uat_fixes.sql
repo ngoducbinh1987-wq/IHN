@@ -145,7 +145,7 @@ select pg_temp.ok(pg_temp.api($$select count(*)::text from sales.sales_orders wh
 
 -- ================================================================ 3. L3: mã sản phẩm IN HOA
 select pg_temp.ok(not exists (select 1 from master.products where code <> upper(code)), 'Mọi mã sản phẩm đã viết IN HOA (1p5 → 1P5)');
-select pg_temp.ok(exists (select 1 from master.products where code = 'PFR-2C-1P5'), 'PFR-2C-1p5 đổi thành PFR-2C-1P5');
+select pg_temp.ok(exists (select 1 from master.products where code = 'HOME-KV15X2FP'), 'HOME-KV15X2FP đổi thành HOME-KV15X2FP');
 do $$ begin
   begin
     insert into master.products (code, group_code, description) values ('PFR-2C-9p5', (select group_code from master.products limit 1), 'x');
@@ -159,22 +159,22 @@ do $$ begin
   end;
 end $$;
 select pg_temp.as_user('Q_KTTP');
-select pg_temp.blocked($$select app.create_spec('PFR-2C-9p5', null, 'x', (select current_spec_id from master.products where code = 'PFR-2C-1P5'))$$,
+select pg_temp.blocked($$select app.create_spec('PFR-2C-9p5', null, 'x', (select current_spec_id from master.products where code = 'HOME-KV15X2FP'))$$,
   'IN HOA', 'Tạo mã mới chữ thường bị chặn, báo viết IN HOA');
 
 -- ================================================================ 4. L4: phát hành spec mới → kế hoạch, lệnh SX nháp dùng bản mới
 select set_config('bmt.wf_release', 'on', true);
 select master.release_spec(p.current_spec_id) from master.products p join master.product_specs s on s.id = p.current_spec_id
- where p.code = 'PFR-2C-1P5' and s.status <> 'RELEASED';
+ where p.code = 'HOME-KV15X2FP' and s.status <> 'RELEASED';
 select set_config('bmt.wf_release', 'off', true);
-insert into t select 'v1', current_spec_id from master.products where code = 'PFR-2C-1P5';
+insert into t select 'v1', current_spec_id from master.products where code = 'HOME-KV15X2FP';
 insert into plan.production_plans (plan_no, period_label, material_need_date, status) values ('KH-Q6', 'Thử', current_date + 10, 'APPROVED'), ('KH-Q7', 'Thử', current_date + 10, 'CLOSED');
 insert into plan.plan_lines (plan_id, product_id, spec_id, qty_m, run_lots, m_per_pack, pack_type, brand)
 select pp.id, p.id, p.current_spec_id, 1000, 1, 500, 'Bobin gỗ', 'KAVIX' from plan.production_plans pp, master.products p
- where pp.plan_no in ('KH-Q6', 'KH-Q7') and p.code = 'PFR-2C-1P5';
+ where pp.plan_no in ('KH-Q6', 'KH-Q7') and p.code = 'HOME-KV15X2FP';
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand)
 select 'LSX-Q1', p.id, p.current_spec_id, h.id, 1000, 500, 'Bobin gỗ', 'KAVIX'
-from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'PFR-2C-1P5';
+from master.products p join master.bom_headers h on h.spec_id = p.current_spec_id where p.code = 'HOME-KV15X2FP';
 select pg_temp.as_user('Q_KTTP');
 insert into t select 'v2', pg_temp.api(format($$select master.new_spec_version(%L, 'MAJOR')::text$$, pg_temp.v('v1')))::uuid;
 select set_config('bmt.wf_release', 'on', true);
@@ -186,7 +186,7 @@ select pg_temp.ok((select l.spec_id from plan.plan_lines l join plan.production_
   'Kế hoạch đã đóng giữ nguyên spec cũ');
 select pg_temp.ok((select spec_id = pg_temp.v('v2') and bom_id = (select id from master.bom_headers where spec_id = pg_temp.v('v2')) from mfg.work_orders where wo_no = 'LSX-Q1'),
   'Lệnh SX nháp chuyển sang spec + BOM mới');
-select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('Q_BGD') and title like 'Spec PFR-2C-1P5 v% đã phát hành' and body like '%KH-Q6%'),
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('Q_BGD') and title like 'Spec HOME-KV15X2FP v% đã phát hành' and body like '%KH-Q6%'),
   'Giám đốc được báo kế hoạch nào đã chuyển spec');
 
 -- ================================================================ 6. L7: module máy – đề xuất và báo việc chờ
