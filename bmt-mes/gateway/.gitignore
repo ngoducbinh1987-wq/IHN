@@ -1,0 +1,5 @@
+.env
+buffer/
+node_modules/
+tags.csv
+*.log

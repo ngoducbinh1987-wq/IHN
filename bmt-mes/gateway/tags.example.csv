@@ -1,0 +1,6 @@
+machine,ip,protocol,rack_slot_or_unit,tag_code,address,data_type,unit,scale,note
+EXT-SI-01,192.168.10.11,S7,0/1,state,DB10.DBW0,INT,,1,VÍ DỤ – thay bằng địa chỉ thật
+EXT-SI-01,192.168.10.11,S7,0/1,speed_mpm,DB10.DBD2,REAL,m/ph,1,VÍ DỤ
+EXT-SI-01,192.168.10.11,S7,0/1,length_m,DB10.DBD6,REAL,m,1,VÍ DỤ – bộ đếm mét cộng dồn
+EXT-SI-01,192.168.10.11,S7,0/1,temps[0],DB10.DBD10,REAL,°C,1,VÍ DỤ – vùng nhiệt 1
+GAU-01,192.168.10.21,MODBUS,1,od_mm,40001,UINT16,mm,0.001,VÍ DỤ
