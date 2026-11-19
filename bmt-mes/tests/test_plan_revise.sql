@@ -172,7 +172,11 @@ select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp
   'NV mua nhận đơn mua tổng; TP SX được báo đã lập đơn mua');
 select pg_temp.as_user('V_MUANV');
 select pg_temp.fails($$select wf.submit('PO', pg_temp.v('po2t'), 'x', 'x')$$, 'không gửi duyệt', 'Đơn tổng không gửi duyệt');
+-- Migration 10300: thêm NCC mới và khai báo mặt hàng = TP Mua
+select pg_temp.as_user('V_MUATP');
 insert into t select 'sup', app.save_supplier('NCC thử 5100', '0100000051', 'Anh A', null);
+select app.supplier_set_materials(pg_temp.v('sup'), (select array_agg(id) from master.materials where not is_scrap));
+select pg_temp.as_user('V_MUANV');
 select app.po_line_set(l.id, pg_temp.v('sup'), 100000, '30 ngày', pg_temp.today() + 7) from purchase.po_lines l where l.po_id = pg_temp.v('po2t');
 select app.po_make_contracts(pg_temp.v('po2t'), null, true);
 insert into t select 'po2', id from purchase.purchase_orders where parent_id = pg_temp.v('po2t') and status = 'PENDING_APPROVAL';

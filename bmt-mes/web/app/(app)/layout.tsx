@@ -38,6 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { key: 'don-mua', href: '/don-mua', label: 'Đơn mua hàng', icon: 'receive', group: 'Mua hàng', badge: buyer ? poDraft ?? 0 : 0 },
     { key: 'du-phong', href: '/de-xuat/du-phong', label: 'Tồn dự phòng', icon: 'warehouse', group: 'Mua hàng', badge: Number(safetyBelow ?? 0) },
     { key: 'vat-tu', href: '/vat-tu', label: 'Vật tư', icon: 'mat', group: 'Mua hàng' },
+    { key: 'nha-cung-cap', href: '/nha-cung-cap', label: 'Nhà cung cấp', icon: 'truck', group: 'Mua hàng' },
     { key: 'ke-hoach', href: '/ke-hoach', label: 'Kế hoạch & MRP', icon: 'plan', group: 'Sản xuất' },
     { key: 'dieu-chinh', href: '/ke-hoach/dieu-chinh', label: 'Điều chỉnh kế hoạch tháng', icon: 'flow', group: 'Sản xuất' },
     { key: 'kh-chung', href: '/kh-thuc-te', label: 'Kế hoạch sản xuất chung', icon: 'chart', group: 'Sản xuất' },

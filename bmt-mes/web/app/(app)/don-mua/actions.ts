@@ -80,24 +80,6 @@ export async function submitPo(f: FormData) {
   back(id, 'ok', 'Đã gửi TP Mua duyệt (1 ngày làm việc), sau đó Giám đốc duyệt. Giám đốc duyệt xong MES báo NV mua và Kế toán.');
 }
 
-// NCC mới ngay trên đơn mua: tạo rồi chọn luôn cho đơn
-export async function addSupplier(f: FormData) {
-  const id = txt(f, 'po_id');
-  const db = await createClient();
-  const { data, error } = await db.schema('app').rpc('save_supplier', {
-    p_name: txt(f, 'name'), p_tax_code: txt(f, 'tax_code') || null, p_contact: txt(f, 'contact') || null, p_address: txt(f, 'address') || null,
-  });
-  if (error) back(id, 'err', friendly(error.message));
-  const { data: po } = await db.schema('purchase').from('purchase_orders').select('expected_date, payment_terms, note, is_import').eq('id', id).single();
-  const { error: e2 } = await db.schema('app').rpc('po_save_header', {
-    p_po: id, p_supplier: data as string, p_expected: po?.expected_date ?? null, p_terms: po?.payment_terms ?? null, p_note: po?.note ?? null,
-    p_is_import: po?.is_import ?? false,
-  });
-  if (e2) back(id, 'err', 'Đã thêm NCC nhưng chưa gán cho đơn: ' + friendly(e2.message));
-  revalidatePath(`/don-mua/${id}`);
-  back(id, 'ok', `Đã thêm NCC "${txt(f, 'name')}" và chọn cho đơn này`);
-}
-
 // Từ đề xuất mua đã duyệt (bổ sung, tích trữ, tối ưu…)
 export async function poFromPr(f: FormData) {
   const prId = txt(f, 'pr_id');
@@ -162,16 +144,4 @@ export async function returnToTong(f: FormData) {
   if (error) back(id, 'err', friendly(error.message));
   revalidatePath('/don-mua');
   redirect(`/don-mua/${data}?ok=` + encodeURIComponent('Đã trả các dòng về đơn mua tổng: sửa rồi gom lại hợp đồng'));
-}
-
-// Đơn tổng: thêm NCC mới (chọn ở từng dòng)
-export async function addSupplierOnly(f: FormData) {
-  const id = txt(f, 'po_id');
-  const db = await createClient();
-  const { error } = await db.schema('app').rpc('save_supplier', {
-    p_name: txt(f, 'name'), p_tax_code: txt(f, 'tax_code') || null, p_contact: txt(f, 'contact') || null, p_address: txt(f, 'address') || null,
-  });
-  if (error) back(id, 'err', friendly(error.message));
-  revalidatePath(`/don-mua/${id}`);
-  back(id, 'ok', `Đã thêm NCC "${txt(f, 'name')}": chọn ở cột Nhà cung cấp của dòng`);
 }

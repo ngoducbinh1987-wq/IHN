@@ -84,6 +84,9 @@ end $$;
 insert into core.partners (code, name, is_supplier, partner_type) values ('P-NCC-CU', 'NCC đồng thử 5200', true, 'SUPPLIER'), ('P-NCC-PVC', 'NCC nhựa thử 5200', true, 'SUPPLIER');
 insert into t select 'sup_cu', id from core.partners where code = 'P-NCC-CU';
 insert into t select 'sup_pvc', id from core.partners where code = 'P-NCC-PVC';
+-- Migration 10300: NCC phải khai báo mặt hàng bán được thì mới chọn được trên dòng đơn mua
+insert into master.supplier_materials (supplier_id, material_id)
+select s.v, m.id from t s, master.materials m where s.k in ('sup_cu', 'sup_pvc') and not m.is_scrap;
 delete from master.material_suppliers where material_id = (select id from master.materials where code = 'CU-024') and supplier_id is not null;
 update master.material_suppliers set supplier_id = pg_temp.v('sup_cu'), unit_price = 268000, is_preferred = true
  where material_id = (select id from master.materials where code = 'CU-024');
@@ -139,10 +142,15 @@ select pg_temp.fails($$select app.po_line_set(pg_temp.line(pg_temp.v('tong'), 'C
 select pg_temp.as_user('P_MUANV');
 select pg_temp.fails($$select wf.submit('PO', pg_temp.v('tong'), 'x')$$, 'không gửi duyệt', 'Đơn mua tổng không gửi duyệt');
 select pg_temp.fails($$select app.po_make_contracts(pg_temp.v('tong'))$$, 'Chưa có dòng nào', 'Chưa chốt dòng nào: không gom được hợp đồng');
+-- Migration 10300: thêm NCC mới và khai báo mặt hàng = TP Mua; NV mua chỉ chọn NCC đã khai báo
+select pg_temp.fails($$select app.save_supplier('NCC tổng hợp thử 5200')$$, 'Chỉ TP Mua', 'NV mua không thêm NCC mới (từ migration 10300)');
+select pg_temp.as_user('P_MUATP');
 insert into t select 'sup_new', app.save_supplier('NCC tổng hợp thử 5200', '0109999999', 'Chị B', 'Hà Nội');
 select pg_temp.ok((select is_supplier and code like 'NCC-%' from core.partners where id = pg_temp.v('sup_new'))
   and app.save_supplier('ncc tổng hợp thử 5200') = pg_temp.v('sup_new'),
-  'NV mua thêm NCC mới (trùng tên thì dùng lại)');
+  'TP Mua thêm NCC mới (trùng tên thì dùng lại)');
+select app.supplier_set_materials(pg_temp.v('sup_new'), (select array_agg(id) from master.materials where not is_scrap));
+select pg_temp.as_user('P_MUANV');
 select app.po_line_set(pg_temp.line(pg_temp.v('tong'), 'CU-024'), pg_temp.v('sup_cu'), 268000, '30 ngày sau nhận hàng', pg_temp.today() + 12);
 select app.po_line_set(pg_temp.line(pg_temp.v('tong'), 'PVC-FR'), pg_temp.v('sup_pvc'), 32000, null, pg_temp.today() + 8);
 select pg_temp.fails(format($$select app.po_make_contracts(%L, array[%L]::uuid[])$$, pg_temp.v('tong'), pg_temp.line(pg_temp.v('tong'), 'PVC-FR')),

@@ -8,7 +8,7 @@ import { df, nf, numIn } from '@/lib/format';
 import { PO_STATUS, isBuyer, tongState, type Po, type PoLine } from '@/lib/purchase';
 import type { Me } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
-import { addSupplierOnly, cancelPo, makeContracts, setPoLine } from '../actions';
+import { cancelPo, makeContracts, setPoLine } from '../actions';
 
 // Gợi ý điều khoản thanh toán hay dùng (NV mua gõ tự do được)
 const TERMS = ['Trả ngay khi nhận hàng', '30 ngày sau khi nhận hàng', '45 ngày sau khi nhận hàng', 'Tạm ứng 30 %, còn lại khi giao hàng', 'Thanh toán trước 100 %'];
@@ -16,11 +16,20 @@ const TERMS = ['Trả ngay khi nhận hàng', '30 ngày sau khi nhận hàng', '
 // Đơn mua hàng tổng (migration 9500): NV mua chốt từng dòng (NCC, giá, điều khoản, ngày giao), gom hợp đồng theo NCC, gửi TP Mua
 export async function TongView({ po, me, sp }: { po: Po; me: Me; sp: { ok?: string; err?: string } }) {
   const supabase = await createClient();
-  const [{ data: lines }, { data: sups }, { data: contracts }] = await Promise.all([
-    supabase.schema('app').from('v_po_lines').select('id, material_code, material_name, uom, qty, expected_date, mrp_qty, unit_price, priced, need_qty, supplier_id, supplier_name, payment_terms, ready').eq('po_id', po.id).order('line_no').returns<PoLine[]>(),
+  const [{ data: lines }, { data: sups }, { data: contracts }, { data: supMats }] = await Promise.all([
+    supabase.schema('app').from('v_po_lines').select('id, material_id, material_code, material_name, uom, qty, expected_date, mrp_qty, unit_price, priced, need_qty, supplier_id, supplier_name, payment_terms, ready').eq('po_id', po.id).order('line_no').returns<PoLine[]>(),
     supabase.schema('core').from('partners').select('id, name').eq('is_supplier', true).eq('active', true).order('name'),
     supabase.schema('app').from('v_pos').select('id, po_no, status, supplier_name, expected_date, payment_terms, cancel_reason, line_count, amount').eq('parent_id', po.id).order('created_at').returns<Po[]>(),
+    supabase.schema('master').from('supplier_materials').select('supplier_id, material_id'),
   ]);
+  // Mỗi dòng chỉ hiện NCC đã khai báo bán vật tư của dòng đó (migration 10300); NCC đang chọn sẵn vẫn hiện để không mất dữ liệu
+  const sellers = new Map<string, Set<string>>();
+  for (const x of supMats ?? []) {
+    if (!sellers.has(x.material_id)) sellers.set(x.material_id, new Set());
+    sellers.get(x.material_id)!.add(x.supplier_id);
+  }
+  const supsFor = (l: PoLine) => (sups ?? []).filter((s) => sellers.get(l.material_id)?.has(s.id) || s.id === l.supplier_id);
+  const noSeller = (lines ?? []).filter((l) => supsFor(l).length === 0).length;
   const buyer = isBuyer(me.roles);
   const open = po.status === 'DRAFT';
   const edit = open && buyer;
@@ -77,6 +86,7 @@ export async function TongView({ po, me, sp }: { po: Po; me: Me; sp: { ok?: stri
             <tbody>
               {(lines ?? []).map((l) => {
                 const f = `r-${l.id}`;
+                const opts = supsFor(l);
                 return (
                   <tr key={l.id} className={edit && !l.ready ? 'bg-warn-soft/30' : undefined}>
                     {edit && <td className="print:hidden"><input type="checkbox" name="line" value={l.id} form="gom-form" disabled={!l.ready} aria-label={`Chọn ${l.material_code}`} /></td>}
@@ -89,7 +99,8 @@ export async function TongView({ po, me, sp }: { po: Po; me: Me; sp: { ok?: stri
                           <span className="text-[13px]">{l.uom}</span></div>
                           {l.mrp_qty !== null && Number(l.mrp_qty) !== Number(l.qty) && <div className="text-[12px] text-warn">MES đề nghị {nf(l.mrp_qty, 2)}</div>}</td>
                         <td><select form={f} className={`inp min-w-[170px] py-1 ${l.supplier_id ? '' : 'inp-y'}`} name="supplier_id" defaultValue={l.supplier_id ?? ''} aria-label={`NCC ${l.material_code}`}>
-                          <option value="">Chọn NCC</option>{(sups ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></td>
+                          <option value="">{opts.length ? 'Chọn NCC' : 'Chưa có NCC bán vật tư này'}</option>{opts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+                          {opts.length === 0 && <div className="mt-0.5 text-[12px] text-warn">TP Mua khai báo ở <Link className="link" href="/nha-cung-cap">Nhà cung cấp</Link></div>}</td>
                         {showPrice && <td><input form={f} className={`inp w-[110px] py-1 text-right ${l.priced ? '' : 'inp-y'}`} name="unit_price" defaultValue={numIn(l.unit_price)} inputMode="decimal" placeholder="Đơn giá" aria-label={`Đơn giá ${l.material_code}`} /></td>}
                         <td><input form={f} className={`inp min-w-[180px] py-1 ${l.payment_terms ? '' : 'inp-y'}`} name="payment_terms" list="terms" defaultValue={l.payment_terms ?? ''} placeholder="Điều khoản" aria-label={`Điều khoản ${l.material_code}`} /></td>
                         <td><input form={f} className={`inp w-[140px] py-1 ${l.expected_date ? '' : 'inp-y'}`} type="date" name="expected_date" defaultValue={l.expected_date ?? ''} aria-label={`Ngày giao ${l.material_code}`} /></td>
@@ -141,17 +152,12 @@ export async function TongView({ po, me, sp }: { po: Po; me: Me; sp: { ok?: stri
 
       {edit && (
         <div className="grid gap-4 md:grid-cols-2 print:hidden">
-          <details className="card p-4">
-            <summary className="cursor-pointer text-[15px] font-medium text-brand">Thêm nhà cung cấp mới</summary>
-            <form action={addSupplierOnly} className="mt-3 flex flex-col gap-2">
-              <input type="hidden" name="po_id" value={po.id} />
-              <label className="lbl"><span className="req">Tên nhà cung cấp</span><input className="inp" name="name" required /></label>
-              <label className="lbl">Mã số thuế<input className="inp" name="tax_code" /></label>
-              <label className="lbl">Người liên hệ, điện thoại<input className="inp" name="contact" /></label>
-              <label className="lbl">Địa chỉ<input className="inp" name="address" /></label>
-              <div><SubmitButton className="btn">Thêm (chọn ở cột NCC từng dòng)</SubmitButton></div>
-            </form>
-          </details>
+          <section className="card p-4 text-[14px]" id="ncc-theo-mat-hang">
+            <h2 className="mb-1 text-[15px] font-medium">Nhà cung cấp theo mặt hàng</h2>
+            <p className="text-[13px] text-muted">Mỗi dòng chỉ hiện các NCC đã khai báo bán vật tư đó. Thiếu NCC hoặc NCC chưa có mặt hàng: <b>TP Mua</b> thêm ở{' '}
+              <Link className="link" href="/nha-cung-cap">Mua hàng → Nhà cung cấp</Link>.</p>
+            {noSeller > 0 && <p className="mt-2 font-medium text-warn">{noSeller} dòng chưa có NCC nào bán vật tư.</p>}
+          </section>
           {(lines?.length ?? 0) > 0 && (
             <details className="card p-4">
               <summary className="cursor-pointer text-[15px] font-medium text-bad">Hủy các dòng còn lại của đơn tổng</summary>

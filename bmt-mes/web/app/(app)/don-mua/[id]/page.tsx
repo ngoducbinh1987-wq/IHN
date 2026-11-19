@@ -12,7 +12,7 @@ import { PO_STATUS, isBuyer, type Po, type PoLine } from '@/lib/purchase';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { adminPoLine } from '../../quan-tri/data-actions';
-import { addSupplier, cancelPo, deletePoLine, movePoLines, returnToTong, savePoHeader, savePoLine, setPoLine, submitPo } from '../actions';
+import { cancelPo, deletePoLine, movePoLines, returnToTong, savePoHeader, savePoLine, setPoLine, submitPo } from '../actions';
 import { TongView } from './tong-view';
 
 export const metadata = { title: 'Đơn mua hàng' };
@@ -28,13 +28,18 @@ export default async function PoDetail({ params, searchParams }:
   if (!po) notFound();
   // Đơn mua hàng tổng: màn hình chốt từng dòng, gom hợp đồng
   if (po.kind === 'TONG') return <TongView po={po} me={me} sp={sp} />;
-  const [{ data: lines }, { data: req }, { data: sups }, { data: mats }, { data: flow }] = await Promise.all([
-    supabase.schema('app').from('v_po_lines').select('id, line_no, material_code, material_name, uom, qty, received_qty, expected_date, note, mrp_qty, unit_price, amount, priced, need_qty, available, incoming, payment_terms').eq('po_id', id).order('line_no').returns<PoLine[]>(),
+  const [{ data: lines }, { data: req }, { data: allSups }, { data: mats }, { data: flow }, { data: supMats }] = await Promise.all([
+    supabase.schema('app').from('v_po_lines').select('id, line_no, material_id, material_code, material_name, uom, qty, received_qty, expected_date, note, mrp_qty, unit_price, amount, priced, need_qty, available, incoming, payment_terms').eq('po_id', id).order('line_no').returns<PoLine[]>(),
     po.request_id ? supabase.schema('app').from('v_approvals').select('*').eq('id', po.request_id).maybeSingle<Approval>() : Promise.resolve({ data: null }),
     supabase.schema('core').from('partners').select('id, code, name').eq('is_supplier', true).eq('active', true).order('name'),
     supabase.schema('app').from('v_materials').select('code, name, uom').order('code'),
     supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code').eq('doc_type', 'PO').eq('enabled', true).order('seq'),
+    supabase.schema('master').from('supplier_materials').select('supplier_id, material_id'),
   ]);
+  // Chỉ hiện NCC đã khai báo bán đủ mọi vật tư của đơn (migration 10300); NCC đang chọn sẵn vẫn hiện
+  const sells = new Set((supMats ?? []).map((x) => `${x.supplier_id}:${x.material_id}`));
+  const matIds = [...new Set((lines ?? []).map((l) => l.material_id))];
+  const sups = (allSups ?? []).filter((s) => s.id === po.supplier_id || matIds.every((m) => sells.has(`${s.id}:${m}`)));
   const draft = po.status === 'DRAFT';
   const { data: reviewEdit } = po.status === 'PENDING_APPROVAL'
     ? await supabase.schema('app').rpc('can_review_edit', { p_doc_type: 'PO', p_doc_id: id })
@@ -79,7 +84,7 @@ export default async function PoDetail({ params, searchParams }:
       )}
       {draft && buyer && !po.parent_id && (
         <div role="note" id="buyer-check" className="mb-4 rounded border-l-4 border-warn bg-warn-soft px-4 py-2.5 text-[14px] print:hidden">
-          <b>NV mua kiểm tra trước khi gửi:</b> chọn nhà cung cấp (thêm NCC mới ở khung bên phải), nhập đơn giá, ngày về từng dòng; vật tư mua ở NCC khác thì tích dòng và chuyển sang NCC đó (MES tự tách đơn).
+          <b>NV mua kiểm tra trước khi gửi:</b> chọn nhà cung cấp (chỉ hiện NCC đã khai báo bán đủ vật tư của đơn; thiếu thì TP Mua thêm ở Mua hàng → Nhà cung cấp), nhập đơn giá, ngày về từng dòng; vật tư mua ở NCC khác thì tích dòng và chuyển sang NCC đó (MES tự tách đơn).
           Xong bấm <b>Duyệt, gửi TP Mua</b>. Không mua nữa thì hủy đơn (ghi lý do).
         </div>
       )}
@@ -236,19 +241,6 @@ export default async function PoDetail({ params, searchParams }:
                 <p className="text-[13px] text-muted">Mọi dòng về lại đơn tổng {po.parent_no} (giữ giá, điều khoản để sửa), hợp đồng này hủy. Dùng khi đổi NCC hoặc gom lại.</p>
                 <label className="lbl">Lý do<input className="inp" name="reason" placeholder="Ví dụ: đổi NCC cho băng AL/PET" /></label>
                 <div><SubmitButton className="btn">Trả về đơn tổng</SubmitButton></div>
-              </form>
-            </details>
-          )}
-          {editable && buyer && !po.parent_id && (
-            <details className="card p-4 print:hidden">
-              <summary className="cursor-pointer text-[15px] font-medium text-brand">Thêm nhà cung cấp mới</summary>
-              <form action={addSupplier} className="mt-3 flex flex-col gap-2">
-                <input type="hidden" name="po_id" value={id} />
-                <label className="lbl"><span className="req">Tên nhà cung cấp</span><input className="inp" name="name" required /></label>
-                <label className="lbl">Mã số thuế<input className="inp" name="tax_code" /></label>
-                <label className="lbl">Người liên hệ, điện thoại<input className="inp" name="contact" /></label>
-                <label className="lbl">Địa chỉ<input className="inp" name="address" /></label>
-                <div><SubmitButton className="btn">Thêm và chọn cho đơn này</SubmitButton></div>
               </form>
             </details>
           )}
