@@ -99,6 +99,34 @@ revoke execute on function purchase.pr_line_kind_check() from public, anon, auth
 revoke execute on function purchase.pr_kind_lines_check() from public, anon, authenticated;
 revoke execute on function purchase.is_tool_group(text) from public, anon;
 
+-- Đề xuất đã lập trước đây mà mọi dòng là công cụ dụng cụ / máy, thiết bị (vd. PR mua bobin 19/11/2026):
+-- đổi sang loại CCDC; đang chờ duyệt thì ghi lịch sử duyệt + cập nhật mã kiểm (loại nằm trong mã kiểm hồ sơ)
+do $$
+declare r record; q wf.approval_requests; v_actor uuid; v_hash text;
+begin
+  select ur.user_id into v_actor from core.user_roles ur join core.profiles p on p.id = ur.user_id
+   where ur.role_code = 'ADMIN' and p.status = 'ACTIVE' order by p.created_at limit 1;
+  for r in
+    select pr.id, pr.pr_no, pr.pr_kind, pr.status from purchase.purchase_requests pr
+     where pr.source <> 'MRP' and pr.pr_kind <> 'CCDC' and pr.status not in ('CANCELLED')
+       and exists (select 1 from purchase.pr_lines l where l.pr_id = pr.id)
+       and not exists (select 1 from purchase.pr_lines l join master.materials m on m.id = l.material_id
+                        where l.pr_id = pr.id and not purchase.is_tool_group(m.group_code))
+  loop
+    update purchase.purchase_requests set pr_kind = 'CCDC' where id = r.id;
+    select * into q from wf.approval_requests where doc_type = 'PR' and doc_id = r.id and status = 'PENDING' order by submitted_at desc limit 1;
+    if q.id is not null then
+      v_hash := wf.doc_hash('purchase.purchase_requests', r.id);
+      insert into wf.approval_actions (request_id, seq, actor_id, action, comment, data_hash)
+      values (q.id, q.current_seq, coalesce(v_actor, q.submitted_by), 'COMMENT',
+              '[Hệ thống] Đổi loại đề xuất theo quy định 19/11/2026: ' || purchase.pr_kind_label(r.pr_kind)
+              || ' → Mua công cụ dụng cụ, máy, trang thiết bị (mọi dòng là công cụ dụng cụ, máy, thiết bị)', v_hash);
+      update wf.approval_requests set data_hash = v_hash where id = q.id;
+    end if;
+    raise notice 'Đổi % sang loại CCDC', r.pr_no;
+  end loop;
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Ngày trong thông báo / câu báo lỗi: dd/mm/yyyy (giờ đứng sau ngày)
 -- ---------------------------------------------------------------------------
