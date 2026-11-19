@@ -6,6 +6,7 @@ import { LoadErrors, REQ_STATUS, hasRole } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createExtra, createRequisition } from './actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Cấp NVL' };
 
@@ -69,7 +70,7 @@ export default async function RequisitionsPage({ searchParams }: { searchParams:
                     {wos.map((w) => <option key={w.id} value={w.id}>{w.wo_no} · {w.product_code} · còn {nf(Number(w.qty_m) - Number(w.requisitioned_m))} / {nf(w.qty_m)} m</option>)}
                   </select></label>
                 <label className="lbl"><span className="req">Mét sản xuất của ca/ngày</span><input className="inp inp-y text-right" name="qty_m" inputMode="decimal" required /></label>
-                <label className="lbl">Ngày sản xuất<input className="inp" type="date" name="work_date" defaultValue={today} /></label>
+                <label className="lbl">Ngày sản xuất<DateInput className="inp" name="work_date" defaultValue={today} /></label>
                 <label className="lbl sm:col-span-2">Ghi chú<input className="inp" name="note" placeholder="Ca 1, máy…" /></label>
                 <div className="sm:col-span-2"><SubmitButton>Tạo phiếu lĩnh</SubmitButton></div>
               </form>

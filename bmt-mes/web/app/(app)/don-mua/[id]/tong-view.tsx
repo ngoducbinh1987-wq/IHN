@@ -9,6 +9,7 @@ import { PO_STATUS, isBuyer, tongState, type Po, type PoLine } from '@/lib/purch
 import type { Me } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { addSupplierOnly, cancelPo, makeContracts, setPoLine } from '../actions';
+import { DateInput } from '@/components/date-input';
 
 // Gợi ý điều khoản thanh toán hay dùng (NV mua gõ tự do được)
 const TERMS = ['Trả ngay khi nhận hàng', '30 ngày sau khi nhận hàng', '45 ngày sau khi nhận hàng', 'Tạm ứng 30 %, còn lại khi giao hàng', 'Thanh toán trước 100 %'];
@@ -92,7 +93,7 @@ export async function TongView({ po, me, sp }: { po: Po; me: Me; sp: { ok?: stri
                           <option value="">Chọn NCC</option>{(sups ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></td>
                         {showPrice && <td><input form={f} className={`inp w-[110px] py-1 text-right ${l.priced ? '' : 'inp-y'}`} name="unit_price" defaultValue={numIn(l.unit_price)} inputMode="decimal" placeholder="Đơn giá" aria-label={`Đơn giá ${l.material_code}`} /></td>}
                         <td><input form={f} className={`inp min-w-[180px] py-1 ${l.payment_terms ? '' : 'inp-y'}`} name="payment_terms" list="terms" defaultValue={l.payment_terms ?? ''} placeholder="Điều khoản" aria-label={`Điều khoản ${l.material_code}`} /></td>
-                        <td><input form={f} className={`inp w-[140px] py-1 ${l.expected_date ? '' : 'inp-y'}`} type="date" name="expected_date" defaultValue={l.expected_date ?? ''} aria-label={`Ngày giao ${l.material_code}`} /></td>
+                        <td><DateInput form={f} className={`inp w-[140px] py-1 ${l.expected_date ? '' : 'inp-y'}`} name="expected_date" defaultValue={l.expected_date ?? ''} aria-label={`Ngày giao ${l.material_code}`} /></td>
                         <td className="print:hidden"><form id={f} action={setPoLine}><input type="hidden" name="po_id" value={po.id} /><input type="hidden" name="line_id" value={l.id} />
                           {!showPrice && <input type="hidden" name="unit_price" value={l.unit_price ?? ''} />}
                           <SubmitButton className="btn btn-sm" pendingText="…">Lưu</SubmitButton></form></td>

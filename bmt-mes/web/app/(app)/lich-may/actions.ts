@@ -6,6 +6,7 @@ import { type ChangeInput, type ProductRow, readChange, simulate, stepsFor } fro
 import { type Kh, ROLE, carryOver, hasRole, loadKh, rebuild, schedulePayload as payload } from '@/lib/kh/load';
 import type { Order } from '@/lib/kh/scheduler';
 import { groupName } from '@/lib/kh/optimize';
+import { dmy } from '@/lib/format';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { replanPlan } from '@/lib/kh/replan';
@@ -14,7 +15,7 @@ const go = (q: string, kind: 'ok' | 'err', msg: string): never => redirect(`/lic
 
 // Số lệnh đã có trong lịch cũ bị đổi ngày xong (không tính lệnh mới thêm)
 const moved = (kh: Kh, r: ReturnType<typeof rebuild>) => kh.orders.filter((o) => kh.fin.has(o.id) && kh.fin.get(o.id)!.placed && (kh.fin.get(o.id)!.finDate ?? null) !== (r.fin.get(o.id)?.finDate ?? null)).length;
-const dm = (d: string | null | undefined) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'chưa xếp');
+const dm = (d: string | null | undefined) => dmy(d, 'chưa xếp');
 // Lô bị lùi ngày xong và lô mới trễ hạn giao sau khi xếp lại
 function pushedLots(kh: Kh, r: ReturnType<typeof rebuild>) {
   const pushed: string[] = [], late: string[] = [];
@@ -147,7 +148,7 @@ export async function editChange(form: FormData) {
   });
   if (error) go(q, 'err', error.message);
   revalidatePath('/lich-may');
-  go(q, 'ok', `Đã sửa đề nghị (mô phỏng lại: xong ${sim.n.finDate ? sim.n.finDate.split('-').reverse().slice(0, 2).join('/') : 'chưa xếp được'}). Kiểm tra rồi bấm Đồng ý.`);
+  go(q, 'ok', `Đã sửa đề nghị (mô phỏng lại: xong ${dmy(sim.n.finDate, 'chưa xếp được')}). Kiểm tra rồi bấm Đồng ý.`);
 }
 
 async function step(form: FormData, action: 'approve' | 'return') {
@@ -209,10 +210,10 @@ export async function commitLot(form: FormData) {
       const r = rebuild(kh, orders);
       const now = r.fin.get(lineId);
       if (!now?.placed || !now.finDate || now.finDate > date) {
-        go(q, 'err', `${o.label} ${o.product_code}: không đủ máy để xong ${date.split('-').reverse().slice(0, 2).join('/')}; ưu tiên lô này thì xong sớm nhất ${now?.finDate ? now.finDate.split('-').reverse().slice(0, 2).join('/') : 'không xếp được'}. Chọn ngày muộn hơn hoặc Giám đốc bật thêm ca.`);
+        go(q, 'err', `${o.label} ${o.product_code}: không đủ máy để xong ${dmy(date)}; ưu tiên lô này thì xong sớm nhất ${dmy(now?.finDate, 'không xếp được')}. Chọn ngày muộn hơn hoặc Giám đốc bật thêm ca.`);
       }
       const pushed = kh.orders.filter((x) => x.id !== lineId && kh.fin.get(x.id)?.finDate && (r.fin.get(x.id)?.finDate ?? '9999') > kh.fin.get(x.id)!.finDate!)
-        .map((x) => `${x.label} ${x.product_code} ${kh.fin.get(x.id)!.finDate!.slice(8, 10)}/${kh.fin.get(x.id)!.finDate!.slice(5, 7)} → ${r.fin.get(x.id)?.finDate ? `${r.fin.get(x.id)!.finDate!.slice(8, 10)}/${r.fin.get(x.id)!.finDate!.slice(5, 7)}` : 'chưa xếp'}`);
+        .map((x) => `${x.label} ${x.product_code} ${dmy(kh.fin.get(x.id)!.finDate)} → ${dmy(r.fin.get(x.id)?.finDate, 'chưa xếp')}`);
       if (pushed.length && form.get('accept') !== '1') {
         go(q, 'err', `Chốt ${o.label} sớm hơn dự kiến làm lùi: ${pushed.join('; ')}. Tích "Đồng ý lùi các lô này" rồi chốt lại.`);
       }

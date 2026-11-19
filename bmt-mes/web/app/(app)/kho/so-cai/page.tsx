@@ -4,6 +4,7 @@ import { df, nf } from '@/lib/format';
 import { DOC_TYPES, KIND_NAMES, LoadErrors, fetchAll } from '@/lib/kho';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Nhập – xuất – tồn' };
 
@@ -62,8 +63,8 @@ export default async function LedgerPage({ searchParams }: { searchParams: Promi
   const filter = (
     <form className="card mb-4 flex flex-wrap items-end gap-3 p-3" action="/kho/so-cai">
       {tab === 'the-kho' && <input type="hidden" name="tab" value="the-kho" />}
-      <label className="lbl">Từ ngày<input className="inp" type="date" name="tu" defaultValue={from} /></label>
-      <label className="lbl">Đến ngày<input className="inp" type="date" name="den" defaultValue={to} /></label>
+      <label className="lbl">Từ ngày<DateInput className="inp" name="tu" defaultValue={from} /></label>
+      <label className="lbl">Đến ngày<DateInput className="inp" name="den" defaultValue={to} /></label>
       <label className="lbl">Kho<select className="inp" name="kho" defaultValue={sp.kho ?? ''}><option value="">Tất cả</option>{(whs ?? []).map((w) => <option key={w.id} value={w.code}>{w.code} · {w.name}</option>)}</select></label>
       {tab === 'the-kho' && (
         <label className="lbl">Mã hàng<select className="inp min-w-[220px]" name="ma" defaultValue={sp.ma ?? ''} required>

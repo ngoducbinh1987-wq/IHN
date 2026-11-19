@@ -5,6 +5,7 @@ import { df, nf } from '@/lib/format';
 import { SCRAP_CAT } from '@/lib/kho';
 import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Báo cáo hao hụt' };
 
@@ -108,8 +109,8 @@ export default async function LossReport({ searchParams }: { searchParams: Promi
       <Toolbar title="Báo cáo hao hụt" reload={qs({ tab: tab === 'tong' ? undefined : tab, wo: sp.wo })} />
       <form className="card mb-4 mt-4 flex flex-wrap items-end gap-3 p-3" action="/bao-cao/hao-hut">
         {tab !== 'tong' && <input type="hidden" name="tab" value={tab} />}
-        <label className="lbl">Từ ngày<input className="inp" type="date" name="tu" defaultValue={from} /></label>
-        <label className="lbl">Đến ngày<input className="inp" type="date" name="den" defaultValue={to} /></label>
+        <label className="lbl">Từ ngày<DateInput className="inp" name="tu" defaultValue={from} /></label>
+        <label className="lbl">Đến ngày<DateInput className="inp" name="den" defaultValue={to} /></label>
         <button className="btn btn-pri" type="submit">Xem</button>
         <span className="text-[12.5px] text-muted">Tính theo các lệnh SX có cấp, trả NVL, ghi phế hoặc đầu ra trong kỳ.</span>
       </form>

@@ -1,13 +1,14 @@
 // Xuất Excel kết quả MRP của kế hoạch tháng (lần chạy MRP gần nhất): cùng số liệu với trang /ke-hoach/[id]
 // Trang 1 "Kết quả MRP" (khung #mrp), trang 2 "Dự trù nhiều tầng", trang 3 "Lịch sử điều chỉnh MRP" (khi có)
 import { NextResponse } from 'next/server';
+import { df } from '@/lib/format';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { XLSX_TYPE, buildXlsx, xlsxDisposition, type Sheet } from '@/lib/xlsx';
 
 const n = (x: unknown) => (x === null || x === undefined || x === '' ? null : Number(x));
-const d = (x: unknown) => (x ? new Date(String(x).length <= 10 ? `${x}T00:00:00Z` : String(x)).toLocaleDateString('vi-VN', { timeZone: String(x).length <= 10 ? 'UTC' : 'Asia/Ho_Chi_Minh' }) : '');
-const dt = (x: unknown) => (x ? new Date(String(x)).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '');
+const d = (x: unknown) => (x ? df(String(x)) : '');
+const dt = (x: unknown) => (x ? df(String(x), true) : '');
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

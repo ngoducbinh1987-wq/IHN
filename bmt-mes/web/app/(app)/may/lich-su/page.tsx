@@ -5,6 +5,7 @@ import { M_STATUS, hhmm, vnToday } from '@/lib/machine';
 import { df, nf } from '@/lib/format';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Lịch sử vận hành' };
 
@@ -68,8 +69,8 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
       <Flash err={sp.err} />
       <form className="card mb-4 flex flex-wrap items-end gap-3 p-4">
         <label className="lbl">Dây chuyền<select name="may" className="inp w-auto" defaultValue={lineId}>{(lines ?? []).map((l) => <option key={l.id} value={l.id}>{l.code} · {l.name}</option>)}</select></label>
-        <label className="lbl">Từ ngày<input type="date" name="tu" className="inp w-auto" defaultValue={from} /></label>
-        <label className="lbl">Đến ngày<input type="date" name="den" className="inp w-auto" defaultValue={to} /></label>
+        <label className="lbl">Từ ngày<DateInput name="tu" className="inp w-auto" defaultValue={from} /></label>
+        <label className="lbl">Đến ngày<DateInput name="den" className="inp w-auto" defaultValue={to} /></label>
         <button className="btn btn-pri" type="submit">Xem</button>
       </form>
       {!lineId ? <div className="card"><Empty>Chưa có dây chuyền.</Empty></div> : (

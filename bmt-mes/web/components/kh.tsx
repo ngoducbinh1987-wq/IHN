@@ -4,10 +4,12 @@ import { Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Pill } from '@/components/ui';
 import { colorHex } from '@/lib/kh/scheduler';
+import { dmy } from '@/lib/format';
 
 const WD = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const WDL = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-export const dd = (d: string | null | undefined) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—');
+/** Ngày dd/mm/yyyy (quy định MES) */
+export const dd = (d: string | null | undefined) => dmy(d);
 export const wd = (d: string) => WD[new Date(d + 'T00:00:00Z').getUTCDay()];
 export const wdl = (d: string) => WDL[new Date(d + 'T00:00:00Z').getUTCDay()];
 export const pc = (v: number) => `${Math.round(v * 100)}%`;

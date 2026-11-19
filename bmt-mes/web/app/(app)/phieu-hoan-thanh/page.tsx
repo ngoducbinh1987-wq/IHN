@@ -8,6 +8,7 @@ import { QC_STATUS, hasRole } from '@/lib/kho';
 import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { recordBobbin, voidBobbin } from './actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Phiếu hoàn thành bobin' };
 
@@ -180,7 +181,7 @@ export default async function SlipsPage({ searchParams }: { searchParams: Promis
       <section className="card mt-4 overflow-x-auto">
         <div className="card-h">
           <span>Phiếu đã nhập ngày {df(day)}</span>
-          <form className="flex items-center gap-2"><input className="inp" type="date" name="ngay" defaultValue={day} aria-label="Ngày" /><button className="btn btn-sm">Xem</button></form>
+          <form className="flex items-center gap-2"><DateInput className="inp" name="ngay" defaultValue={day} aria-label="Ngày" /><button className="btn btn-sm">Xem</button></form>
         </div>
         {(slips ?? []).length === 0 ? <Empty>Chưa có phiếu hoàn thành ngày này.</Empty> : (
           <table className="tbl">

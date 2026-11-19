@@ -7,6 +7,7 @@ import { hasRole } from '@/lib/kho';
 import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { saveLossNote, sendDailyReport } from './actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Báo cáo sản xuất ngày' };
 
@@ -60,7 +61,7 @@ export default async function DailyReport({ searchParams }: { searchParams: Prom
     <>
       <Toolbar title={`Báo cáo sản xuất ngày ${df(d)}`} reload={`/bao-cao/ngay?d=${d}`} actions={<>
         <Link className="btn btn-sm" href={`/bao-cao/ngay?d=${shiftDay(d, -1)}`}>‹ Ngày trước</Link>
-        <form className="flex items-center gap-2"><input className="inp" type="date" name="d" defaultValue={d} aria-label="Ngày" /><button className="btn btn-sm">Xem</button></form>
+        <form className="flex items-center gap-2"><DateInput className="inp" name="d" defaultValue={d} aria-label="Ngày" /><button className="btn btn-sm">Xem</button></form>
         {d < today && <Link className="btn btn-sm" href={`/bao-cao/ngay?d=${shiftDay(d, 1)}`}>Ngày sau ›</Link>}
       </>} />
       <div className="mt-4"><Flash ok={sp.ok} err={sp.err ?? (error ? error.message : undefined)} /></div>

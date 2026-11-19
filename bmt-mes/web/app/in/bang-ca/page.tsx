@@ -1,5 +1,5 @@
 import { PrintButton } from '@/components/print-button';
-import { df } from '@/lib/format';
+import { df, dmy } from '@/lib/format';
 import { loadConfig, vnNow } from '@/lib/kh/load';
 import { mondayOf, weekDays } from '@/lib/kh/roster';
 import { addDays, nightHours, toMin } from '@/lib/kh/scheduler';
@@ -13,7 +13,7 @@ type Row = {
   people: { code: string; shift: number; lead?: boolean }[]; qc: { mode?: string; who?: string | null }; note: string | null;
   submitted_by_name: string | null; submitted_at: string | null; reviewed_by_name: string | null; reviewed_at: string | null; sent_at: string | null;
 };
-const dd = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+const dd = (d: string) => dmy(d);
 const WD = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const ST: Record<string, string> = { DRAFT: 'NHÁP – chưa duyệt', PROPOSED: 'CHỜ GIÁM ĐỐC DUYỆT', APPROVED: 'Đã duyệt', RETURNED: 'Bị trả lại', CANCELLED: 'Đã hủy', REPLACED: 'Đã thay bằng bảng mới' };
 

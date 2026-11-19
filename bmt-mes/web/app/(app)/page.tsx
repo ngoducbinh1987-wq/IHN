@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { StageMini } from '@/components/stage-bar';
 import { Empty, Flash, Kpi, StatusPill, Toolbar } from '@/components/ui';
 import { type Approval, stageLabel, stagePos } from '@/lib/approvals';
-import { DOC_STATUS, df, nf } from '@/lib/format';
+import { DOC_STATUS, df, dmy, nf } from '@/lib/format';
 import { M_STATUS, WO_STATUS } from '@/lib/machine';
 import { can, canPage, requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
@@ -416,7 +416,7 @@ function Stat({ label, value, hint, tone }: { label: string; value: ReactNode; h
 function Bars({ days }: { days: { date: string; m: number; passed_m: number }[] }) {
   const max = Math.max(1, ...days.map((x) => Number(x.m)));
   const total = days.reduce((s, x) => s + Number(x.m), 0);
-  const label = (x: string) => new Date(`${x}T00:00:00`).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  const label = (x: string) => dmy(x, '');
   return (
     <figure className="mt-3" aria-label="Thành phẩm 14 ngày">
       <div className="mb-1 flex items-center gap-4 text-[12px] text-muted">

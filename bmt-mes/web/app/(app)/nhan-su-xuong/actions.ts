@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { type Kh, ROLE, carryOver, hasRole, loadKh, rebuild, schedulePayload } from '@/lib/kh/load';
 import { type RMachine, type RPerson, type RosterIn, evalRoster, suggestRoster, summarize, weekDays } from '@/lib/kh/roster';
+import { dmy } from '@/lib/format';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { addDays } from '@/lib/kh/scheduler';
@@ -108,7 +109,7 @@ export async function setCrew(f: FormData) {
     p_date: txt(f, 'date'), p_machine: txt(f, 'machine'), p_crew: crew ? Number(crew) : null, p_members: members, p_note: opt(f, 'note'),
   });
   if (error) back(f, 'err', friendly(error.message));
-  done(f, `Đã đặt tổ đóng gói ${txt(f, 'machine')} ngày ${txt(f, 'date').split('-').reverse().slice(0, 2).join('/')}`);
+  done(f, `Đã đặt tổ đóng gói ${txt(f, 'machine')} ngày ${dmy(txt(f, 'date'))}`);
 }
 
 // Ca của người: làm ca 2 / ca 3 trong khoảng ngày (ngoài khoảng: ca 1); database kiểm nghỉ 12 giờ khi đổi ca
@@ -236,7 +237,7 @@ export async function reviewWeek(f: FormData) {
       const r = rebuild(kh, kh.orders, { credit, optimize: true, fromDate: wk(f) });
       if (r.sch.slots.length) {
         const { error: e2 } = await db.schema('app').rpc('kh_save_schedule', {
-          p_plan: kh.planId, ...schedulePayload(kh, kh.orders, r), p_reason: `Xếp lại theo bảng ca tuần ${wk(f).split('-').reverse().slice(0, 2).join('/')} đã duyệt`, p_change: null,
+          p_plan: kh.planId, ...schedulePayload(kh, kh.orders, r), p_reason: `Xếp lại theo bảng ca tuần ${dmy(wk(f))} đã duyệt`, p_change: null,
         });
         extra = e2 ? ` Chưa xếp lại được lịch máy: ${friendly(e2.message)}` : ' Lịch máy đã xếp lại theo bảng ca.';
       }

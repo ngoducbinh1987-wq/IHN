@@ -6,12 +6,41 @@ export function nf(v: number | string | null | undefined, digits = 0): string {
   return n.toLocaleString('vi-VN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+// Quy định MES (anh Bình 19/11/2026): mọi ngày hiển thị dd/mm/yyyy; có giờ thì "dd/mm/yyyy HH:mm" (giờ Việt Nam).
+const VN_PARTS = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+/** Ngày "YYYY-MM-DD" (không giờ) → "dd/mm/yyyy", không đổi múi giờ. Giá trị khác trả nguyên. */
+export function dmy(v: string | null | undefined, empty = '—'): string {
+  if (!v) return empty;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : v;
+}
+/** "dd/mm/yyyy" (cho phép thiếu số 0, năm 2 chữ số, dấu - . hoặc liền 8 số) → ISO; '' khi trống; null khi sai */
+export function parseVnDate(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return '';
+  let m = /^(\d{1,2})[/.\-\s](\d{1,2})[/.\-\s](\d{2}|\d{4})$/.exec(s) ?? /^(\d{2})(\d{2})(\d{4})$/.exec(s);
+  if (!m) {
+    const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!iso) return null;
+    m = [s, iso[3], iso[2], iso[1]] as unknown as RegExpExecArray;
+  }
+  const d = Number(m[1]), mo = Number(m[2]);
+  const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 export function df(v: string | null | undefined, withTime = false): string {
   if (!v) return '—';
+  if (!withTime && /^\d{4}-\d{2}-\d{2}$/.test(v)) return dmy(v);
   const d = new Date(v);
-  return withTime
-    ? d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' })
-    : d.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  if (Number.isNaN(d.getTime())) return v;
+  const p = Object.fromEntries(VN_PARTS.formatToParts(d).map((x) => [x.type, x.value]));
+  const date = `${p.day}/${p.month}/${p.year}`;
+  return withTime ? `${date} ${p.hour}:${p.minute}` : date;
 }
 
 // Đọc số người dùng gõ theo thói quen Việt Nam:

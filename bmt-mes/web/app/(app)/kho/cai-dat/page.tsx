@@ -7,6 +7,7 @@ import { LOC_KINDS, LoadErrors, hasRole, keeps } from '@/lib/kho';
 import { requireMe } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createOpening, saveLocation, saveMaterialStock, savePackage, saveSetting } from './actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Cài đặt kho' };
 
@@ -171,7 +172,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         hasRole(me, 'KT_KHO') ? (
           <form action={createOpening} className="card grid gap-3 p-4 md:grid-cols-[1fr_1fr]">
             <label className="lbl"><span className="req">Kho</span><select className="inp inp-y" name="warehouse" required>{(whs ?? []).map((w) => <option key={w.id} value={`${w.id}|${w.code}`}>{w.code} · {w.name}</option>)}</select></label>
-            <label className="lbl">Ngày tồn đầu kỳ<input className="inp" type="date" name="doc_date" /></label>
+            <label className="lbl">Ngày tồn đầu kỳ<DateInput className="inp" name="doc_date" /></label>
             <label className="lbl md:col-span-2"><span className="req">Mỗi dòng một bao/ống (NVL), một bobin (BTP) hoặc một chủng loại cuộn (thành phẩm), các cột cách nhau bởi dấu ;</span>
               <textarea className="inp inp-y font-mono" name="lines" rows={8} required placeholder={'KNL:  CU-024; 420; 268000; KNL-CU; 3\nKBTP: HOME-KV15X2FP; CD5; B015; 1600; 210\nKTP:  HOME-KV15X2FP; KAVIX; 500; 38'} /></label>
             <div className="text-[12.5px] text-muted md:col-span-2">

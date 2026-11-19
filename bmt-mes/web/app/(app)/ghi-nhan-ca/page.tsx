@@ -9,6 +9,7 @@ import { df, nf, numIn } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { confirmReport, judgeSample, reopenReport, saveReport, submitReport } from './actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Ghi nhận ca' };
 
@@ -90,7 +91,7 @@ export default async function GhiNhanCa({ searchParams }: { searchParams: Promis
     <>
       <Toolbar title={<span>Ghi nhận ca · {wdl(date)} {dd(date)} · Ca {shift}</span>} reload={q({})}
         actions={<form action="/ghi-nhan-ca" className="flex flex-wrap items-center gap-1.5">
-          <input type="date" name="d" defaultValue={date} className="inp w-[160px] py-1" aria-label="Ngày" />
+          <DateInput name="d" defaultValue={date} className="inp w-[160px] py-1" aria-label="Ngày" />
           {shifts.length > 1 && <select name="s" defaultValue={shift} className="inp w-auto py-1" aria-label="Ca">{shifts.map((s) => <option key={s.code} value={s.code}>Ca {s.code}</option>)}</select>}
           {code && <input type="hidden" name="m" value={code} />}
           <button className="btn btn-sm">Xem</button>

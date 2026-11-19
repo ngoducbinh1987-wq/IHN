@@ -55,7 +55,7 @@ export type MaintRow = {
   sched_at: string | null; sched_ok_at: string | null; sched_by_name: string | null; sched_ok_by_name: string | null; sched_by: string | null;
   unit_code: string; machine_code: string; plan_name: string | null; level: string | null; kind: string | null; stop_minutes: number | null; in_frozen: boolean;
 };
-const hm = (iso: string) => { const v = vnNow(new Date(iso)); return `${String(Math.floor(v.min / 60)).padStart(2, '0')}:${String(v.min % 60).padStart(2, '0')} ${v.date.slice(8, 10)}/${v.date.slice(5, 7)}`; };
+const hm = (iso: string) => { const v = vnNow(new Date(iso)); return `${String(Math.floor(v.min / 60)).padStart(2, '0')}:${String(v.min % 60).padStart(2, '0')} ${v.date.slice(8, 10)}/${v.date.slice(5, 7)}/${v.date.slice(0, 4)}`; };
 
 // Kế hoạch bảo dưỡng của dây chuyền xếp lịch (plan.kh_maint_due): để lịch máy tự giữ chỗ tạm
 export type MaintPlanRow = {
@@ -127,7 +127,7 @@ export function machineWindows(machines: MachineInfo[], maint: MaintRow[], cal: 
     if (w.sched_status === 'CONFIRMED' && !moved) out.push({ machine: w.machine_code, from, to, kind: 'PM', label: `bảo dưỡng ${w.wo_no} (${mins} phút, đã chốt)` });
     else out.push({ machine: w.machine_code, from, to, kind: 'PM', tentative: true,
       label: `bảo dưỡng ${w.wo_no} (${mins} phút, giữ chỗ tạm${!w.planned_date ? ', chưa có ngày'
-        : moved ? `, ngày ${w.planned_date.slice(8, 10)}/${w.planned_date.slice(5, 7)} ${late ? 'chưa làm' : 'là ngày nghỉ'}` : ''}, chờ TP SX chốt)` });
+        : moved ? `, ngày ${w.planned_date.slice(8, 10)}/${w.planned_date.slice(5, 7)}/${w.planned_date.slice(0, 4)} ${late ? 'chưa làm' : 'là ngày nghỉ'}` : ''}, chờ TP SX chốt)` });
   }
   // Kế hoạch bảo dưỡng đến hạn chưa có phiếu: giữ chỗ tạm đầu ngày đến hạn (đã quá hạn: ngày làm việc kế tiếp)
   for (const p of plans) {

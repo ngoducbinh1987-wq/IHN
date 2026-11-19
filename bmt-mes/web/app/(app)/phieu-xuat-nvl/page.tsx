@@ -8,6 +8,7 @@ import { REQ_STATUS, hasRole } from '@/lib/kho';
 import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { paperIssue, paperReturn } from './actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Phiếu xuất NVL theo lô, NVL thừa' };
 
@@ -53,7 +54,7 @@ export default async function PaperIssuePage({ searchParams }: { searchParams: P
   return (
     <>
       <Toolbar title="Phiếu xuất NVL theo lô, NVL thừa" reload={back} actions={<>
-        <form className="flex items-center gap-2"><input className="inp" type="date" name="ngay" defaultValue={day} aria-label="Ngày sản xuất" /><button className="btn btn-sm">Xem</button></form>
+        <form className="flex items-center gap-2"><DateInput className="inp" name="ngay" defaultValue={day} aria-label="Ngày sản xuất" /><button className="btn btn-sm">Xem</button></form>
         <Link className="btn btn-soft" href={`/in/phieu-xuat-nvl?d=${day}`} target="_blank"><Printer size={15} />In phiếu xuất + phiếu NVL thừa</Link>
       </>} />
       <div className="mt-4"><Flash ok={sp.ok} err={sp.err} /></div>

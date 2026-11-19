@@ -1,5 +1,23 @@
 import type { Tone } from './format';
 
+// Loại (mục đích) đề xuất mua: nhãn + định nghĩa ngắn (≤ 2 dòng) hiện dưới ô chọn để người lập không nhầm (migration 10300)
+export type PrKind = 'KE_HOACH' | 'BO_SUNG' | 'TICH_TRU' | 'TOI_UU' | 'CCDC';
+export const PR_KINDS: { code: PrKind; label: string; def: string; buyerOnly?: boolean; manual: boolean }[] = [
+  { code: 'BO_SUNG', label: 'Mua bổ sung nguyên vật liệu', manual: true,
+    def: 'Bù NVL đang thiếu cho sản xuất ngoài kế hoạch tháng, hoặc bù tồn kho đã xuống dưới mức dự phòng.' },
+  { code: 'TICH_TRU', label: 'Tích trữ nguyên vật liệu', manual: true, buyerOnly: true,
+    def: 'Mua NVL trước, nhiều hơn nhu cầu gần, để phòng thiếu hàng, giá tăng hoặc NCC giao chậm. Chỉ Phòng mua hàng lập.' },
+  { code: 'TOI_UU', label: 'Tối ưu giá nguyên vật liệu', manual: true, buyerOnly: true,
+    def: 'Mua NVL theo lô hoặc thời điểm có giá tốt (chiết khấu, đủ MOQ, gộp vận chuyển) để giảm giá mua. Chỉ Phòng mua hàng lập.' },
+  { code: 'CCDC', label: 'Mua công cụ dụng cụ, máy, trang thiết bị', manual: true,
+    def: 'Mua công cụ dụng cụ (bobin, khuôn, dụng cụ đo…), máy, trang thiết bị, tài sản phục vụ sản xuất. Không dùng cho NVL.' },
+  { code: 'KE_HOACH', label: 'Mua NVL theo kế hoạch tháng', manual: false,
+    def: 'MES tự sinh từ MRP khi kế hoạch tháng được chốt. Không lập tay.' },
+];
+export const prKindOf = (code: string | null | undefined) => PR_KINDS.find((k) => k.code === code);
+/** Nhóm vật tư của loại "Mua công cụ dụng cụ, máy, trang thiết bị" */
+export const TOOL_GROUPS = ['TOOLING', 'ASSET'];
+
 // Trạng thái hợp đồng / phiếu mua (PO): NV mua gom từ đơn mua tổng → TP Mua → Giám đốc (migration 9500)
 export const PO_STATUS: Record<string, [string, Tone]> = {
   DRAFT: ['Nháp, chờ NV mua gửi', 'warn'], PENDING_APPROVAL: ['Đang duyệt', 'info'], APPROVED: ['Đã duyệt, chờ hàng', 'ok'],

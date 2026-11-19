@@ -4,10 +4,11 @@ import { notFound } from 'next/navigation';
 import { AdminTools } from '@/components/admin-tools';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Pill, Toolbar } from '@/components/ui';
-import { df, nf, numIn } from '@/lib/format';
+import { df, dmy, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { cancelAdj, runAdjMrp, saveAdj, submitAdj } from '../../actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Đề xuất hiệu chỉnh kế hoạch tháng' };
 
@@ -31,7 +32,7 @@ const ACTION: Record<string, [string, 'ok' | 'warn' | 'bad' | 'info' | 'mute']> 
   KEEP: ['Giữ nguyên: đã duyệt mua', 'info'], LESS: ['Giảm nhu cầu', 'mute'], ENOUGH: ['Đủ, không mua thêm', 'ok'], SAME: ['Không đổi', 'mute'],
 };
 const PR_ST: Record<string, string> = { DRAFT: 'nháp', PENDING_APPROVAL: 'đang duyệt' };
-const dmy = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—');
+
 
 export default async function AdjustmentPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
@@ -142,7 +143,7 @@ export default async function AdjustmentPage({ params, searchParams }: { params:
                   <option value="">—</option>{(planLines ?? []).map((p) => <option key={p.id} value={p.id}>{p.product_code} · {nf(p.qty_m)} m · hạn {dmy(p.due_date)}</option>)}</select></td>
                 <td><input className="inp mono w-[150px] uppercase" name={`code_${i}`} list="released" defaultValue={r.kind === 'ADD' ? r.product_code ?? '' : ''} aria-label={`Mã mới ${i + 1}`} /></td>
                 <td><input className="inp w-[110px] text-right" name={`qty_${i}`} inputMode="decimal" defaultValue={r.qty_m !== null && r.qty_m !== undefined ? numIn(r.qty_m) : ''} aria-label={`Số mét ${i + 1}`} /></td>
-                <td><input className="inp w-[150px]" type="date" name={`due_${i}`} defaultValue={r.due_date ?? ''} aria-label={`Hạn giao ${i + 1}`} /></td>
+                <td><DateInput className="inp w-[150px]" name={`due_${i}`} defaultValue={r.due_date ?? ''} aria-label={`Hạn giao ${i + 1}`} /></td>
                 <td><select className="inp w-auto" name={`prio_${i}`} defaultValue={r.priority === null || r.priority === undefined ? '' : String(r.priority)} aria-label={`Ưu tiên ${i + 1}`}>
                   <option value="">—</option><option value="1">Thường</option><option value="0">Gấp</option></select></td>
                 <td><input className="inp min-w-[160px]" name={`note_${i}`} defaultValue={r.note ?? ''} aria-label={`Ghi chú ${i + 1}`} /></td>

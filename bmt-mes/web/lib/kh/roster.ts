@@ -113,8 +113,8 @@ const groupMachines = (kh: Kh, g: string) => kh.machines.filter((m) => (SHIFT_GR
 export function summarize(kh: Kh, r: RosterIn, ev: RosterEval, base: RosterEval, reason: string, groups: string[]): RosterSummary {
   const h = history(kh, r.week);
   // cảnh báo người không có việc: chỉ giữ ngày trong tuần của bảng ca
-  const wdm = new Set(ev.days.map((d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`));
-  const inWeek = (x: string) => { const m = x.match(/ngày (\d{2}\/\d{2})/); return !m || wdm.has(m[1]); };
+  const wdm = new Set(ev.days.map((d) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`));
+  const inWeek = (x: string) => { const m = x.match(/ngày (\d{2}\/\d{2}\/\d{4})/); return !m || wdm.has(m[1]); };
   const hours: RosterHours[] = kh.operators.map((o) => {
     const p = r.people.find((x) => x.code === o.code);
     const w = ev.week.get(o.code) ?? { m: 0, n: 0 };

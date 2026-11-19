@@ -7,6 +7,7 @@ import { df } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { reviewCheck, saveCheck } from '../actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Checklist đầu ca' };
 
@@ -33,7 +34,7 @@ export default async function ChecklistPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <Toolbar title="Checklist bảo dưỡng đầu ca" reload={back}
-        actions={<form className="flex items-center gap-2"><input type="date" name="ngay" defaultValue={day} max={today} className="inp w-auto" aria-label="Ngày" /><button className="btn" type="submit">Xem</button></form>} />
+        actions={<form className="flex items-center gap-2"><DateInput name="ngay" defaultValue={day} max={today} className="inp w-auto" aria-label="Ngày" /><button className="btn" type="submit">Xem</button></form>} />
       <div className="mt-4" />
       <Flash ok={sp.ok} err={sp.err} />
       <p className="mb-4 text-[13.5px] text-muted">

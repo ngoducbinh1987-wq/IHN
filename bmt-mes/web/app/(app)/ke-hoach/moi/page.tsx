@@ -4,6 +4,7 @@ import { Flash, Toolbar } from '@/components/ui';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createAdj, createPlan } from '../actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Thêm kế hoạch' };
 
@@ -48,7 +49,7 @@ export default async function NewPlan({ searchParams }: { searchParams: Promise<
             <select className="inp" name="year" defaultValue={defY} required>
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
             </select></label>
-          <label className="lbl"><span className="req">Ngày cần vật tư</span><input className="inp" type="date" name="need_date" required /></label>
+          <label className="lbl"><span className="req">Ngày cần vật tư</span><DateInput className="inp" name="need_date" required /></label>
         </div>
         <p className="text-[12.5px] text-muted">
           Mỗi tháng chỉ một kế hoạch, mọi kế hoạch là chính thức (chỉ mã đã phát hành spec). TP SX lập, chạy MRP → Giám đốc duyệt → Chủ tịch HĐQT chốt.

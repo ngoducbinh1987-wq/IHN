@@ -14,6 +14,7 @@ import { approve } from '../../duyet/[id]/actions';
 import { adjustMrp, chairRemoveLine, chairSaveLine, createAdj, deleteLine, runMrp, saveLine, submitPlan } from '../actions';
 import { poFromMrp } from '../../don-mua/actions';
 import { PO_STATUS, isBuyer, tongState, type Po } from '@/lib/purchase';
+import { DateInput } from '@/components/date-input';
 
 const ADJ_STATUS: Record<string, [string, 'ok' | 'warn' | 'bad' | 'mute' | 'info']> = {
   DRAFT: ['Nháp', 'warn'], PENDING_APPROVAL: ['Chờ duyệt (Giám đốc → Chủ tịch)', 'info'], APPROVED: ['Đã duyệt, đã áp', 'ok'], CANCELLED: ['Đã hủy', 'mute'],
@@ -374,7 +375,7 @@ function MrpForm({ planId, m }: { planId: string; m: MrpRow }) {
       <div className="text-[14px]"><div className="mono font-medium">{m.material_code}</div>{m.material_name}
         <div className="text-[12px] text-muted">MRP tính: {nf(m.orig_suggest_qty ?? m.suggest_qty)} {m.uom} · đặt chậm nhất {df(m.latest_order_date)}</div></div>
       <label className="lbl">Đề nghị mua ({m.uom})<input className="inp inp-y text-right" name="qty" inputMode="decimal" required defaultValue={String(m.suggest_qty).replace('.', ',')} autoFocus /></label>
-      <label className="lbl">Ngày cần<input className="inp inp-y" type="date" name="need_date" defaultValue={m.eff_need_date ?? ''} /></label>
+      <label className="lbl">Ngày cần<DateInput className="inp inp-y" name="need_date" defaultValue={m.eff_need_date ?? ''} /></label>
       <label className="lbl">Ghi chú<input className="inp" name="note" defaultValue={m.note ?? ''} /></label>
       <label className="lbl">Lý do điều chỉnh <span className="text-bad">*</span><input className="inp inp-y" name="reason" required placeholder="Bắt buộc" /></label>
       <div className="flex gap-2"><SubmitButton>Lưu</SubmitButton><Link className="btn" href={`/ke-hoach/${planId}`}>Hủy</Link></div>

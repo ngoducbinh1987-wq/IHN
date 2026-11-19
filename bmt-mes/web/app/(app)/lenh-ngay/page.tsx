@@ -9,6 +9,7 @@ import { df, nf } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { approveSlip, releaseDay, reviewRelease } from './actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Lệnh sản xuất ngày' };
 
@@ -87,7 +88,7 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
         ))}
         <form action="/lenh-ngay" className="flex items-center gap-1.5">
           {kh.planId && <input type="hidden" name="plan" value={kh.planId} />}
-          <input type="date" name="d" defaultValue={date} className="inp w-[160px] py-1" aria-label="Chọn ngày" />
+          <DateInput name="d" defaultValue={date} className="inp w-[160px] py-1" aria-label="Chọn ngày" />
           <button className="btn btn-sm">Xem</button>
         </form>
       </div>

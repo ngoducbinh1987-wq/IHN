@@ -1,6 +1,7 @@
 import { SubmitButton } from '@/components/submit-button';
 import { ASSIGNEE, LEVEL, PLAN_KIND } from '@/lib/machine';
 import { savePlan } from '@/app/(app)/may/actions';
+import { DateInput } from '@/components/date-input';
 
 type M = { id: string; code: string; name: string; unit_kind: string | null; line_id: string | null };
 type Plan = Record<string, any>;
@@ -66,7 +67,7 @@ export function PlanForm({ machines, plan, machineId, remind, back }:
       <fieldset className="rounded border border-line p-3 md:col-span-2">
         <legend className="px-1 text-[13px] text-muted">Mốc tính chu kỳ</legend>
         <div className="grid gap-3 sm:grid-cols-3">
-          <label className="lbl">Lần làm gần nhất<input name="last_done" type="date" className="inp" defaultValue={lastDone} /><input type="hidden" name="last_done_orig" value={lastDone} /></label>
+          <label className="lbl">Lần làm gần nhất<DateInput name="last_done" className="inp" defaultValue={lastDone} /><input type="hidden" name="last_done_orig" value={lastDone} /></label>
           <label className="lbl">Giờ chạy đã có từ lần đó<input name="base_hours" className="inp" inputMode="decimal" defaultValue={v('base_hours') || ''} placeholder="0" /></label>
           <label className="lbl">Km đã chạy từ lần đó<input name="base_km" className="inp" inputMode="decimal" defaultValue={v('base_km') || ''} placeholder="0" /></label>
         </div>

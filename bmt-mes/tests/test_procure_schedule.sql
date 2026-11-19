@@ -91,12 +91,12 @@ select pg_temp.as_user('G_SXTP');
 select pg_temp.fails($$select app.create_pr(null, 'Tích trữ', '[{"material_code":"CU-024","qty":10}]', 'TICH_TRU')$$, 'NV mua hoặc TP Mua',
   'TP SX không lập đề xuất mua tích trữ / tối ưu');
 select pg_temp.as_user('G_MUANV');
-select pg_temp.fails($$select app.create_pr(null, 'x', '[{"material_code":"CU-024","qty":10}]', 'KE_HOACH')$$, 'Bổ sung, Tích trữ hoặc Tối ưu',
+select pg_temp.fails($$select app.create_pr(null, 'x', '[{"material_code":"CU-024","qty":10}]', 'KE_HOACH')$$, 'Chọn loại đề xuất',
   'Đề xuất lập tay không ghi loại "theo kế hoạch"');
 select pg_temp.fails($$select app.create_pr(null, 'x', '[]', 'BO_SUNG')$$, 'ít nhất một vật tư', 'Đề xuất phải có vật tư');
 insert into t select 'pr', app.create_pr(pg_temp.today() + 20, 'Giá đồng đang thấp, mua trước quý I',
   jsonb_build_array(jsonb_build_object('material_code', (select code from master.materials where id = pg_temp.v('m_other')), 'qty', 123456.5)), 'TOI_UU');
-select pg_temp.ok((select pr_kind = 'TOI_UU' and pr_kind_label = 'Mua tối ưu' and source = 'MANUAL' from app.v_prs where id = pg_temp.v('pr'))
+select pg_temp.ok((select pr_kind = 'TOI_UU' and pr_kind_label = 'Tối ưu giá nguyên vật liệu' and source = 'MANUAL' from app.v_prs where id = pg_temp.v('pr'))
   and (select qty = 123456.5 from purchase.pr_lines where pr_id = pg_temp.v('pr')),
   'NV mua lập đề xuất mua tối ưu với số lượng bất kỳ');
 insert into t select 'pr_req', wf.submit('PR', pg_temp.v('pr'), '', 'Mua tối ưu');

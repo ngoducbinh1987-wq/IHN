@@ -1,5 +1,6 @@
 // Xuất Excel bảng MRP hiệu chỉnh của đề xuất hiệu chỉnh kế hoạch tháng (cùng số liệu với khung #mrp-hieu-chinh: app.adj_mrp)
 import { NextResponse } from 'next/server';
+import { df } from '@/lib/format';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { XLSX_TYPE, buildXlsx, xlsxDisposition } from '@/lib/xlsx';
@@ -34,7 +35,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     'Thiếu', 'Đề xuất mua', 'Tồn sau SX', 'MES xử lý'];
   const rows = (Array.isArray(rv.table) ? rv.table : []).map((x) => [x.code, x.name, x.uom, n(x.mrp_old), n(x.mrp_new), n(x.diff), n(x.available), n(x.incoming),
     n(x.requested), n(x.reserve), n(x.shortage), n(x.suggest), n(x.projected_after), act.has(x.code) ? ACTION[act.get(x.code) as string] ?? act.get(x.code) : '']);
-  const state = rv.applied ? `Đã áp khi duyệt${rv.at ? ` ${new Date(rv.at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}` : ''}` : 'Chạy thử (chưa đổi gì), MRP ban đầu = lần chạy MRP gần nhất của kế hoạch';
+  const state = rv.applied ? `Đã áp khi duyệt${rv.at ? ` ${df(rv.at, true)}` : ''}` : 'Chạy thử (chưa đổi gì), MRP ban đầu = lần chạy MRP gần nhất của kế hoạch';
   const sheets = [{
     name: 'Bảng MRP hiệu chỉnh',
     title: `Bảng MRP hiệu chỉnh ${a.adj_no} · kế hoạch ${a.plan_no} · ${state}`,

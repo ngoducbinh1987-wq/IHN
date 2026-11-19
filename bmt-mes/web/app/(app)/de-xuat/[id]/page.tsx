@@ -11,7 +11,9 @@ import { can, requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { deletePrLine, savePrHeader, savePrLine, setPrKind, submitPr } from '../actions';
 import { poFromPr } from '../../don-mua/actions';
-import { PO_STATUS, isBuyer } from '@/lib/purchase';
+import { PO_STATUS, TOOL_GROUPS, isBuyer, prKindOf } from '@/lib/purchase';
+import { PrKindField } from '@/components/pr-kind-field';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Đề xuất mua hàng' };
 
@@ -27,7 +29,7 @@ export default async function PrDetail({ params, searchParams }:
   const [{ data: lines }, { data: req }, { data: mats }, { data: flow }, { data: pos }] = await Promise.all([
     supabase.schema('app').from('v_pr_lines').select('id, material_code, material_name, uom, qty, need_date, ordered_qty, unit_price, available, need_qty, available_qty, incoming_qty, mrp_qty, projected_qty, safety_qty').eq('pr_id', id).order('material_code'),
     pr.request_id ? supabase.schema('app').from('v_approvals').select('*').eq('id', pr.request_id).maybeSingle<Approval>() : Promise.resolve({ data: null }),
-    supabase.schema('app').from('v_materials').select('code, name, uom').order('code'),
+    supabase.schema('app').from('v_materials').select('code, name, uom, group_code').order('code'),
     supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code, enabled').eq('doc_type', 'PR').eq('enabled', true).order('seq'),
     supabase.schema('app').from('v_pos').select('id, po_no, status, supplier_name, line_count').eq('pr_id', id).order('po_no'),
   ]);
@@ -116,10 +118,10 @@ export default async function PrDetail({ params, searchParams }:
           {editable && (
             <form action={savePrLine} className="grid gap-3 border-t border-line bg-sunk/50 p-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end">
               <input type="hidden" name="pr_id" value={id} />
-              <datalist id="mats">{(mats ?? []).map((m) => <option key={m.code} value={`${m.code} · ${m.name} (${m.uom})`} />)}</datalist>
+              <datalist id="mats">{(mats ?? []).filter((m) => pr.source === 'MRP' || TOOL_GROUPS.includes(m.group_code ?? '') === (pr.pr_kind === 'CCDC')).map((m) => <option key={m.code} value={`${m.code} · ${m.name} (${m.uom})`} />)}</datalist>
               <label className="lbl"><span className="req">Vật tư</span><input className="inp" name="material_code" list="mats" required /></label>
               <label className="lbl"><span className="req">Số lượng</span><input className="inp text-right" name="qty" inputMode="decimal" required /></label>
-              <label className="lbl">Ngày cần<input className="inp" type="date" name="need_date" /></label>
+              <label className="lbl">Ngày cần<DateInput className="inp" name="need_date" /></label>
               <SubmitButton className="btn btn-pri">+ Thêm dòng</SubmitButton>
             </form>
           )}
@@ -140,7 +142,7 @@ export default async function PrDetail({ params, searchParams }:
             <form action={savePrHeader} className="flex flex-col gap-3">
               <input type="hidden" name="pr_id" value={id} />
               <label className="lbl"><span className="req">Nội dung</span><textarea className="inp" name="note" rows={3} defaultValue={pr.note ?? ''} required /></label>
-              <label className="lbl">Ngày cần hàng<input className="inp" type="date" name="need_date" defaultValue={pr.need_date ?? ''} /></label>
+              <label className="lbl">Ngày cần hàng<DateInput className="inp" name="need_date" defaultValue={pr.need_date ?? ''} /></label>
               <div><SubmitButton className="btn">Lưu thông tin</SubmitButton></div>
             </form>
           ) : (
@@ -153,14 +155,12 @@ export default async function PrDetail({ params, searchParams }:
             <dt className="text-muted">Trạng thái</dt><dd className="mb-2"><StatusPill map={DOC_STATUS} value={pr.status} /></dd>
             <dt className="text-muted">Loại đề xuất</dt><dd className="mb-2">
               {editable && pr.source !== 'MRP' ? (
-                <form action={setPrKind} className="flex items-center gap-2">
+                <form action={setPrKind} className="flex items-start gap-2">
                   <input type="hidden" name="pr_id" value={id} />
-                  <select className="inp py-1" name="kind" defaultValue={pr.pr_kind} aria-label="Loại đề xuất">
-                    <option value="BO_SUNG">Mua bổ sung</option><option value="TICH_TRU">Mua tích trữ</option><option value="TOI_UU">Mua tối ưu</option>
-                  </select>
+                  <PrKindField defaultValue={pr.pr_kind} buyer={isBuyer(me.roles)} label={false} className="inp py-1" />
                   <SubmitButton className="btn btn-sm" pendingText="…">Đổi</SubmitButton>
                 </form>
-              ) : pr.pr_kind_label}
+              ) : <>{pr.pr_kind_label}{prKindOf(pr.pr_kind) && <span className="mt-0.5 block text-[12.5px] leading-snug text-muted">{prKindOf(pr.pr_kind)!.def}</span>}</>}
             </dd>
             <dt className="text-muted">Nguồn</dt><dd className="mb-2">{pr.source === 'MRP' ? 'Sinh từ MRP' : 'Lập thủ công'}</dd>
             <dt className="text-muted">Người lập</dt><dd className="mb-2 uppercase">{pr.created_by_name}</dd>

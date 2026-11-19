@@ -2,6 +2,7 @@
 
 import { Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { DateInput } from '@/components/date-input';
 import { SubmitButton } from '@/components/submit-button';
 import { parseNum } from '@/lib/format';
 import { receiveGoods } from './actions';
@@ -88,9 +89,9 @@ export function ReceiveForm({ pos, mats, suppliers, locations, packages }: {
                   </select></label>
               )}
               <label className="lbl">Lô NCC<input className="inp" value={l.supplier_lot} onChange={(e) => set(l.key, { supplier_lot: e.target.value })} /></label>
-              <label className="lbl">Ngày sản xuất<input className="inp" type="date" value={l.mfg_date} onChange={(e) => set(l.key, { mfg_date: e.target.value })} /></label>
+              <label className="lbl">Ngày sản xuất<DateInput value={l.mfg_date} onChange={(v) => set(l.key, { mfg_date: v })} aria-label="Ngày sản xuất" /></label>
               <label className="lbl"><span className={m?.has_expiry ? 'req' : ''}>Hạn dùng</span>
-                <input className={`inp ${m?.has_expiry ? 'inp-y' : ''}`} type="date" value={l.exp_date} required={m?.has_expiry} onChange={(e) => set(l.key, { exp_date: e.target.value })} /></label>
+                <DateInput className={`inp ${m?.has_expiry ? 'inp-y' : ''}`} value={l.exp_date} required={m?.has_expiry} onChange={(v) => set(l.key, { exp_date: v })} aria-label="Hạn dùng" /></label>
               <label className="lbl">Cất vào
                 <select className="inp" value={l.location_id} onChange={(e) => set(l.key, { location_id: e.target.value })}>
                   <option value="">Chờ kiểm (KNL-QC)</option>

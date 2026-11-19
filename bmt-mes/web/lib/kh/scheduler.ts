@@ -558,7 +558,7 @@ export function schedule(
     }
     return tau;
   };
-  const dmy = (d: string | null) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : 'chưa có';
+  const dmy = (d: string | null) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : 'chưa có';
 
   // ---------- Người đứng máy: lịch vắng, tay nghề, kiêm nhiệm tạm, tổ đóng gói ----------
   const ND = cal.days.length;

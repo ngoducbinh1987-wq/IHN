@@ -433,7 +433,7 @@ update inv.stock_docs set doc_date = pg_temp.today() - 1 where ref_id = pg_temp.
 insert into mfg.scrap_records (wo_op_id, scrap_material_id, reason_code, qty_kg, recorded_at)
 select (select id from mfg.wo_operations where wo_id = pg_temp.v('wo') and op_code = 'CD5'), (select id from master.materials where code = 'PL-PVC'), 'SC_STARTUP', 2.4, now();
 select inv.daily_alerts();
-select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title = 'Ngày ' || to_char(pg_temp.today() - 1, 'DD/MM') || ' chưa đối soát kho')
+select pg_temp.ok(exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title = 'Ngày ' || to_char(pg_temp.today() - 1, 'DD/MM/YYYY') || ' chưa đối soát kho')
   and not exists (select 1 from wf.notifications where user_id = pg_temp.uid('P_GD') and title like 'Phiếu kho chưa được Kế toán SX duyệt%'),
   'Phiếu giấy chưa đối soát: một cảnh báo cho cả ngày, không cảnh báo từng phiếu');
 select pg_temp.as_user('P_SXTP');

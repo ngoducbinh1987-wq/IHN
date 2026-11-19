@@ -6,6 +6,7 @@ import { addDays, dayIndex, shiftPlan, toMin } from '@/lib/kh/scheduler';
 import { nf } from '@/lib/format';
 import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Kế hoạch sản xuất chung' };
 
@@ -89,9 +90,9 @@ export default async function KhThucTe({ searchParams }: { searchParams: Promise
     <>
       <Toolbar title="Kế hoạch sản xuất chung" reload={`/kh-thuc-te?from=${from}&to=${to}`}
         actions={<form action="/kh-thuc-te" className="flex flex-wrap items-center gap-1.5">
-          <input type="date" name="from" defaultValue={from} className="inp w-[150px] py-1" aria-label="Từ ngày" />
+          <DateInput name="from" defaultValue={from} className="inp w-[150px] py-1" aria-label="Từ ngày" />
           <span className="text-muted">→</span>
-          <input type="date" name="to" defaultValue={to} className="inp w-[150px] py-1" aria-label="Đến ngày" />
+          <DateInput name="to" defaultValue={to} className="inp w-[150px] py-1" aria-label="Đến ngày" />
           <button className="btn btn-sm">Xem</button>
         </form>} />
       <div className="mt-3 text-[13px] text-muted">Từ {dd(from)} đến {dd(to)} · {kh.planNo || 'chưa có kế hoạch'} · chỉ tiêu xếp theo người chịu trách nhiệm trong Quy chuẩn · kế hoạch chỉ tính các ca đã kết thúc</div>

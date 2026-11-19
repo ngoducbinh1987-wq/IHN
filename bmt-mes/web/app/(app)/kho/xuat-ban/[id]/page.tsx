@@ -10,6 +10,7 @@ import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { cancelDelivery, saveDelivery, ship, shipDirect, submitDelivery } from '../actions';
 import { ItemsFields, kindLabel, type FgGroup } from '../items-fields';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Lệnh giao' };
 
@@ -91,7 +92,7 @@ export default async function DeliveryDetail({ params, searchParams }: { params:
               <input type="hidden" name="delivery_id" value={id} />
               <div className="mb-3 grid gap-3 sm:grid-cols-3">
                 <label className="lbl"><span className="req">Khách hàng</span><input className="inp" name="customer_name" defaultValue={d.customer_name ?? ''} required /></label>
-                <label className="lbl">Ngày giao<input className="inp" type="date" name="ship_date" defaultValue={d.ship_date ?? ''} /></label>
+                <label className="lbl">Ngày giao<DateInput className="inp" name="ship_date" defaultValue={d.ship_date ?? ''} /></label>
                 <label className="lbl">Ghi chú<input className="inp" name="note" defaultValue={d.note ?? ''} /></label>
               </div>
               <ItemsFields groups={groups ?? []} rows={(items ?? []).map((i) => ({ product_code: i.product_code, brand: i.brand, pack_m: i.pack_m, coils: i.coils }))} extraRows={2} />

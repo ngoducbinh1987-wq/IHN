@@ -6,7 +6,7 @@ import { StageBar } from '@/components/stage-bar';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, InfoRow, Pill, StatusPill } from '@/components/ui';
 import { type Approval, stageLabel } from '@/lib/approvals';
-import { DOC_STATUS, SPEC_STATUS, df, nf, overdueText } from '@/lib/format';
+import { DOC_STATUS, SPEC_STATUS, df, dmy, nf, overdueText } from '@/lib/format';
 import { requireMe } from '@/lib/session';
 import { wireText } from '@/lib/spec';
 import { createClient } from '@/lib/supabase/server';
@@ -352,7 +352,7 @@ async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }
       supabase.schema('app').rpc('adj_mrp', { p_adj: a.doc_id }),
     ]);
     const KIND: Record<string, string> = { ADD: 'Thêm mã / lô', QTY: 'Đổi sản lượng', DUE: 'Đổi hạn, ưu tiên', REMOVE: 'Bỏ mã' };
-    const d = (x: string | null) => (x ? `${x.slice(8, 10)}/${x.slice(5, 7)}` : '—');
+    const d = (x: string | null) => dmy(x);
     type R = { code: string; uom: string; buy_more: number; pending_before: number; pending_after: number; action: string };
     const rv = (imp ?? {}) as { rows?: R[]; reductions?: { pr_no: string; material_code: string; old: number; new: number; uom: string }[]; error?: string; applied?: boolean };
     const buy = (Array.isArray(rv.rows) ? rv.rows : []).filter((x) => Number(x.buy_more) > 0);

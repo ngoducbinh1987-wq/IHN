@@ -16,6 +16,7 @@ import { requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { type OtRow, OptimizeTab, type ShiftReqRow } from './optimize-tab';
 import { applyChange, approveLot, approveLots, changeStep, commitLot, commitLots, confirmMaint, createChange, editChange, proposeMaint, rebuildSchedule, replanNow, returnChange, reviewSchedule, setLine, setStart } from './actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Lịch máy' };
 
@@ -264,7 +265,7 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
                 <td>{isBgd && kh.fromPlan ? (
                   <form action={setLine} className="flex flex-wrap items-center gap-1.5">
                     <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} /><input type="hidden" name="label" value={o.label} />
-                    <input type="date" name="due" defaultValue={o.due ?? ''} className="inp w-[150px] py-1" aria-label={`Hạn giao ${o.label}`} required />
+                    <DateInput name="due" defaultValue={o.due ?? ''} className="inp w-[150px] py-1" aria-label={`Hạn giao ${o.label}`} required />
                     <select name="prio" defaultValue={String(o.prio)} className="inp w-auto py-1" aria-label={`Ưu tiên ${o.label}`}><option value="1">Thường</option><option value="0">Gấp</option></select>
                     <SubmitButton className="btn btn-sm" pendingText="…">Lưu</SubmitButton>
                   </form>
@@ -279,7 +280,7 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
                       <summary className="cursor-pointer text-[12.5px] text-brand">{ln?.committed_date ? 'Đệ trình lại' : 'Đệ trình ngày'}</summary>
                       <form action={commitLot} className="mt-1 flex flex-col gap-1">
                         <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} />
-                        <input type="date" name="date" defaultValue={ln?.committed_date ?? f?.finDate ?? ''} className="inp py-1" aria-label={`Ngày chốt ${o.label}`} />
+                        <DateInput name="date" defaultValue={ln?.committed_date ?? f?.finDate ?? ''} className="inp py-1" aria-label={`Ngày chốt ${o.label}`} />
                         <input name="note" className="inp py-1" placeholder="Ghi chú (bắt buộc nếu sớm hơn dự kiến hoặc sau hạn giao)" aria-label={`Ghi chú chốt ${o.label}`} />
                         <label className="flex items-center gap-1.5 text-[12px]"><input type="checkbox" name="accept" value="1" />Đồng ý lùi các lô MES báo</label>
                         <SubmitButton className="btn btn-sm" pendingText="…">Đệ trình Giám đốc</SubmitButton>
@@ -294,7 +295,7 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
                   </> : isGdLot && ln?.committed_date ? (
                     <form action={approveLot} className="flex flex-col gap-1">
                       <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="line_id" value={o.id} /><input type="hidden" name="approve" value="1" />
-                      <input type="date" name="date" defaultValue={ln.committed_date} className="inp py-1" aria-label={`Ngày chốt Giám đốc duyệt ${o.label}`} />
+                      <DateInput name="date" defaultValue={ln.committed_date} className="inp py-1" aria-label={`Ngày chốt Giám đốc duyệt ${o.label}`} />
                       <input name="note" className="inp py-1" placeholder="Ghi chú (bắt buộc khi sửa ngày)" aria-label={`Ghi chú duyệt ${o.label}`} />
                       <SubmitButton className="btn btn-sm btn-pri" pendingText="…">Duyệt lịch lô</SubmitButton>
                     </form>
@@ -310,7 +311,7 @@ function Month({ kh, view, me }: { kh: Kh; view: View; me: string[] }) {
           <div className="card-h"><h2>Ngày bắt đầu chạy kế hoạch</h2></div>
           <form action={setStart} className="flex flex-wrap items-end gap-3 px-4 py-3">
             <input type="hidden" name="plan_id" value={kh.planId ?? ''} />
-            <label className="lbl">Ngày bắt đầu (không chọn Chủ nhật)<input type="date" name="start" defaultValue={kh.schedStart ?? kh.cal.base} className="inp w-[170px]" required /></label>
+            <label className="lbl">Ngày bắt đầu (không chọn Chủ nhật)<DateInput name="start" defaultValue={kh.schedStart ?? kh.cal.base} className="inp w-[170px]" required /></label>
             <SubmitButton className="btn">Lưu ngày bắt đầu</SubmitButton>
             <span className="text-[12.5px] text-muted">Đặt trước khi Quản lý SX xếp lịch lần đầu. Đã có lịch thì không đổi được.</span>
           </form>
@@ -819,7 +820,7 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
                 {products.map((p) => <option key={p.id} value={p.product_code}>{p.product_code} · {p.product_name}</option>)}
               </select></label>
             <label className="lbl">Số mét<input name="qty" className="inp text-right" inputMode="numeric" defaultValue={sp.qty ?? ''} placeholder="10.000" required disabled={!canSim} /></label>
-            <label className="lbl">Hạn giao khách cần<input type="date" name="due" min={minDue} className="inp" defaultValue={sp.due ?? ''} required disabled={!canSim} /></label>
+            <label className="lbl">Hạn giao khách cần<DateInput name="due" min={minDue} className="inp" defaultValue={sp.due ?? ''} required disabled={!canSim} /></label>
             <label className="lbl">Số SO<input name="so" className="inp" defaultValue={sp.so ?? ''} placeholder="SO-2611-0003" disabled={!canSim} /></label>
             <label className="lbl">Mức ưu tiên<select name="prio" className="inp" defaultValue={sp.prio ?? '1'} disabled={!canSim}><option value="1">Thường</option><option value="0">Gấp</option></select></label>
             <label className="flex items-start gap-2 text-[13.5px] sm:col-span-2 xl:col-span-6">
@@ -914,7 +915,7 @@ async function Changes({ kh, sp, roles, userId }: { kh: Kh; sp: SP; roles: strin
                   <form action={editChange} className="mt-2 flex flex-wrap items-end gap-2">
                     <input type="hidden" name="plan_id" value={kh.planId ?? ''} /><input type="hidden" name="id" value={c.id} />
                     <label className="lbl">Số mét<input className="inp w-[120px] py-1 text-right" name="qty" defaultValue={String(c.payload.qty_m ?? '')} inputMode="decimal" /></label>
-                    <label className="lbl">Hạn giao<input className="inp w-[150px] py-1" type="date" name="due" defaultValue={String(c.payload.due_date ?? '')} /></label>
+                    <label className="lbl">Hạn giao<DateInput className="inp w-[150px] py-1" name="due" defaultValue={String(c.payload.due_date ?? '')} /></label>
                     <label className="lbl">Ưu tiên<select className="inp w-auto py-1" name="prio" defaultValue={String(c.payload.priority ?? '1')}><option value="1">Thường</option><option value="0">Gấp</option></select></label>
                     <label className="lbl min-w-[220px] flex-1"><span className="req">Lý do sửa</span><input className="inp py-1" name="reason" required /></label>
                     <SubmitButton className="btn btn-sm" pendingText="Đang mô phỏng…">Lưu sửa</SubmitButton>
@@ -1007,7 +1008,7 @@ async function Maint({ kh, view, roles, userId }: { kh: Kh; view: View | null; r
   const proposeForm = (sg: ReturnType<typeof suggestMaint>, key: { plan?: string; wo?: string }) => (
     <form action={proposeMaint} className="mt-1.5 flex flex-wrap items-end gap-1.5">
       {planQ}{key.plan && <input type="hidden" name="maint_plan" value={key.plan} />}{key.wo && <input type="hidden" name="wo" value={key.wo} />}
-      <input type="date" name="date" defaultValue={sg.date} min={kh.now.date} className="inp w-[150px] py-1" aria-label="Ngày bảo dưỡng" required />
+      <DateInput name="date" defaultValue={sg.date} min={kh.now.date} className="inp w-[150px] py-1" aria-label="Ngày bảo dưỡng" required />
       <select name="mode" defaultValue={sg.mode} className="inp w-auto py-1" aria-label="Cách làm">{Object.entries(MODE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
       <input name="note" className="inp w-[160px] py-1" placeholder="Ghi chú" aria-label="Ghi chú" />
       <SubmitButton className="btn btn-sm" pendingText="…">Đề xuất</SubmitButton>

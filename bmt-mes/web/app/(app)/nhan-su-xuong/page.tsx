@@ -2,13 +2,14 @@ import Link from 'next/link';
 import { Alert, LockNote, SubTabs } from '@/components/kh';
 import { SubmitButton } from '@/components/submit-button';
 import { Empty, Flash, Kpi, Pill, Toolbar } from '@/components/ui';
-import { df } from '@/lib/format';
+import { df, dmy } from '@/lib/format';
 import { type Kh, loadKh, vnNow } from '@/lib/kh/load';
 import { addDays, dayIndex, isWorkday, peopleOf } from '@/lib/kh/scheduler';
 import { requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { deleteAbsence, deleteCover, saveAbsence, saveCover, saveOperator, setCrew, setFgKeeper, setOperatorActive, setSkill, signAll, skillAll } from './actions';
 import { type HoursRow, HoursTab, type RosterRow, RosterTab } from './roster-tab';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Nhân sự xưởng' };
 
@@ -31,7 +32,7 @@ const KIND: Record<string, string> = { PHEP: 'Nghỉ phép', OM: 'Ốm', RIENG: 
 const KIND_SHORT: Record<string, string> = { PHEP: 'P', OM: 'Ô', RIENG: 'R', CONG_TAC: 'CT', KHAC: 'K' };
 const PART: Record<string, string> = { FULL: 'Cả ngày', AM: 'Nửa đầu ca', PM: 'Nửa sau ca' };
 const TYPE_NAME: Record<string, string> = { MIXER: 'Máy trộn', BUNCHER: 'Bện', EXTRUDER_SI: 'Line silicone', TWISTER: 'Xoắn', EXTRUDER_TP: 'Line vỏ', PACKER: 'Đóng gói' };
-const dd = (d: string | null | undefined) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—');
+const dd = (d: string | null | undefined) => dmy(d);
 const WD = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const wdl = (d: string) => WD[new Date(d + 'T00:00:00Z').getUTCDay()];
 
@@ -255,8 +256,8 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
               <form action={saveAbsence} className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6 lg:items-end">
                 {tabIn}{hidden('m', month)}
                 <label className="lbl"><span className="req">Người</span><select name="operator" className="inp" required>{active.map((o) => <option key={o.code} value={o.code}>{name(o.code)}</option>)}</select></label>
-                <label className="lbl"><span className="req">Từ ngày</span><input type="date" name="from" className="inp" required defaultValue={today} /></label>
-                <label className="lbl">Đến ngày<input type="date" name="to" className="inp" /></label>
+                <label className="lbl"><span className="req">Từ ngày</span><DateInput name="from" className="inp" required defaultValue={today} /></label>
+                <label className="lbl">Đến ngày<DateInput name="to" className="inp" /></label>
                 <label className="lbl">Thời gian<select name="part" className="inp" defaultValue="FULL">{Object.entries(PART).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
                 <label className="lbl">Loại<select name="kind" className="inp" defaultValue="PHEP">{Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
                 <label className="lbl">Ghi chú<input name="note" className="inp" /></label>
@@ -292,8 +293,8 @@ export default async function NhanSuXuong({ searchParams }: { searchParams: Prom
                 {tabIn}
                 <label className="lbl"><span className="req">Người</span><select name="operator" className="inp" required>{active.map((o) => <option key={o.code} value={o.code}>{name(o.code)}</option>)}</select></label>
                 <label className="lbl"><span className="req">Máy</span><select name="machine" className="inp" required>{sched.map((m) => <option key={m.code} value={m.code}>{m.code} · {TYPE_NAME[m.machine_type] ?? m.machine_type}</option>)}</select></label>
-                <label className="lbl"><span className="req">Từ ngày</span><input type="date" name="from" className="inp" required defaultValue={today} min={today} /></label>
-                <label className="lbl">Đến ngày<input type="date" name="to" className="inp" min={today} /></label>
+                <label className="lbl"><span className="req">Từ ngày</span><DateInput name="from" className="inp" required defaultValue={today} min={today} /></label>
+                <label className="lbl">Đến ngày<DateInput name="to" className="inp" min={today} /></label>
                 <label className="lbl"><span className="req">Lý do</span><input name="reason" className="inp" placeholder="Ví dụ: NV5 nghỉ phép" required /></label>
                 <div className="lg:col-span-5"><SubmitButton className="btn btn-pri">Phân công</SubmitButton> <span className="text-[12.5px] text-muted">Người chưa có tay nghề: MES ghi &quot;kiêm nhiệm tạm&quot; trên lịch máy, lệnh ngày và báo TP KT/QA kèm, kiểm tra mẫu đầu ca.</span></div>
               </form>

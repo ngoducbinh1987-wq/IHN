@@ -7,6 +7,7 @@ import { can, requireMe, requirePage } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createDelivery } from './actions';
 import { ItemsFields, kindLabel, type FgGroup } from './items-fields';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Xuất giao hàng' };
 
@@ -40,7 +41,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
             <div className="flex flex-col gap-3">
               <datalist id="customers">{(customers ?? []).map((c) => <option key={c.id} value={c.name} />)}</datalist>
               <label className="lbl"><span className="req">Khách hàng nhận</span><input className="inp inp-y" name="customer_name" list="customers" required /></label>
-              <label className="lbl">Ngày giao<input className="inp" type="date" name="ship_date" defaultValue={today} /></label>
+              <label className="lbl">Ngày giao<DateInput className="inp" name="ship_date" defaultValue={today} /></label>
               <label className="lbl">Ghi chú (xe, người nhận, địa điểm…)<input className="inp" name="note" /></label>
             </div>
             <div>

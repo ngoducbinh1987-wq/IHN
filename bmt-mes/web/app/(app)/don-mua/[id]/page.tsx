@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/server';
 import { adminPoLine } from '../../quan-tri/data-actions';
 import { addSupplier, cancelPo, deletePoLine, movePoLines, returnToTong, savePoHeader, savePoLine, setPoLine, submitPo } from '../actions';
 import { TongView } from './tong-view';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Đơn mua hàng' };
 
@@ -122,7 +123,7 @@ export default async function PoDetail({ params, searchParams }:
                         <span className="w-8 text-[13px]">{l.uom}</span>
                         {showPrice && <input className={`inp w-[110px] py-1 text-right ${l.priced ? '' : 'inp-y'}`} name="unit_price" defaultValue={numIn(l.unit_price)} inputMode="decimal" placeholder="Đơn giá" aria-label={`Đơn giá ${l.material_code}`} />}
                         <input className={`inp w-[170px] py-1 ${l.payment_terms ? '' : 'inp-y'}`} name="payment_terms" defaultValue={l.payment_terms ?? ''} placeholder="Điều khoản thanh toán" aria-label={`Điều khoản ${l.material_code}`} />
-                        <input className="inp w-[140px] py-1" type="date" name="expected_date" defaultValue={l.expected_date ?? ''} aria-label={`Ngày giao ${l.material_code}`} />
+                        <DateInput className="inp w-[140px] py-1" name="expected_date" defaultValue={l.expected_date ?? ''} aria-label={`Ngày giao ${l.material_code}`} />
                         <SubmitButton className="btn btn-sm" pendingText="…">Lưu</SubmitButton>
                       </form>
                       {l.mrp_qty !== null && Number(l.mrp_qty) !== Number(l.qty) && <div className="text-right text-[12px] text-warn">MES đề nghị {nf(l.mrp_qty, 2)}</div>}
@@ -169,7 +170,7 @@ export default async function PoDetail({ params, searchParams }:
               <label className="lbl"><span className="req">Thêm vật tư</span><input className="inp" name="material_code" list="mats" required /></label>
               <label className="lbl"><span className="req">Số lượng</span><input className="inp text-right" name="qty" inputMode="decimal" required /></label>
               {showPrice ? <label className="lbl">Đơn giá<input className="inp text-right" name="unit_price" inputMode="decimal" /></label> : <span />}
-              <label className="lbl">Ngày về<input className="inp" type="date" name="expected_date" /></label>
+              <label className="lbl">Ngày về<DateInput className="inp" name="expected_date" /></label>
               <SubmitButton className="btn btn-pri">+ Thêm dòng</SubmitButton>
             </form>
           )}
@@ -181,7 +182,7 @@ export default async function PoDetail({ params, searchParams }:
                 {(lines ?? []).map((l) => <option key={l.id} value={l.id}>{l.line_no}. {l.material_code} · {nf(l.qty)} {l.uom}{l.unit_price !== null ? ` × ${nf(l.unit_price)} đ` : ''}</option>)}</select></label>
               <label className="lbl"><span className="req">Số lượng mới</span><input className="inp text-right" name="qty" inputMode="decimal" required /></label>
               <label className="lbl"><span className="req">Đơn giá mới</span><input className="inp text-right" name="price" inputMode="decimal" required /></label>
-              <label className="lbl">Ngày về<input className="inp" type="date" name="expected_date" /></label>
+              <label className="lbl">Ngày về<DateInput className="inp" name="expected_date" /></label>
               <label className="lbl"><span className="req">Lý do</span><input className="inp" name="reason" required /></label>
               <SubmitButton className="btn btn-pri">Lưu</SubmitButton>
             </form>
@@ -204,7 +205,7 @@ export default async function PoDetail({ params, searchParams }:
                       {(sups ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select></label>
                 )}
-                <label className="lbl">Ngày hàng về<input className="inp" type="date" name="expected_date" defaultValue={po.expected_date ?? ''} /></label>
+                <label className="lbl">Ngày hàng về<DateInput className="inp" name="expected_date" defaultValue={po.expected_date ?? ''} /></label>
                 <label className="lbl">Điều khoản thanh toán<input className="inp" name="payment_terms" defaultValue={po.payment_terms ?? ''} placeholder="Ví dụ: 30 ngày sau khi nhận hàng" /></label>
                 <label className="lbl">Ghi chú<textarea className="inp" name="note" rows={2} defaultValue={po.note ?? ''} /></label>
                 <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" name="is_import" defaultChecked={po.is_import} />Hàng nhập khẩu</label>

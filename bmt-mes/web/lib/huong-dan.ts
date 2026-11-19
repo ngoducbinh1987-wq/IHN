@@ -285,18 +285,18 @@ export const GUIDES: Guide[] = [
   },
   {
     slug: 'de-xuat-mua',
-    title: 'Đề xuất mua bổ sung, tích trữ, tối ưu',
+    title: 'Đề xuất mua (NVL ngoài kế hoạch, công cụ dụng cụ, máy, thiết bị)',
     group: 'Mua hàng',
-    intro: 'Mua ngoài kế hoạch tháng: bù dưới mức dự phòng, mua tích trữ, mua tối ưu giá.',
+    intro: 'Mua ngoài kế hoạch tháng. Bốn loại: mua bổ sung NVL (thiếu cho sản xuất, dưới mức dự phòng), tích trữ NVL, tối ưu giá NVL, mua công cụ dụng cụ, máy, trang thiết bị phục vụ sản xuất. Chọn loại thì MES hiện dòng định nghĩa ngắn.',
     steps: [
-      { k: 'Lập đề xuất: chọn loại, vật tư, số lượng, ngày cần', who: 'NV mua / TP Mua / TP SX', dept: 'MUA', time: 'Khi phát sinh',
+      { k: 'Lập đề xuất: chọn loại (đọc dòng định nghĩa), vật tư, số lượng, ngày cần', who: 'NV mua / TP Mua / TP SX', dept: 'MUA', time: 'Khi phát sinh',
         out: 'Đề xuất Nháp (thấy tồn, đang về, tồn dự kiến)', at: '/de-xuat/moi' },
       { k: 'Gửi duyệt', who: 'Người lập', dept: 'MUA', time: 'Cùng ngày', out: 'TP Mua nhận thông báo' },
       { k: 'Duyệt (được sửa số lượng)', who: 'TP Mua', dept: 'MUA', time: '24 giờ', out: 'Chuyển Giám đốc', at: '/duyet', back: 'Trả lại → người lập sửa' },
       { k: 'Duyệt (được sửa)', who: 'Giám đốc', dept: 'BGD', time: '24 giờ', out: 'Đề xuất Đã duyệt', at: '/duyet', back: 'Trả lại → người lập sửa' },
       { k: 'Lập đơn mua hàng tổng từ đề xuất, rồi đi quy trình "Đơn mua hàng tổng, hợp đồng"', who: 'MES', dept: 'MES', time: 'Ngay khi Giám đốc duyệt', out: 'Đơn mua tổng giao NV mua (hạn 5 ngày làm việc)', at: '/don-mua' },
     ],
-    notes: ['Tích trữ, tối ưu chỉ NV mua, TP Mua lập. Vật tư theo kế hoạch tháng không lập đề xuất: MES đã sinh đơn mua.'],
+    notes: ['Tích trữ NVL, tối ưu giá NVL chỉ NV mua, TP Mua lập. Vật tư theo kế hoạch tháng không lập đề xuất: MES đã sinh đơn mua.', 'NVL và công cụ dụng cụ, máy, thiết bị lập đề xuất riêng: MES chặn vật tư sai loại. Công cụ, máy chưa có mã thì thêm ở Vật tư, nhóm "Công cụ dụng cụ" hoặc "Máy, trang thiết bị, tài sản".', 'Ngày trong MES nhập và hiện theo dạng dd/mm/yyyy (gõ 05/11/2026 hoặc bấm biểu tượng lịch).'],
   },
   {
     slug: 'ton-du-phong',

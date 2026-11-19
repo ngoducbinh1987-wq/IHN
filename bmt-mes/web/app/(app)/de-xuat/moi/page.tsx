@@ -1,8 +1,11 @@
 import { SubmitButton } from '@/components/submit-button';
+import { PrKindField } from '@/components/pr-kind-field';
 import { Flash, Toolbar } from '@/components/ui';
+import { TOOL_GROUPS } from '@/lib/purchase';
 import { requirePage, requirePerm } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { createPr } from '../actions';
+import { DateInput } from '@/components/date-input';
 
 export const metadata = { title: 'Thêm đề xuất mua hàng' };
 
@@ -12,25 +15,23 @@ export default async function NewPr({ searchParams }: { searchParams: Promise<{ 
   const me = await requirePerm('purchase', 'create');
   const buyer = me.roles.some((r) => r === 'MUA_NV' || r === 'MUA_TP' || r === 'ADMIN');
   const supabase = await createClient();
-  const { data: mats } = await supabase.schema('app').from('v_materials').select('code, name, uom').order('code');
+  const { data: mats } = await supabase.schema('app').from('v_materials').select('code, name, uom, group_code').order('code');
+  const opt = (m: { code: string; name: string; uom: string }) => <option key={m.code} value={`${m.code} · ${m.name} (${m.uom})`} />;
+  const nvl = (mats ?? []).filter((m) => !TOOL_GROUPS.includes(m.group_code ?? ''));
+  const tools = (mats ?? []).filter((m) => TOOL_GROUPS.includes(m.group_code ?? ''));
   return (
     <>
       <Toolbar title="Thêm đề xuất mua hàng" reload="/de-xuat/moi" />
       <div className="mt-4"><Flash err={sp.err} /></div>
       <form action={createPr} className="card flex flex-col gap-4 p-4 md:p-5">
-        <datalist id="mats">{(mats ?? []).map((m) => <option key={m.code} value={`${m.code} · ${m.name} (${m.uom})`} />)}</datalist>
-        <div className="grid gap-4 md:grid-cols-[1fr_2fr_1fr]">
-          <label className="lbl"><span className="req">Loại đề xuất</span>
-            <select className="inp" name="kind" defaultValue="BO_SUNG">
-              <option value="BO_SUNG">Mua bổ sung</option>
-              {buyer && <option value="TICH_TRU">Mua tích trữ</option>}
-              {buyer && <option value="TOI_UU">Mua tối ưu (giá, MOQ, rủi ro cung ứng)</option>}
-            </select>
-          </label>
+        <datalist id="mats">{nvl.map(opt)}</datalist>
+        <datalist id="mats-ccdc">{tools.map(opt)}</datalist>
+        <div className="grid items-start gap-4 md:grid-cols-[1.3fr_2fr_1fr]">
+          <PrKindField buyer={buyer} listIds={{ nvl: 'mats', tool: 'mats-ccdc' }} />
           <label className="lbl"><span className="req">Nội dung / lý do đề xuất</span>
             <input className="inp" name="note" required placeholder="Ví dụ: Mua bổ sung đồng 0,24 cho đơn hàng tháng 11" />
           </label>
-          <label className="lbl">Ngày cần hàng<input className="inp" type="date" name="need_date" /></label>
+          <label className="lbl">Ngày cần hàng<DateInput className="inp" name="need_date" /></label>
         </div>
         <div className="overflow-x-auto rounded border border-line">
           <table className="tbl">
@@ -46,7 +47,7 @@ export default async function NewPr({ searchParams }: { searchParams: Promise<{ 
             </tbody>
           </table>
         </div>
-        <p className="text-[13px] text-muted">Đề xuất theo kế hoạch tháng sinh từ MRP (Kế hoạch &amp; MRP). Số lượng tùy nhu cầu. Cần thêm dòng: lưu nháp rồi thêm tiếp ở trang chi tiết. Số dùng dấu phẩy cho phần thập phân (12,5). Gửi duyệt: TP Mua duyệt → Giám đốc duyệt.</p>
+        <p className="text-[13px] text-muted">Đề xuất mua NVL theo kế hoạch tháng do MES sinh từ MRP (Kế hoạch &amp; MRP). Công cụ dụng cụ, máy, thiết bị và nguyên vật liệu lập đề xuất riêng; công cụ, máy chưa có mã thì thêm ở Vật tư (nhóm Công cụ dụng cụ hoặc Máy, trang thiết bị, tài sản). Số lượng tùy nhu cầu. Cần thêm dòng: lưu nháp rồi thêm tiếp ở trang chi tiết. Số dùng dấu phẩy cho phần thập phân (12,5). Gửi duyệt: TP Mua duyệt → Giám đốc duyệt.</p>
         <div className="flex flex-wrap gap-2">
           <SubmitButton className="btn btn-pri">Lưu và gửi duyệt</SubmitButton>
           <SubmitButton className="btn" formAction={async (f: FormData) => { 'use server'; f.set('send', '0'); await createPr(f); }}>Lưu nháp</SubmitButton>
