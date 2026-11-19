@@ -1,4 +1,4 @@
--- Kiểm thử migration 20261026010300: module Khuôn (danh mục, quy tắc, tra khuôn theo spec, OD thực tế, đề xuất, đặt khuôn, Alarm).
+-- Kiểm thử migration 20261026010400: module Khuôn (danh mục, quy tắc, tra khuôn theo spec, OD thực tế, đề xuất, đặt khuôn, Alarm).
 -- Chạy được bằng psql hoặc Supabase (net.http_get + DO). Kết thúc bằng "lỗi" KET_QUA_OK để ROLLBACK.
 set client_min_messages = warning;
 begin;
@@ -155,9 +155,9 @@ select pg_temp.blocked($$select app.die_order(array[(select id from master.dies 
 select pg_temp.as_api($$insert into t select 'pr', app.die_order(array[pg_temp.v('dTS'), pg_temp.v('dDS')], current_date + 10, 'Đặt khuôn silicone HER15')$$);
 select pg_temp.ok((select count(*) from purchase.pr_lines l join master.materials m on m.id = l.material_id
                     where l.pr_id = pg_temp.v('pr') and m.group_code = 'TOOLING' and m.code like 'KH-%') = 2
-   and (select pr_kind from purchase.purchase_requests where id = pg_temp.v('pr')) = 'BO_SUNG'
+   and (select pr_kind from purchase.purchase_requests where id = pg_temp.v('pr')) = 'CCDC'
    and (select bool_and(status = 'ORDERED' and pr_id = pg_temp.v('pr')) from master.dies where id in (pg_temp.v('dTS'), pg_temp.v('dDS'))),
-  'NV mua đặt khuôn: đề xuất mua bổ sung 2 dòng vật tư dụng cụ KH-…, khuôn chuyển Đã đặt');
+  'NV mua đặt khuôn: đề xuất mua công cụ dụng cụ 2 dòng KH-…, khuôn chuyển Đã đặt');
 select pg_temp.as_user('D_KTTP');
 select pg_temp.blocked($$select app.die_set_status(pg_temp.v('dTS'), 'WORN', '')$$, 'lý do', 'Báo khuôn mòn phải ghi lý do');
 select pg_temp.as_api($$select app.die_set_status(id, 'AVAILABLE', 'Đã nhận khuôn') from master.dies where id in (select v from t where k like 'd%' and v is not null)$$);

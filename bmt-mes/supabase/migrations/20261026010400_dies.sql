@@ -1,4 +1,4 @@
--- Module Khuôn (anh Bình duyệt 19/11/2026, Claude Doc "BMT MES – Danh mục khuôn tối ưu (đùn, bện)"):
+-- Migration 20261026010400 – Module Khuôn (anh Bình duyệt 19/11/2026, Claude Doc "BMT MES – Danh mục khuôn tối ưu (đùn, bện)"):
 --  * Danh mục khuôn (Quản lý máy → Khuôn): khuôn trong (tip), khuôn ngoài (die) đùn cách điện / vỏ, khuôn bện, khuôn xoắn.
 --  * Quy tắc kích thước rút từ bảng khuôn nhà máy; TP KT/QA sửa. MES tự tra khuôn cho từng spec × công đoạn, đề xuất kích thước còn thiếu.
 --  * Anh Bình chốt: OD trong spec = OD tối ưu, thêm OD thực tế (khuôn vỏ tính theo OD thực tế khi đã đo);
@@ -467,7 +467,7 @@ begin
   end if;
 end $$;
 
--- NV mua / TP Mua đặt khuôn: tạo mã vật tư dụng cụ (nếu chưa có) + đề xuất mua bổ sung, khuôn chuyển "Đã đặt"
+-- NV mua / TP Mua đặt khuôn: tạo mã vật tư công cụ dụng cụ (nếu chưa có) + đề xuất mua công cụ dụng cụ (CCDC), khuôn chuyển "Đã đặt"
 create or replace function app.die_order(p_ids uuid[], p_need date, p_note text) returns uuid
 language plpgsql security definer set search_path = pg_catalog, public as $$
 declare d record; v_lines jsonb := '[]'; v_mat uuid; v_mcode text; v_pr uuid; n int := 0;
@@ -495,7 +495,7 @@ begin
     n := n + 1;
   end loop;
   if n = 0 then raise exception 'Chọn khuôn cần đặt'; end if;
-  v_pr := app.create_pr(p_need, coalesce(nullif(trim(p_note), ''), 'Đặt khuôn theo danh mục khuôn'), v_lines, 'BO_SUNG');
+  v_pr := app.create_pr(p_need, coalesce(nullif(trim(p_note), ''), 'Đặt khuôn theo danh mục khuôn'), v_lines, 'CCDC');
   update master.dies set status = 'ORDERED', pr_id = v_pr, updated_by = auth.uid(), updated_at = now() where id = any(p_ids);
   perform app.admin_log('master.dies', v_pr::text, 'DIE_ORDER', null, jsonb_build_object('dies', p_ids, 'pr', v_pr));
   return v_pr;
