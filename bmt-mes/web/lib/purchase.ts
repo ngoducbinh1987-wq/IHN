@@ -4,13 +4,13 @@ import type { Tone } from './format';
 export type PrKind = 'KE_HOACH' | 'BO_SUNG' | 'TICH_TRU' | 'TOI_UU' | 'CCDC';
 export const PR_KINDS: { code: PrKind; label: string; def: string; buyerOnly?: boolean; manual: boolean }[] = [
   { code: 'BO_SUNG', label: 'Mua bổ sung nguyên vật liệu', manual: true,
-    def: 'Bù NVL đang thiếu cho sản xuất ngoài kế hoạch tháng, hoặc bù tồn kho đã xuống dưới mức dự phòng.' },
+    def: 'Bù NVL thiếu cho sản xuất ngoài kế hoạch tháng, hoặc bù tồn kho dưới mức dự phòng.' },
   { code: 'TICH_TRU', label: 'Tích trữ nguyên vật liệu', manual: true, buyerOnly: true,
-    def: 'Mua NVL trước, nhiều hơn nhu cầu gần, để phòng thiếu hàng, giá tăng hoặc NCC giao chậm. Chỉ Phòng mua hàng lập.' },
+    def: 'Mua NVL trước nhu cầu để phòng thiếu hàng, giá tăng, NCC giao chậm. Chỉ Phòng mua lập.' },
   { code: 'TOI_UU', label: 'Tối ưu giá nguyên vật liệu', manual: true, buyerOnly: true,
-    def: 'Mua NVL theo lô hoặc thời điểm có giá tốt (chiết khấu, đủ MOQ, gộp vận chuyển) để giảm giá mua. Chỉ Phòng mua hàng lập.' },
+    def: 'Mua NVL theo lô, thời điểm giá tốt (chiết khấu, đủ MOQ, gộp vận chuyển). Chỉ Phòng mua lập.' },
   { code: 'CCDC', label: 'Mua công cụ dụng cụ, máy, trang thiết bị', manual: true,
-    def: 'Mua công cụ dụng cụ (bobin, khuôn, dụng cụ đo…), máy, trang thiết bị, tài sản phục vụ sản xuất. Không dùng cho NVL.' },
+    def: 'Công cụ dụng cụ (bobin, khuôn, dụng cụ đo…), máy, thiết bị, tài sản phục vụ sản xuất. Không dùng cho NVL.' },
   { code: 'KE_HOACH', label: 'Mua NVL theo kế hoạch tháng', manual: false,
     def: 'MES tự sinh từ MRP khi kế hoạch tháng được chốt. Không lập tay.' },
 ];

@@ -20,7 +20,7 @@ export function PrKindField({ defaultValue = 'BO_SUNG', buyer, name = 'kind', la
       {kinds.map((k) => <option key={k.code} value={k.code}>{k.label}</option>)}
     </select>
   );
-  const def = cur && <span className="mt-1 line-clamp-2 text-[12.5px] font-normal leading-snug text-muted" id={`${name}-def`}>{cur.def}</span>;
+  const def = cur && <span className="mt-1 text-[12.5px] font-normal leading-snug text-muted" id={`${name}-def`}>{cur.def}</span>;
   return label ? (
     <label className="lbl"><span className="req">Loại đề xuất</span>{select}{def}</label>
   ) : (

@@ -26,7 +26,7 @@ export default async function NewPr({ searchParams }: { searchParams: Promise<{ 
       <form action={createPr} className="card flex flex-col gap-4 p-4 md:p-5">
         <datalist id="mats">{nvl.map(opt)}</datalist>
         <datalist id="mats-ccdc">{tools.map(opt)}</datalist>
-        <div className="grid items-start gap-4 md:grid-cols-[1.3fr_2fr_1fr]">
+        <div className="grid items-start gap-4 md:grid-cols-[2fr_2fr_1fr]">
           <PrKindField buyer={buyer} listIds={{ nvl: 'mats', tool: 'mats-ccdc' }} />
           <label className="lbl"><span className="req">Nội dung / lý do đề xuất</span>
             <input className="inp" name="note" required placeholder="Ví dụ: Mua bổ sung đồng 0,24 cho đơn hàng tháng 11" />
