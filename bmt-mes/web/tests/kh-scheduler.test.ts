@@ -263,4 +263,35 @@ if (off.slots.some((s) => s.machine === 'EXT-SI-02')) bad('máy ngừng dùng v�
   eq(rateOn({ ...cfg, ...cfgB, plc_speeds: [] }, 'BUN-01', 'CD1', { size: 1, shield: false, product_id: 'x', group: 'CFR', core: 'M1', mix: null }, 'PLC').v, 65, 'PLC thiếu dữ liệu: theo cỡ');
   console.log('tốc độ theo cỡ → chung: đạt');
 }
+// Khuôn (migration 20261026010300): đổi mã cùng khuôn vỏ chỉ chỉnh in; khác cỡ cùng khuôn cách điện không thay khuôn;
+// một bộ khuôn không chạy song song trên hai máy, có hai bộ thì chạy song song được
+{
+  const cfgD = { ...cfg, changeovers: [...cfg.changeovers, { code: 'SH_PRINT', op_code: 'CD5', label: '', minutes: 10, sort: 9 }] };
+  const a = { ...mk(1, 'HOME-KV15X2LZ', 'CFR', 1.5, ['Trắng', 'Nâu'], 'RAL 6037', 8000, '2026-11-20'), dies: { CD2: ['TS-1.60', 'DS-2.60'], CD5: ['TV-5.80', 'DV-6.94'] } };
+  const b = { ...mk(2, 'HOME-KV15X2FP', 'PFR', 1.5, ['Trắng', 'Nâu'], 'RAL 6037', 8000, '2026-11-20'), dies: { CD2: ['TS-1.60', 'DS-2.60'], CD5: ['TV-5.80', 'DV-6.94'] } };
+  const d1 = schedule([a, b], { ...ctx, cfg: { ...cfgD, die_qty: { 'TV-5.80': 1, 'DV-6.94': 1, 'TS-1.60': 1, 'DS-2.60': 1 } } });
+  check(d1, [a, b], 'khuôn 1 bộ', cfgD);
+  const cd5 = d1.slots.filter((s) => s.op === 'CD5').sort((x, y) => x.start - y.start);
+  const sw = cd5.find((s, i) => i > 0 && cd5[i - 1].machine === s.machine && cd5[i - 1].lineId !== s.lineId);
+  if (sw && !(sw.setup <= 10 + 1e-6 && sw.why.includes('cùng khuôn vỏ'))) bad(`đổi mã cùng khuôn vỏ phải chỉ chỉnh in 10 phút, được ${sw.setup} (${sw.why})`);
+  // một bộ khuôn: hai máy không dùng cùng lúc (CD2 trên EXT-SI-01/02, CD5 trên EXT-TP-01/02)
+  for (const op of ['CD2', 'CD5'] as const) {
+    const sl = d1.slots.filter((s) => s.op === op);
+    for (const x of sl) for (const y of sl) if (x.machine < y.machine && x.start < y.end - 1e-6 && y.start < x.end - 1e-6) bad(`khuôn 1 bộ mà ${op} chạy song song ${x.machine}/${y.machine}`);
+  }
+  // hai bộ: được chạy song song trên hai máy (xong sớm hơn hoặc bằng)
+  const d2 = schedule([a, b], { ...ctx, cfg: { ...cfgD, die_qty: { 'TV-5.80': 2, 'DV-6.94': 2, 'TS-1.60': 2, 'DS-2.60': 2 } } });
+  check(d2, [a, b], 'khuôn 2 bộ', cfgD);
+  const end = (x: typeof d1) => Math.max(...x.slots.map((s) => s.end));
+  if (end(d2) > end(d1) + 1e-6) bad('hai bộ khuôn mà xong muộn hơn một bộ');
+  const par = (x: typeof d1) => x.slots.filter((s) => s.op === 'CD2').some((s) => x.slots.some((t) => t.op === 'CD2' && t.machine !== s.machine && s.start < t.end && t.start < s.end));
+  // khuôn chưa có sẵn (không có trong die_qty): không giới hạn như trước
+  const d0 = schedule([a, b], { ...ctx, cfg: { ...cfgD, die_qty: {} } });
+  check(d0, [a, b], 'khuôn chưa có', cfgD);
+  console.log('khuôn: 1 bộ', (end(d1) / cal.S).toFixed(2), 'ca, song song', par(d1), '| 2 bộ', (end(d2) / cal.S).toFixed(2), 'ca, song song', par(d2),
+    '| cảnh báo', (d1.warnings ?? []).filter((w) => w.includes('Khuôn')).length);
+  if (!par(d2) && par(d0)) bad('hai bộ khuôn mà không chạy song song');
+  if (par(d1)) bad('một bộ khuôn mà chạy song song');
+  if (!(d1.warnings ?? []).some((w) => w.includes('cần thêm bộ khuôn')) && par(d0)) bad('thiếu cảnh báo cần thêm bộ khuôn');
+}
 console.log(errs ? `${errs} LỖI` : 'TẤT CẢ ĐẠT');

@@ -15,7 +15,7 @@ export type NavItem = { href: string; label: string; icon: string; group: string
 
 function AlarmTag({ n, title }: { n: number; title?: string }) {
   return (
-    <span className="menu-alarm inline-flex shrink-0 items-center gap-1 rounded bg-bad px-1.5 py-0.5 text-[11.5px] font-semibold uppercase leading-none text-white" title={title} role="status" aria-label={`Alarm: ${n} máy thiếu thông số`}>
+    <span className="menu-alarm inline-flex shrink-0 items-center gap-1 rounded bg-bad px-1.5 py-0.5 text-[11.5px] font-semibold uppercase leading-none text-white" title={title} role="status" aria-label={title ?? `Alarm ${n}`}>
       <AlertTriangle size={12} />Alarm {n}
     </span>
   );

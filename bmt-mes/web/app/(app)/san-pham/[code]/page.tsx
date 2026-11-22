@@ -10,7 +10,8 @@ import { SPEC_STATUS, df, nf, numIn } from '@/lib/format';
 import { can, requirePage, requirePerm } from '@/lib/session';
 import { wireText } from '@/lib/spec';
 import { createClient } from '@/lib/supabase/server';
-import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminApplyConductor, adminRenameProduct, adminUpdateSpec, deleteBomLine, newVersion, previewSpec, recordPilot, saveBomLine, saveDeviation, submitSpec, updateSpec } from './actions';
+import { DIE_STATUS, dieHole } from '@/lib/machine';
+import { adminDeleteBomLine, adminDeleteVersion, adminSaveBomLine, adminApplyConductor, adminRenameProduct, adminUpdateSpec, deleteBomLine, newVersion, previewSpec, recordPilot, saveBomLine, saveDeviation, setOdActual, submitSpec, updateSpec } from './actions';
 
 const BASIS: Record<string, string> = { KM: '/km', PACK: '/kiện', PALLET: '/pallet', LOT: '/lô' };
 const INS_NAME: Record<string, string> = { SIL: 'Silicone', HDPE: 'HDPE', PVC: 'PVC' };
@@ -45,6 +46,11 @@ export default async function ProductDetail({ params, searchParams }:
     supabase.schema('master').rpc('bom_issues', { p_spec: specId }),
     supabase.schema('master').from('core_types').select('rdc_source').eq('set_id', spec.param_set_id).eq('code', spec.core_code).maybeSingle(),
   ]);
+  // Khuôn dùng cho spec này (MES tra theo quy tắc kích thước, Quản lý máy → Khuôn)
+  const { data: dieRows } = await supabase.schema('app').rpc('spec_dies', { p_spec: specId });
+  const dies = (dieRows ?? []) as { kind: string; label: string; op_code: string; basis_name: string; basis: number; req: number; suggest: number;
+    a_mm: number | null; l_mm: number | null; die_code: string | null; die_status: string | null; ready: boolean; price: number | null }[];
+  const canOd = spec.status !== 'OBSOLETE' && me.roles.some((r) => ['ADMIN', 'KT_TP', 'QC', 'SX_TP'].includes(r));
   const perPallet = Number((pallets ?? []).find((x) => x.code === (spec.pack_type === 'Cuộn PE' ? 'palletC' : 'palletW'))?.value) || null;
   const { data: flow } = await supabase.schema('wf').from('approval_steps').select('seq, level_label, role_code')
     .eq('doc_type', 'SPEC_NEW').eq('enabled', true).order('seq');
@@ -249,7 +255,8 @@ export default async function ProductDetail({ params, searchParams }:
                 {Number(res?.alpet_kgkm) > 0 && <tr><td className="text-muted">Băng AL/PET</td><td className="num">{nf(res?.alpet_kgkm, 3)} kg/km</td></tr>}
                 {Number(res?.drain_kgkm) > 0 && <tr><td className="text-muted">Drain {spec.drain_mat}</td><td className="num">{nf(res?.drain_kgkm, 3)} kg/km</td></tr>}
                 <tr><td className="text-muted">Tổng</td><td className="num font-medium">{nf(res?.total_kgkm, 2)} kg/km</td></tr>
-                <tr><td className="text-muted">OD</td><td className="num">{nf(res?.od_mm, 2)} mm</td></tr>
+                <tr><td className="text-muted">OD tối ưu</td><td className="num">{nf(res?.od_mm, 2)} mm</td></tr>
+                <tr><td className="text-muted">OD thực tế</td><td className="num">{res?.od_actual_mm !== null && res?.od_actual_mm !== undefined ? `${nf(res.od_actual_mm, 2)} mm` : <span className="text-muted">chưa đo</span>}</td></tr>
                 <tr><td className="text-muted">Rdc tính / giới hạn</td><td className={`num ${res && res.rdc_limit !== null && res.rdc_calc > res.rdc_limit ? 'font-medium text-bad' : ''}`}>{nf(res?.rdc_calc, 3)} / {res?.rdc_limit === null ? '—' : nf(res?.rdc_limit, 2)}</td></tr>
                 {coreType?.rdc_source && <tr><td colSpan={2} className="text-[12px] text-muted">Giới hạn Rdc: {coreType.rdc_source}</td></tr>}
               </tbody>
@@ -266,6 +273,37 @@ export default async function ProductDetail({ params, searchParams }:
                 <div className="mt-1 text-muted">Cần đo Rdc mẫu pilot (thẻ Pilot) để xác nhận.</div>
               </div>
             ) : <div className="mt-3 rounded border-l-4 border-brand bg-brand-soft px-3 py-2 text-[13px] text-brand-dark">Đạt kiểm tra tự động.</div>}
+          </section>
+          <section className="card p-4" id="khuon-dung">
+            <h2 className="mb-2 font-medium">Khuôn dùng <span className="text-[12.5px] font-normal text-muted">MES tra theo quy tắc, chỉ xem</span></h2>
+            {dies.length === 0 ? <p className="text-[13.5px] text-muted">Chưa có kết quả tính (lưu thông số trước).</p> : (
+              <table className="w-full text-[13.5px]">
+                <tbody className="[&_td]:py-1 [&_td]:align-top">
+                  {dies.map((d) => (
+                    <tr key={d.kind} className="border-b border-line/60 last:border-0">
+                      <td><div>{d.op_code} · {d.label}</div><div className="text-[12px] text-muted">{d.basis_name} {nf(d.basis, 2)} → cần {dieHole(d.kind)} {nf(d.req, 2)}</div></td>
+                      <td className="text-right">{d.die_code
+                        ? <><div className="font-medium">{d.die_code}</div><StatusPill map={DIE_STATUS} value={d.die_status} /></>
+                        : <><Pill tone="bad">Chưa có khuôn</Pill><div className="text-[12px] text-muted">MES đề xuất {dieHole(d.kind)} {nf(d.suggest, 2)}</div></>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {dies.some((d) => !d.ready) && <p className="mt-2 text-[12.5px] text-bad">Còn khuôn chưa có sẵn: xem <Link className="underline" href="/may/khuon?tab=thieu">Quản lý máy → Khuôn</Link>.</p>}
+            {res?.od_actual_note && <p className="mt-2 text-[12.5px] text-muted">OD thực tế: {res.od_actual_note} ({df(res.od_actual_at, true)})</p>}
+            {canOd && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[13px] text-brand">Nhập OD thực tế (đo)</summary>
+                <form action={setOdActual} className="mt-2 grid gap-2">
+                  <input type="hidden" name="code" value={code} /><input type="hidden" name="spec_id" value={specId} />
+                  <label className="lbl">OD thực tế (mm, trống = bỏ)<input className="inp text-right" name="od" defaultValue={numIn(res?.od_actual_mm)} /></label>
+                  <label className="lbl"><span className="req">Căn cứ</span><input className="inp" name="note" placeholder="Đo lô LSX-…, thước laser, trung bình 10 điểm" required /></label>
+                  <div className="text-[12px] text-muted">Khuôn ngoài vỏ tính theo OD thực tế khi đã đo; OD tối ưu trong thông số giữ nguyên.</div>
+                  <div><SubmitButton className="btn btn-sm btn-pri" pendingText="…">Lưu OD thực tế</SubmitButton></div>
+                </form>
+              </details>
+            )}
           </section>
           <section className="card p-4 text-[14px]">
             <div className="flex justify-between py-1"><span className="text-muted">Nhóm</span><span>{p.group_name}</span></div>

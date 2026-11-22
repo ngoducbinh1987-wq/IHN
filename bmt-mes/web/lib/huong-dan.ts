@@ -41,6 +41,7 @@ export type Guide = {
 
 // Màn hình MES theo đường dẫn (hiện tên thay cho đường dẫn)
 export const SCREENS: Record<string, string> = {
+  '/may/khuon': 'Quản lý máy → Khuôn',
   '/ke-hoach': 'Sản xuất → Kế hoạch & MRP',
   '/ke-hoach/dieu-chinh': 'Sản xuất → Điều chỉnh kế hoạch tháng',
   '/lich-may': 'Sản xuất → Lịch máy',
@@ -488,6 +489,34 @@ export const GUIDES: Guide[] = [
   },
 
   // ================================================================ QUẢN LÝ MÁY
+  {
+    slug: 'chon-khuon',
+    title: 'Chọn khuôn, đặt khuôn',
+    group: 'Quản lý máy',
+    intro: 'MES tự chọn khuôn (khuôn bện, tip + die cách điện, khuôn xoắn, tip + die vỏ) cho từng mã theo quy tắc kích thước. '
+      + 'Khuôn vỏ tính theo OD thực tế khi đã đo, chưa đo thì theo OD tối ưu trong spec. Mã trong kế hoạch tháng chưa có khuôn sẵn thì menu báo ALARM.',
+    steps: [
+      { k: 'Xem khuôn dùng của mã (khung "Khuôn dùng", chỉ xem); đo xong lô đầu thì nhập OD thực tế', who: 'TP KT/QA, QC', dept: 'KT', time: 'Khi có mã mới; sau lô đầu',
+        out: 'MES tra lại khuôn vỏ theo OD thực tế', at: '/san-pham' },
+      { k: 'Mã chưa có khuôn: xem MES đề xuất kích thước (gom ít khuôn nhất), bấm "Thêm khuôn vào danh mục"', who: 'TP KT/QA', dept: 'KT', time: '1 ngày làm việc (đề xuất)',
+        out: 'Khuôn mới trạng thái Cần đặt', at: '/may/khuon' },
+      { k: 'Tích khuôn cần đặt (mã trong kế hoạch tháng chọn sẵn), lập đề xuất mua', who: 'NV mua / TP Mua', dept: 'MUA', time: 'Ngay khi có ALARM',
+        out: 'Đề xuất mua bổ sung; khuôn Đã đặt', at: '/may/khuon' },
+      { k: 'Duyệt đề xuất mua → đơn mua tổng → hợp đồng như vật tư khác', who: 'TP Mua → Giám đốc', dept: 'BGD', time: '1 ngày làm việc mỗi bước', out: 'Hợp đồng mua khuôn', at: '/de-xuat' },
+      { k: 'Nhận khuôn, kiểm kích thước, đổi trạng thái "Có sẵn", ghi vị trí cất', who: 'TP KT/QA', dept: 'KT', time: 'Khi khuôn về',
+        out: 'Khuôn Có sẵn; hết ALARM; bắt đầu tính km chạy', at: '/may/khuon' },
+      { k: 'Lịch máy gom lô dùng chung khuôn; một bộ khuôn không chạy cùng lúc trên hai máy', who: 'MES', dept: 'MES', time: 'Mỗi lần xếp lịch',
+        out: 'Ít lần thay khuôn; báo "cần thêm bộ khuôn" khi hai line cần cùng lúc', at: '/lich-may' },
+      { k: 'Báo khuôn mòn / hỏng (OD đo trên chuyền vượt lỗ khuôn: MES nhắc kiểm tra)', who: 'TP SX, TP KT/QA', dept: 'SX', time: 'Khi phát hiện',
+        out: 'Báo TP KT/QA, TP Mua đặt khuôn thay', at: '/may/khuon', back: 'Khuôn hỏng không dùng; khuôn mòn dùng tạm đến khi có khuôn thay' },
+    ],
+    notes: [
+      'Quy tắc (anh Bình chốt 19/11/2026): khuôn trong và khuôn bện, khuôn xoắn = cơ sở + khe hở, làm tròn 0,05 mm; khuôn ngoài cách điện dùng chung ±0,05 mm; '
+        + 'khuôn ngoài vỏ dùng chung ±0,08 mm, vỏ LSZH, PVC, FR-PVC dùng chung khuôn.',
+      'Khuôn bện KB-2,10 dùng cho ruột Ø1,80–2,00 mm (gộp 1,95 và 2,05). Khuôn 4,90 và 5,85 là khuôn máy xoắn.',
+      'TP KT/QA sửa quy tắc ở tab Quy tắc kích thước; Lệnh SX ngày cảnh báo mã chạy trong ngày còn thiếu khuôn.',
+    ],
+  },
   {
     slug: 'may-hong',
     title: 'Báo hỏng máy, sửa chữa',

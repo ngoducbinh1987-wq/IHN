@@ -387,3 +387,52 @@ export async function addCheckItem(form: FormData) {
   if (error) back(form, 'err', friendly(error.message));
   done(form, 'Đã thêm mục kiểm tra đầu ca');
 }
+
+// ---------------------------------------------------------------- Khuôn
+const dieJson = (form: FormData) => ({
+  kind: txt(form, 'kind'), code: txt(form, 'code'), size: num(form, 'size'), a_mm: num(form, 'a_mm'), l_mm: num(form, 'l_mm'),
+  qty: num(form, 'qty'), fit_min: num(form, 'fit_min'), fit_max: num(form, 'fit_max'), price: num(form, 'price'),
+  life_km: num(form, 'life_km'), km_base: num(form, 'km_base'), location: txt(form, 'location'), note: txt(form, 'note'),
+});
+export async function saveDie(form: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('die_save', { p_id: opt(form, 'id'), p: dieJson(form), p_reason: opt(form, 'reason') });
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, opt(form, 'id') ? 'Đã sửa khuôn' : 'Đã thêm khuôn vào danh mục');
+}
+export async function setDieStatus(form: FormData) {
+  const supabase = await createClient();
+  const q = num(form, 'qty');
+  const { error } = await supabase.schema('app').rpc('die_set_status', {
+    p_id: txt(form, 'id'), p_status: txt(form, 'status'), p_note: opt(form, 'note'), p_qty: q === null ? null : Math.round(q),
+  });
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, 'Đã cập nhật trạng thái khuôn');
+}
+export async function orderDies(form: FormData) {
+  const ids = form.getAll('die').map(String).filter(Boolean);
+  if (!ids.length) back(form, 'err', 'Tích chọn khuôn cần đặt');
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('app').rpc('die_order', { p_ids: ids, p_need: opt(form, 'need_date'), p_note: opt(form, 'note') });
+  if (error) back(form, 'err', friendly(error.message));
+  revalidatePath('/may', 'layout');
+  redirect(`/de-xuat/${data}?ok=${encodeURIComponent(`Đã lập đề xuất mua ${ids.length} khuôn: gửi TP Mua duyệt`)}`);
+}
+export async function addProposedDies(form: FormData) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('app').rpc('die_add_proposals');
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, `Đã thêm ${data ?? 0} khuôn MES đề xuất vào danh mục (Cần đặt)`);
+}
+export async function saveDieRules(form: FormData) {
+  const kinds = form.getAll('rule').map(String);
+  const rows = kinds.map((k) => {
+    const [kind, mat] = k.split('|');
+    const f = (n: string) => num(form, `${n}_${k}`);
+    return { kind, mat, nominal: f('nominal'), clr_min: f('clr_min'), clr_max: f('clr_max'), factor: f('factor'), tol: f('tol'), a_offset: f('a_offset'), l_factor: f('l_factor') };
+  });
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('die_rules_save', { p: rows, p_reason: opt(form, 'reason') });
+  if (error) back(form, 'err', friendly(error.message));
+  done(form, 'Đã lưu quy tắc khuôn: MES tra lại khuôn cho mọi spec');
+}

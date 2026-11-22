@@ -43,6 +43,7 @@ export type Config = {
   people?: PeopleCfg;    // người đứng máy: phút có mặt, tổ đóng gói, lịch vắng, kiêm nhiệm tạm
   avail?: Record<string, { fill: number; down_pct?: number; days?: number }>; // tỷ lệ xếp lịch riêng từng máy (đủ dữ liệu)
   machine_shifts?: MachineShift[]; // máy chạy 2 / 3 ca theo khoảng ngày (Giám đốc duyệt)
+  die_qty?: Record<string, number>; // số bộ khuôn sẵn có (có sẵn / mòn): một bộ không chạy song song trên hai máy
 };
 // Máy chạy nhiều ca: máy, từ ngày, đến ngày, số ca (2 hoặc 3); ngày không có dòng nào: 1 ca
 export type MachineShift = { machine: string; from: string; to: string; shifts: number };
@@ -209,6 +210,7 @@ export type Order = {
   core?: string | null;       // mã lõi của spec (tốc độ riêng theo lõi)
   mix?: number | null;        // kg hỗn hợp silicone cần trộn / km cáp (BOM công đoạn CD0)
   seq?: number;               // thứ tự do bộ tối ưu chọn (sau mức gấp, trước hạn giao)
+  dies?: Partial<Record<Op, string[]>>; // khuôn dùng theo công đoạn (MES tra theo spec, Quản lý máy → Khuôn)
 };
 
 export type Task = {
@@ -457,12 +459,18 @@ export function buildTasks(orders: Order[], cfg: Pick<Config, 'rates' | 'flow'> 
 }
 
 type Prev = { order: Order; op: Op; color: string | null } | null;
+// Bộ khuôn của một việc (trống: chưa tra được khuôn → so theo cỡ ruột / mã như trước)
+export const dieKey = (o: Order, op: Op) => (o.dies?.[op] ?? []).join('+');
 function changeover(cfg: Pick<Config, 'changeovers'>, prev: Prev, t: { order: Order; op: Op; color: string | null }): [number, string] {
   if (!prev) return [0, ''];
   const P = (code: string) => Number(cfg.changeovers.find((c) => c.code === code)?.minutes ?? 0); // chưa khai báo: 0 phút + cảnh báo (schedule.warnings)
   if (prev.op !== t.op) return [P('SH_CODE'), 'đổi công đoạn, thay khuôn'];
+  const da = dieKey(prev.order, t.op), db = dieKey(t.order, t.op);
+  const sameDie = !!da && da === db, otherDie = !!da && !!db && da !== db;
   if (t.op === 'CD2') {
-    if (prev.order.size !== t.order.size || prev.order.sil !== t.order.sil) return [P('INS_SIZE'), 'đổi cỡ ruột, thay khuôn'];
+    // khác cỡ nhưng cùng bộ khuôn (tip + die) thì không thay khuôn; cùng cỡ mà khác khuôn (OD thực tế khác) vẫn thay khuôn
+    if ((prev.order.size !== t.order.size || prev.order.sil !== t.order.sil) && !sameDie) return [P('INS_SIZE'), 'đổi cỡ ruột, thay khuôn'];
+    if (otherDie) return [P('INS_SIZE'), `thay khuôn ${da} → ${db}`];
     if (prev.color === t.color) return [0, ''];
     return colorRank(t.color) > colorRank(prev.color)
       ? [P('INS_UP'), `đổi màu ${prev.color} → ${t.color}, sáng sang tối`]
@@ -470,6 +478,10 @@ function changeover(cfg: Pick<Config, 'changeovers'>, prev: Prev, t: { order: Or
   }
   if (t.op === 'CD5') {
     if (prev.order.product_code === t.order.product_code) return prev.color === t.color ? [0, ''] : [P('SH_COLOR'), 'đổi màu vỏ'];
+    // khác mã nhưng cùng khuôn vỏ (tip + die, LSZH/PVC dùng chung): chỉ chỉnh in (+ đổi màu)
+    if (sameDie && cfg.changeovers.some((c) => c.code === 'SH_PRINT'))
+      return prev.color === t.color ? [P('SH_PRINT'), `đổi mã cùng khuôn vỏ ${db}, chỉnh in`]
+        : [Math.max(P('SH_PRINT'), P('SH_COLOR')), `đổi mã cùng khuôn vỏ ${db}, đổi màu vỏ, chỉnh in`];
     return [P('SH_CODE'), 'đổi mã, thay khuôn và chỉnh in'];
   }
   if (t.op === 'CD1') return prev.order.size === t.order.size ? [0, ''] : [P('BUN_SIZE'), 'đổi cỡ ruột'];
@@ -1013,6 +1025,30 @@ export function schedule(
   }
   if (opt.credit) for (const [key, mm] of opt.credit) { const t = byKey.get(key); if (t && !isSup(t)) t.m += mm; } // thiếu thì cộng, vượt thì trừ
   for (const w of wins) machines.find((m) => m.code === w.machine)?.blocks.push([w.from, w.to, w.label]);
+  // Khuôn đang dùng: một bộ khuôn chỉ chạy trên một máy cùng lúc (số bộ sẵn có ở danh mục khuôn); khuôn chưa có sẵn thì không giới hạn
+  const dieUse = new Map<string, { f: number; t: number; m: string }[]>();
+  const dieOf = (lineId: string, op: Op) => (orderById.get(lineId)?.dies?.[op] ?? []).filter((c) => Number(cfg.die_qty?.[c] ?? 0) > 0);
+  const useDies = (lineId: string, op: Op, f: number, t: number, m: string) => {
+    if (!(t > f)) return;
+    for (const c of dieOf(lineId, op)) dieUse.set(c, [...(dieUse.get(c) ?? []), { f, t, m }]);
+  };
+  for (const m of machines) for (const s of m.slots) useDies(s.lineId, s.op, s.start, s.end, m.code);
+  // Khoảng khuôn đã dùng hết số bộ (trên máy khác): việc trên máy này phải tránh
+  const dieBlocks = (t: Task, mcode: string): Block[] => {
+    const out: Block[] = [];
+    for (const c of dieOf(t.order.id, t.op)) {
+      const q = Number(cfg.die_qty?.[c] ?? 0);
+      const list = (dieUse.get(c) ?? []).filter((u) => u.m !== mcode);
+      if (list.length < q) continue;
+      const ev = list.flatMap((u) => [[u.f, 1, u.m], [u.t, -1, u.m]] as [number, number, string][]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      let n = 0, from = 0, who = '';
+      for (const [x, d, mm] of ev) {
+        if (d > 0) { n++; if (n === q) { from = x; who = mm; } }
+        else { if (n === q && x > from) out.push([from, x, `Khuôn ${c} (${q} bộ) đang chạy trên ${who}: cần thêm bộ khuôn để chạy song song`]); n--; }
+      }
+    }
+    return out;
+  };
 
   const pending = new Set<number>();
   for (const t of tasks) {
@@ -1328,14 +1364,15 @@ export function schedule(
     crew?: Wk[]; factor?: number; need?: number; short?: boolean; target?: number };
   // Chỗ chạy được từ t0: tránh khối máy dừng / giữ chỗ (khối phải vừa); giờ máy không chạy (máy chạy ít ca hơn, ca thêm thiếu người)
   // thì khối dừng ở đó, phần còn lại chạy ca sau – chỉ bắt đầu khi còn đủ giờ cho đổi máy + một đoạn chạy
-  const spot = (m: M, t0: number, want: number, minLen: number): { s: number; hit: string | null } | null => {
+  const spot = (m: M, t0: number, want: number, minLen: number, extra: Block[] = []): { s: number; hit: string | null } | null => {
+    const bl = extra.length ? [...m.blocks, ...extra] : m.blocks;
     let s = t0, hit: string | null = null;
     for (let g = 0; g < 2000; g++) {
       const o = openFrom(m.code, s);
       if (o > s + 1e-9) { if (!hit) hit = `giờ máy không chạy (${shiftsTxt(m.code, s)})`; s = o; }
       const room = closedNext(m.code, s) - s;
       if (room < minLen - 1e-9) { s = closedNext(m.code, s) + 1e-9; continue; }
-      const f = fit(s, Math.min(want, room), m.blocks);
+      const f = fit(s, Math.min(want, room), bl);
       if (!Number.isFinite(f.s)) return null;
       if (f.s > s + 1e-9) { hit = f.hit; s = f.s; continue; }
       return { s, hit };
@@ -1347,11 +1384,12 @@ export function schedule(
     const raw = Math.max(m.free, c.r);
     // máy chạy ít ca hơn lịch: như lịch 1 ca, việc được bắt đầu sát giờ máy nghỉ và chạy tiếp ca sau (chỉ cần đủ giờ đổi máy)
     const want = su + c.run, minLen = su + Math.min(c.run, 1);
-    const f0 = spot(m, raw, want, minLen);
+    const xb = dieBlocks(c.t, m.code);
+    const f0 = spot(m, raw, want, minLen, xb);
     if (!f0) return null;
     let s = f0.s;
     for (let g = 0; g < 60; g++) {
-      const f1 = spot(m, s, want, minLen);
+      const f1 = spot(m, s, want, minLen, xb);
       if (!f1) return null;
       const L = startLen(m, f1.s, su);
       if (L <= 0) return { st: f1.s, su, why, hit: f1.s > raw + 1e-9 ? (f1.hit ?? f0.hit) : null, staff: null, L: 0, wait: f1.s - f0.s };
@@ -1471,6 +1509,7 @@ export function schedule(
     else if (prevOp && Math.abs(st0 - best.r) < 1e-6 && best.r > m.free) reason = `Chờ ${OP_NAME[prevOp].toLowerCase()} của lệnh này làm xong ${qcTxt} (gối đầu)`;
     else reason = m.last ? 'Máy làm xong việc trước thì chạy tiếp' : 'Máy và người đều sẵn, chạy ngay';
     if (pl.hit) reason += ` · Dời sau ${pl.hit}`;
+    if (pl.hit?.startsWith('Khuôn ')) warnings.add(`${t.order.label} ${t.order.product_code} trên ${m.code}: ${pl.hit}`);
     if (lead !== t) reason += ` · Gom lô: chạy liền ${what(t)} để giảm đổi máy (hạn ${dmy(t.order.due)}, trong khung ${G} ngày so với ${lead.order.label} hạn ${dmy(lead.order.due)})`;
     else if (m.last && su === 0 && m.last.order.id !== t.order.id) reason += ` · Cùng ${what(t)} với việc trước, không đổi máy`;
     const v1 = Math.round(sp.v * 10) / 10;
@@ -1633,6 +1672,7 @@ export function schedule(
       ...(pack ? { crew: pl.crew!.length } : {}),
     });
     m.free = freeAt; m.lastEnd = freeAt; m.owner = owner; m.last = { order: t.order, op: t.op, color: t.color };
+    useDies(t.order.id, t.op, st0, end, m.code);
     markSpan(t, st0 + su, end, rate, m.code);
     const d = opDone.get(key(t.order.id, t.op))!;
     d.start = Math.min(d.start, st0 + su); d.end = Math.max(d.end, end);

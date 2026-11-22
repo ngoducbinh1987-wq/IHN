@@ -336,6 +336,13 @@ export async function loadKh(db: Db, opts: { plan?: string | null; roles: string
   }
   // Thứ tự lô bộ tối ưu đã chọn ở lần xếp lịch (lô mới chen theo hạn giao)
   orders = applySeq(orders, version?.params.seq);
+  // Khuôn từng lô theo công đoạn + số bộ khuôn sẵn có (Quản lý máy → Khuôn): đổi khuôn tính phút đổi máy, một bộ không chạy song song
+  if (planId && orders.length) {
+    const { data: dz } = await app(db).rpc('kh_dies', { p_plan: planId });
+    const dd = (dz ?? {}) as { lines?: Record<string, Partial<Record<Op, string[]>>>; qty?: Record<string, number> };
+    orders = orders.map((o) => (dd.lines?.[o.id] ? { ...o, dies: dd.lines[o.id] } : o));
+    base.cfg.die_qty = dd.qty ?? {};
+  }
   const planStatus = lines[0]?.plan_status ?? plan?.status ?? null;
   const planNo = plan?.plan_no ?? version?.params.plan_no ?? lines[0]?.plan_no ?? '';
   const schedStart = lines[0]?.sched_start ?? null;
