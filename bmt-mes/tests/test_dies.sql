@@ -165,7 +165,9 @@ select pg_temp.ok((select bool_and(status = 'AVAILABLE' and in_service_at is not
 select pg_temp.ok(not exists (select 1 from master.die_match(pg_temp.v('her')) where not ready), 'HER15U2LZ đủ khuôn sẵn');
 select pg_temp.as_user('D_SXKH');
 select pg_temp.as_api($$insert into cnt values ('a2', app.die_alarm_count())$$);
-select pg_temp.ok((select n from cnt where k = 'a2') = (select n from cnt where k = 'a1') - 1, 'Đủ khuôn thì mã hết Alarm');
+select pg_temp.as_api($$insert into cnt select 'gap2', count(*) from app.die_gaps() where spec_id = pg_temp.v('her')$$);
+select pg_temp.ok((select n from cnt where k = 'gap2') = 0 and (select n from cnt where k = 'a2') <= (select n from cnt where k = 'a1'),
+  'Đủ khuôn thì spec hết trong danh sách thiếu khuôn, Alarm không tăng');
 select pg_temp.as_user('D_SXTP');
 select pg_temp.as_api($$select app.die_set_status(pg_temp.v('dTS'), 'WORN', 'Lỗ khuôn mòn, OD lõi lệch')$$);
 select pg_temp.ok(exists (select 1 from wf.notifications n join core.profiles p on p.id = n.user_id
