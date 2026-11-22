@@ -118,9 +118,8 @@ select pg_temp.ok(exists (select 1 from t where k = 'n_sxkh'), 'Kế hoạch SX 
 -- 5. Alarm theo kế hoạch tháng (trả OD thực tế về trống: khuôn vỏ theo OD tối ưu)
 update master.spec_results set od_actual_mm = null where spec_id = pg_temp.v('her');
 reset role;
-select pg_temp.as_user('D_SXKH');
-select pg_temp.as_api($$insert into t select 'alarm0', null from (select app.die_alarm_count() n) x where n >= 0$$);
-create temp table a0 as select app.die_alarm_count() n;  -- dưới quyền chủ sở hữu: 0 (không có vai trò)
+select pg_temp.as_user('D_NONE');
+create temp table a0 as select app.die_alarm_count() n;  -- người không có vai trò: 0
 select pg_temp.ok((select n from a0) = 0, 'Alarm khuôn = 0 với người không có quyền xem');
 insert into plan.production_plans (plan_no, period_label, status) values ('KH-THU-KHUON', 'Thử khuôn', 'DRAFT');
 insert into t select 'plan', id from plan.production_plans where plan_no = 'KH-THU-KHUON';
