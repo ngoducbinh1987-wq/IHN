@@ -49,7 +49,8 @@ update master.operators set profile_id = (select id from core.profiles where emp
 
 -- Bobin đánh số cố định, bì 20 kg
 insert into inv.carriers (code, carrier_type, tare_kg, owner, status) values
-  ('B901', 'B630', 20, 'BMT', 'EMPTY'), ('B902', 'B630', 20, 'BMT', 'EMPTY'), ('B903', 'B630', 20, 'BMT', 'EMPTY');
+  ('B901', 'B630', 20, 'BMT', 'EMPTY'), ('B902', 'B630', 20, 'BMT', 'EMPTY'), ('B903', 'B630', 20, 'BMT', 'EMPTY'),
+  ('B904', 'B630', 0, 'BMT', 'EMPTY');
 
 -- Lệnh SX đã phát: HOME-KV15X2FP 1.000 m, công đoạn bện, bọc cách điện, bọc vỏ, đóng gói
 insert into mfg.work_orders (wo_no, product_id, spec_id, bom_id, qty_m, m_per_pack, pack_type, brand, status)
@@ -75,6 +76,8 @@ select pg_temp.fails($$select pg_temp.slip('{"op_code":"CD1","machine_code":"BUN
 select pg_temp.as_user('B_KTKHO');
 select pg_temp.fails($$select pg_temp.slip('{"op_code":"CD1","machine_code":"BUN-01","carrier":"B999","gross_kg":120}')$$,
   'chưa khai báo', 'Số bobin chưa khai báo thì không nhập được');
+select pg_temp.fails($$select pg_temp.slip('{"op_code":"CD1","machine_code":"BUN-01","carrier":"B904","gross_kg":120,"operator_code":"NV1"}')$$,
+  'chưa có khối lượng bì', 'Bobin chưa cân bì (bì 0) thì không nhập phiếu (migration 10500)');
 select pg_temp.fails($$select pg_temp.slip('{"op_code":"CD1","machine_code":"BUN-01","carrier":"B901"}')$$,
   'khối lượng', 'Thiếu kg cân: không nhập được');
 select pg_temp.fails($$select pg_temp.slip('{"op_code":"CD1","machine_code":"BUN-01","carrier":"B901","gross_kg":15}')$$,
