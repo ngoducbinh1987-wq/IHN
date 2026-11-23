@@ -168,3 +168,15 @@ export async function adminApplyConductor(form: FormData) {
   revalidatePath('/san-pham', 'layout');
   back(code, 'ok', r.count ? `Đã chuẩn hóa ruột dẫn ${r.count} spec: ${r.specs}` : 'Các mã cùng cỡ lõi đã đúng quy cách ruột dẫn này', spec);
 }
+
+// OD thực tế (đo) – TP KT/QA, QC, TP SX; khuôn ngoài vỏ tính theo OD thực tế khi đã đo
+export async function setOdActual(form: FormData) {
+  const code = String(form.get('code')); const spec = String(form.get('spec_id'));
+  const od = parseNum(form.get('od'));
+  if (od !== null && (Number.isNaN(od) || od <= 0)) back(code, 'err', 'OD thực tế phải là số dương', spec);
+  const supabase = await createClient();
+  const { error } = await supabase.schema('app').rpc('set_od_actual', { p_spec: spec, p_od: od, p_note: String(form.get('note') ?? '') });
+  if (error) back(code, 'err', error.message, spec);
+  revalidatePath(`/san-pham/${code}`);
+  back(code, 'ok', od === null ? 'Đã bỏ OD thực tế' : 'Đã lưu OD thực tế: MES tra lại khuôn vỏ', spec);
+}

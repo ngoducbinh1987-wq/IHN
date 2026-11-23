@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   const c = (counts ?? {}) as Record<string, number | null>;
   const myTurn = c.my_turn, unread = c.unread, maintAll = c.maint_overdue, qcWait = c.qc_wait;
-  const safetyBelow = c.safety_below, poDraft = c.po_draft, paramAlarm = c.param_alarm, reqTodo = c.req_todo;
+  const safetyBelow = c.safety_below, poDraft = c.po_draft, paramAlarm = c.param_alarm, dieAlarm = c.die_alarm, reqTodo = c.req_todo;
   // Tính lại tiến độ sau ca: 1 giờ sau khi hết ca, lần đầu TP SX / Kế hoạch SX / Giám đốc mở MES thì MES tính (sau khi trả trang,
   // không làm chậm trang); job máy chủ bmt_replan làm việc này khi đã cấu hình CRON_SECRET + khóa máy chủ
   if (me.roles.some((r) => ['SX_TP', 'SX_KH', 'BGD', 'ADMIN'].includes(r))) {
@@ -64,6 +64,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { key: 'kho-qc', href: '/kho/qc', label: 'QC bobin, lô hàng', icon: 'checklist', group: 'Kỹ thuật / QA', badge: qcWait ?? 0 },
     { key: 'may-toc-do', href: '/may/toc-do', label: 'Tốc độ sản xuất', icon: 'speed', group: 'Kỹ thuật / QA' },
     { key: 'may', href: '/may', label: 'Danh sách máy', icon: 'machine', group: 'Quản lý máy' },
+    { key: 'may-khuon', href: '/may/khuon', label: 'Khuôn (đùn, bện, xoắn)', icon: 'settings', group: 'Quản lý máy' },
     { key: 'may-bao-duong', href: '/may/bao-duong', label: 'Bảo dưỡng, sửa chữa', icon: 'wrench', group: 'Quản lý máy', badge: maintDue ?? 0 },
     { key: 'quan-tri', href: '/quan-tri', label: 'Người dùng', icon: 'users', group: 'Hệ thống & cài đặt' },
     { key: 'quan-tri-quy-trinh', href: '/quan-tri/quy-trinh', label: 'Cài đặt quy trình', icon: 'flow', group: 'Hệ thống & cài đặt' },
@@ -75,6 +76,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const nAlarm = Number(paramAlarm ?? 0);
   if (nAlarm > 0) for (const it of items) if (['/may', '/may/toc-do', '/tham-so'].includes(it.href)) {
     it.alarm = nAlarm; it.alarmTitle = `${nAlarm} máy chưa khai đủ tốc độ: lịch máy không xếp việc lên máy đó. Khai ở Hồ sơ máy → Tốc độ & dải hoạt động`;
+  }
+  // Alarm thiếu khuôn: mã trong kế hoạch tháng chưa có khuôn sẵn (chưa có, cần đặt, đã đặt chưa về, hỏng)
+  const nDie = Number(dieAlarm ?? 0);
+  if (nDie > 0) for (const it of items) if (it.href === '/may/khuon') {
+    it.alarm = nDie; it.alarmTitle = `${nDie} mã trong kế hoạch tháng chưa có khuôn sẵn: đặt khuôn hoặc nhận khuôn ở Quản lý máy → Khuôn`;
   }
   // Ô tick phân quyền: chỉ Quản trị hệ thống thấy
   if (me.is_admin) items.push({ href: '/quan-tri/phan-quyen', label: 'Phân quyền', icon: 'users', group: 'Hệ thống & cài đặt' });

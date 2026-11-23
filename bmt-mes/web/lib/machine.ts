@@ -100,3 +100,15 @@ export function vnToday(offsetDays = 0): string {
 export function hhmm(iso: string): string {
   return new Date(iso).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hour12: false });
 }
+
+// Khuôn (migration 20261026010300)
+export const DIE_STATUS: Record<string, [string, Tone]> = {
+  NEEDED: ['Cần đặt', 'warn'], ORDERED: ['Đã đặt', 'info'], AVAILABLE: ['Có sẵn', 'ok'],
+  WORN: ['Mòn, chờ thay', 'warn'], BROKEN: ['Hỏng', 'bad'], RETIRED: ['Loại bỏ', 'mute'],
+};
+export const DIE_KIND: Record<string, string> = {
+  KB: 'Khuôn bện', TS: 'Tip cách điện silicone', DS: 'Die cách điện silicone', TC: 'Tip cách điện HDPE/PVC',
+  DC: 'Die cách điện HDPE/PVC', TX: 'Khuôn máy xoắn', TV: 'Tip vỏ', DV: 'Die vỏ (LSZH/PVC chung)',
+};
+// Khuôn trong / bện / xoắn: kích thước = Ød; khuôn ngoài: ØD
+export const dieHole = (kind: string) => (['DS', 'DC', 'DV'].includes(kind) ? 'ØD' : 'Ød');

@@ -58,7 +58,15 @@ export default async function LenhNgay({ searchParams }: { searchParams: Promise
     ? await db.schema('app').rpc('kh_day_preview', { p_plan: kh.planId, p_date: date })
     : { data: null };
   const preview = (pv ?? { checks: [], slip: [] }) as Preview;
-  const checks = past ? [] : [...preview.checks, ...infoChecks(kh, date)];
+  // Khuôn: mã có việc trong ngày mà công đoạn đó chưa có khuôn sẵn (Quản lý máy → Khuôn)
+  const dayJobs = work.map((x) => ({ code: orderOf.get(x.r.sl.lineId)?.product_code, op: x.r.sl.op })).filter((x): x is { code: string; op: typeof x.op } => !!x.code);
+  const { data: dieRows } = !past && kh.planId && dayJobs.length
+    ? await db.schema('app').rpc('die_day_check', { p_plan: kh.planId, p_codes: [...new Set(dayJobs.map((x) => x.code))] })
+    : { data: null };
+  const dieChecks: Check[] = ((dieRows ?? []) as { product_code: string; op_code: string; label: string; suggest: number; die_code: string | null; reason: string }[])
+    .filter((d) => dayJobs.some((j) => j.code === d.product_code && j.op === d.op_code))
+    .map((d) => ({ ok: false, t: `Thiếu khuôn: ${d.product_code} ${d.op_code}`, d: `${d.label} ${d.die_code ?? `(MES đề xuất ${String(d.suggest).replace('.', ',')} mm)`}: ${d.reason}. Xem Quản lý máy → Khuôn` }));
+  const checks = past ? [] : [...preview.checks, ...dieChecks, ...infoChecks(kh, date)];
   const warns = checks.filter((c) => !c.ok).length;
   const canRelease = hasRole(me.roles, [...ROLE.release, 'BGD']) && kh.fromPlan;
   const direct = me.roles.includes('BGD') || me.roles.includes('ADMIN');
