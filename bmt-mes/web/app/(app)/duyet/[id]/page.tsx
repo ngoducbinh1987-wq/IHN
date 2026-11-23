@@ -15,7 +15,7 @@ import { approve, comment, reject } from './actions';
 export const metadata = { title: 'Chi tiết quy trình' };
 
 // Chứng từ người đang duyệt sửa được trên trang chứng từ (database: wf.review_request); thêm loại mới khi có màn hình sửa
-const EDITABLE_BY_REVIEWER = ['PLAN', 'PR', 'PLAN_ADJ', 'SAFETY_STOCK', 'PO', 'DELIVERY']; // PLAN còn có khung nhắc trong Thông tin chung
+const EDITABLE_BY_REVIEWER = ['PLAN', 'PR', 'PLAN_ADJ', 'SAFETY_STOCK', 'PO', 'DELIVERY', 'REQUEST']; // PLAN còn có khung nhắc trong Thông tin chung
 
 const ACTION: Record<string, [string, 'ok' | 'bad' | 'info']> = {
   APPROVE: ['Chuyển giai đoạn', 'ok'], REJECT: ['Trả lại', 'bad'], COMMENT: ['Trao đổi', 'info'],
@@ -97,7 +97,7 @@ export default async function ApprovalDetail({ params, searchParams }:
                 </div>
                 <span className="text-[12.5px] text-muted">Bạn đang giữ bước này</span>
                 {a.doc_link && EDITABLE_BY_REVIEWER.includes(a.doc_type) && (!a.i_submitted || me.is_admin) && (
-                  <Link href={a.doc_link} className="btn btn-sm btn-soft" id="review-edit-link">Sửa nội dung trước khi duyệt</Link>
+                  <Link href={a.doc_type === 'REQUEST' ? `${a.doc_link}?sua=1` : a.doc_link} className="btn btn-sm btn-soft" id="review-edit-link">Sửa nội dung trước khi duyệt</Link>
                 )}
               </div>
             )}
@@ -202,6 +202,45 @@ export default async function ApprovalDetail({ params, searchParams }:
 // Nội dung chứng từ hiển thị ngay trong trang duyệt để người duyệt không phải mở trang khác
 async function DocInfo({ a, canSeePrice }: { a: Approval; canSeePrice: boolean }) {
   const supabase = await createClient();
+  if (a.doc_type === 'REQUEST') {
+    const { data: r } = await supabase.schema('app').from('v_requests')
+      .select('type_name, title, content, requester_name, dept_name, date_from, date_to, part, time_from, time_to, days, amount, paid, machine_code, target_dept_name, items, data, urgent')
+      .eq('id', a.doc_id).maybeSingle();
+    if (!r) return <Empty>Đề xuất riêng tư: bạn không có quyền xem nội dung.</Empty>;
+    const d = (r.data ?? {}) as Record<string, string>;
+    const items = (r.items ?? []) as { code?: string; name?: string; spec?: string; qty?: number; unit?: string; price?: number }[];
+    return (
+      <div className="flex flex-col gap-3" id="noi-dung-de-xuat-chung">
+        <Field label="Loại đề xuất">{r.type_name}{r.urgent ? ' · GẤP' : ''}</Field>
+        <Field label="Người đề xuất">{r.requester_name}{r.dept_name ? ` · ${r.dept_name}` : ''}</Field>
+        <Field label="Tiêu đề">{r.title}</Field>
+        {r.date_from && <Field label="Thời gian">{dmy(r.date_from)}{r.date_to && r.date_to !== r.date_from ? ` – ${dmy(r.date_to)}` : ''}
+          {r.days !== null ? ` (${String(r.days).replace('.', ',').replace(/,0$/, '')} ngày${r.part === 'AM' ? ', nửa đầu ca' : r.part === 'PM' ? ', nửa sau ca' : ''})` : ''}
+          {r.time_from || r.time_to ? ` · ${r.time_from?.slice(0, 5) ?? '…'}–${r.time_to?.slice(0, 5) ?? '…'}` : ''}</Field>}
+        {r.paid !== null && <Field label="Hưởng lương">{r.paid ? 'Có lương' : 'Không lương'}</Field>}
+        {r.amount !== null && <Field label="Số tiền">{nf(r.amount)} đ</Field>}
+        {r.machine_code && <Field label="Máy">{r.machine_code}</Field>}
+        {r.target_dept_name && <Field label="Bộ phận nhận">{r.target_dept_name}</Field>}
+        {d.place && <Field label="Nơi công tác">{d.place}{d.transport ? ` · ${d.transport}` : ''}{d.cost_plan ? ` · dự trù ${d.cost_plan}` : ''}</Field>}
+        {d.due_date && <Field label="Ngày dự sinh">{dmy(d.due_date)}</Field>}
+        {d.handover && <Field label="Bàn giao việc cho">{d.handover}</Field>}
+        {(d.from_shift || d.to_shift) && <Field label="Đổi ca">{d.from_shift} → {d.to_shift}</Field>}
+        {d.benefit && <Field label="Lợi ích ước tính">{d.benefit}</Field>}
+        <Field label="Nội dung / lý do"><span className="whitespace-pre-wrap">{r.content}</span></Field>
+        {items.length > 0 && (
+          <div className="overflow-x-auto rounded border border-line">
+            <table className="tbl">
+              <thead><tr><th>Mã VT</th><th>Tên hàng</th><th>Quy cách</th><th className="num">Số lượng</th><th>ĐVT</th><th className="num">Giá ước tính</th></tr></thead>
+              <tbody>{items.map((it, i) => (
+                <tr key={i}><td className="mono">{it.code ?? '—'}</td><td>{it.name}</td><td>{it.spec}</td><td className="num">{nf(it.qty ?? 0, 2)}</td><td>{it.unit}</td><td className="num">{it.price ? nf(it.price) : '—'}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-[13px] text-muted">Không đồng ý mà không cần người gửi sửa: mở đề xuất (nút Mở chứng từ) và bấm Từ chối.</p>
+      </div>
+    );
+  }
   if (a.doc_type === 'PR') {
     const [{ data: pr }, { data: lines }] = await Promise.all([
       supabase.schema('app').from('v_prs').select('*').eq('id', a.doc_id).maybeSingle(),

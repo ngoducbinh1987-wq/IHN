@@ -78,6 +78,7 @@ export const SCREENS: Record<string, string> = {
   '/may/bao-duong': 'Quản lý máy → Bảo dưỡng, sửa chữa',
   '/may/toc-do': 'Kỹ thuật / QA → Tốc độ sản xuất',
   '/thong-bao': 'Chuông thông báo (góc trên phải)',
+  '/de-xuat-chung': 'Đề xuất (mục chính trên menu)',
 };
 
 export const GROUPS = ['Quy trình chung', 'Kế hoạch sản xuất', 'Mua hàng', 'Sản xuất hằng ngày', 'Kho', 'Kỹ thuật / QA', 'Quản lý máy', 'Dùng chung'];
@@ -519,6 +520,31 @@ export const GUIDES: Guide[] = [
   },
 
   // ================================================================ DÙNG CHUNG
+  {
+    slug: 'de-xuat-chung',
+    title: 'Đề xuất (nghỉ, thai sản, mua hàng, tạm ứng, sửa chữa, cải tiến, việc khác)',
+    group: 'Dùng chung',
+    intro: 'Mọi nhân viên lập đề xuất bất cứ việc gì ở mục Đề xuất. MES tự giao người duyệt theo bộ phận của người gửi và loại đề xuất; người gửi không chọn người duyệt.',
+    steps: [
+      { k: 'Chọn loại đề xuất, điền mẫu (ngày, số tiền, hàng cần mua, máy…), bấm "Lưu và gửi đề xuất"', who: 'Người đề xuất (công nhân chưa có tài khoản: Tổ trưởng / TP SX lập thay)',
+        dept: 'CN', time: 'Khi phát sinh (ốm đột xuất: trong 2 ngày làm việc)', out: 'Đề xuất DX-… chờ duyệt, hiện ở Quy trình duyệt của người duyệt', at: '/de-xuat-chung' },
+      { k: 'Duyệt (được sửa nội dung, ví dụ rút số ngày nghỉ)', who: 'Trưởng bộ phận của người gửi', dept: 'SX', time: '1 ngày; loại gấp 4 giờ', out: 'Chuyển bước sau hoặc duyệt xong',
+        at: '/duyet', back: 'Trả lại → người gửi sửa, gửi lại; Từ chối → đóng đề xuất' },
+      { k: 'Kiểm (tạm ứng, thanh toán) / xem xét (việc khác)', who: 'Kế toán trưởng / trưởng bộ phận nơi nhận', dept: 'KTOAN', time: '1 ngày', out: 'Chuyển Giám đốc nếu loại cần', at: '/duyet' },
+      { k: 'Duyệt: nghỉ trên 3 ngày, thai sản, nghỉ không lương, công tác, cải tiến, tạm ứng / thanh toán từ 5.000.000 đ', who: 'Giám đốc (Giám đốc gửi: Chủ tịch HĐQT)', dept: 'BGD',
+        time: '1 ngày', out: 'Đề xuất đã duyệt', at: '/duyet' },
+      { k: 'Chuyển tiếp: nghỉ của công nhân → lịch vắng; mua → Phòng Mua; sửa chữa → TP KT/QA; tạm ứng → Kế toán; văn phòng phẩm → Nhân sự', who: 'MES', dept: 'MES',
+        time: 'Ngay khi duyệt', out: 'Thông báo người xử lý; số đỏ trên mục Đề xuất' },
+      { k: 'Xử lý: lập đề xuất mua / mở phiếu sửa chữa / ghi "Đã xử lý"', who: 'NV mua, TP KT/QA, Kế toán, Nhân sự', dept: 'MUA', time: '1 ngày (đề xuất)', out: 'Đề xuất Hoàn tất, người gửi nhận thông báo', at: '/de-xuat-chung' },
+    ],
+    notes: [
+      'Trưởng phòng gửi đề xuất: bỏ bước Trưởng bộ phận, chuyển Giám đốc. Bộ phận chưa có trưởng phòng: chuyển Giám đốc.',
+      'Quá hạn duyệt: MES báo người giữ bước và cấp trên (Giám đốc; bước Giám đốc thì Chủ tịch), không ai duyệt thay. Người duyệt vắng thì ủy quyền.',
+      'Đề xuất nghỉ, tài chính là riêng tư: chỉ người gửi, người duyệt, Nhân sự / Kế toán, Ban giám đốc xem; Quy trình duyệt chỉ ghi loại và người gửi. Góp ý cải tiến gửi ẩn danh được.',
+      'Chưa ai duyệt thì người gửi rút lại để sửa. Bấm "In đơn" để in đơn có chỗ ký.',
+      'Bộ phận của từng người do Quản trị ghi ở Hệ thống → Người dùng (ô Phòng ban).',
+    ],
+  },
   {
     slug: 'duyet-chung-tu',
     title: 'Nhận thông báo, duyệt chứng từ',

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   AlertTriangle, BarChart3, Bell, BookOpen, BookOpenText, Boxes, CalendarRange, CheckSquare, ChevronDown, ClipboardCheck, ClipboardList, Cog, Factory, FileBarChart, FileText, Gauge,
-  History, Loader2, Monitor, PackageCheck, PackageMinus, ScanLine, Search, Settings, ShoppingCart, SlidersHorizontal, Timer, Truck, Users, Warehouse,
+  History, Loader2, Monitor, PackageCheck, PackageMinus, ScanLine, Search, Settings, ShoppingCart, SlidersHorizontal, Timer, Truck, Users, Warehouse, MessageSquarePlus,
   Workflow, Wrench,
 } from 'lucide-react';
 
@@ -27,7 +27,7 @@ const ICONS = {
   warehouse: Warehouse, scan: ScanLine, issue: PackageMinus, receive: PackageCheck, count: ClipboardCheck, truck: Truck, chart: BarChart3, ledger: BookOpen,
   machine: Cog, wrench: Wrench, checklist: ClipboardCheck, speed: Timer, capacity: BarChart3, history: History,
   report: FileBarChart, settings: Settings,
-  calendar: CalendarRange, order: ClipboardCheck, shift: Timer, sliders: SlidersHorizontal, guide: BookOpenText,
+  calendar: CalendarRange, order: ClipboardCheck, shift: Timer, sliders: SlidersHorizontal, guide: BookOpenText, request: MessageSquarePlus,
 } as const;
 
 // Biểu tượng của nhóm menu (hiện ở dòng nhóm khi thu gọn)
@@ -91,6 +91,7 @@ export function Sidebar({ items, onNavigate }: { items: NavItem[]; onNavigate?: 
                 className={`flex items-center gap-3 border-l-4 px-4 py-3 text-[15px] font-medium ${on ? 'border-brand bg-side-2 text-white' : 'border-transparent text-white/90 hover:bg-white/5 hover:text-white'}`}>
                 <Icon size={18} className="shrink-0" />
                 <span className="flex-1">{i.label}</span>
+                {!!i.badge && <span className="rounded-full bg-bad px-2 text-[12px] font-medium text-white">{i.badge}</span>}
                 <LinkPending />
               </Link>
             );

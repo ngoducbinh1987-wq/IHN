@@ -1272,5 +1272,72 @@ await ctx.close();
   ok('Quản trị sửa + duyệt luôn, sửa dòng đã duyệt, xóa tốc độ BUN-01; TP KT/QA không thấy khung Quản trị; nhật ký ghi lại');
 }
 
+// 19. Đề xuất chung (anh Bình duyệt 22/11/2026): công nhân xin nghỉ → TP SX duyệt ở Quy trình duyệt; mua hàng → Phòng Mua lập đề xuất mua
+{
+  const [c, p] = await ctxFor();
+  await login(p, 'vh@bmt.test');
+  if (!(await p.locator('nav[aria-label="Menu chính"] a[href="/de-xuat-chung"]').count())) fail('Menu chính phải có mục Đề xuất cho mọi tài khoản');
+  await p.goto(`${BASE}/de-xuat-chung?tab=lap`);
+  if ((await p.locator('#loai-de-xuat a[data-type]').count()) !== 15) fail('Trang Lập đề xuất phải có 15 loại');
+  await p.click('#loai-de-xuat a[data-type=PHEP_NAM]');
+  await p.waitForURL('**/de-xuat-chung/moi?loai=PHEP_NAM');
+  await p.fill('input[data-date-name=date_from]', vnFmt(vnDay(14)));
+  await p.fill('input[data-date-name=date_to]', vnFmt(vnDay(15)));
+  await p.fill('textarea[name=content]', 'E2E: về quê lo việc gia đình');
+  await clickNav(p, 'button:has-text("Lưu và gửi đề xuất")');
+  await expectOk(p, 'Công nhân gửi đề xuất nghỉ phép');
+  const reqUrl = p.url().split('?')[0];
+  const reqNo = (await p.textContent('h1')).split('·')[0].trim();
+  if (!(await p.textContent('main')).includes('Chờ duyệt')) fail('Đề xuất vừa gửi phải ở trạng thái Chờ duyệt');
+  // Đề xuất mua NVL, có một dòng chưa có mã
+  await p.goto(`${BASE}/de-xuat-chung/moi?loai=MUA_NVL`);
+  await p.fill('input[aria-label="Mã vật tư dòng 1"]', 'CU-024');
+  await p.fill('input[aria-label="Tên hàng dòng 1"]', 'Đồng 0,24');
+  await p.fill('input[aria-label="Số lượng dòng 1"]', '50');
+  await p.fill('input[aria-label="Tên hàng dòng 2"]', 'Băng keo giấy');
+  await p.fill('input[aria-label="Số lượng dòng 2"]', '5');
+  await p.fill('textarea[name=content]', 'E2E: thiếu đồng cho lô gấp');
+  await clickNav(p, 'button:has-text("Lưu và gửi đề xuất")');
+  await expectOk(p, 'Công nhân gửi đề xuất mua NVL');
+  const buyUrl = p.url().split('?')[0];
+  await c.close();
+
+  const [c2, p2] = await ctxFor();
+  await login(p2, 'sx.tp@bmt.test');
+  await p2.goto(`${BASE}/duyet`);
+  if (!(await p2.textContent('main')).includes(reqNo)) fail(`Quy trình duyệt của TP SX phải có ${reqNo}`);
+  await p2.goto(reqUrl);
+  if (!(await p2.textContent('main')).includes('E2E: về quê')) fail('TP SX (người duyệt) phải xem được nội dung đề xuất nghỉ');
+  const aLink = await p2.getAttribute('#duyet-de-xuat a[href^="/duyet/"]', 'href');
+  await p2.goto(`${BASE}${aLink}`);
+  if (!(await p2.textContent('#noi-dung-de-xuat-chung')).includes('E2E: về quê')) fail('Trang duyệt phải hiện nội dung đề xuất');
+  await clickNav(p2, 'button:has-text("Chuyển giai đoạn tiếp")');
+  await expectOk(p2, 'TP SX duyệt đề xuất nghỉ ở Quy trình duyệt');
+  await p2.goto(buyUrl);
+  await clickNav(p2, '#duyet-de-xuat a[href^="/duyet/"]');
+  await clickNav(p2, 'button:has-text("Chuyển giai đoạn tiếp")');
+  await expectOk(p2, 'TP SX xác nhận nhu cầu mua');
+  await c2.close();
+
+  const [c3, p3] = await ctxFor();
+  await login(p3, 'vh@bmt.test');
+  await p3.goto(reqUrl);
+  if (!(await p3.textContent('main')).includes('Hoàn tất')) fail('Đề xuất nghỉ đã duyệt phải Hoàn tất');
+  await p3.goto(`${BASE}/in/de-xuat?id=${reqUrl.split('/').pop()}`);
+  if (!(await p3.textContent('main')).includes('ĐƠN ĐỀ XUẤT') && !(await p3.textContent('main')).toUpperCase().includes('ĐƠN ĐỀ XUẤT')) fail('Bản in đơn đề xuất');
+  await c3.close();
+
+  const [c4, p4] = await ctxFor();
+  await login(p4, 'mua.tp@bmt.test');
+  const badge = await p4.locator('nav[aria-label="Menu chính"] a[href="/de-xuat-chung"]').innerText();
+  if (!/\d/.test(badge)) fail('Mục Đề xuất của TP Mua phải có số đề xuất chờ xử lý: ' + badge);
+  await p4.goto(buyUrl);
+  await clickNav(p4, '#xu-ly-de-xuat button:has-text("Lập đề xuất mua")');
+  await expectOk(p4, 'TP Mua lập đề xuất mua từ đề xuất chung');
+  if (!/PR-\d{4}-/.test(await p4.textContent('main'))) fail('Đề xuất phải dẫn sang đề xuất mua PR-…');
+  await c4.close();
+  ok('Đề xuất chung: menu cho mọi người, 15 loại, nghỉ phép → TP SX duyệt ở Quy trình duyệt, in đơn, mua NVL → Phòng Mua lập PR');
+}
+
 await browser.close();
 console.log(`==> ĐẠT ${n} kiểm tra end-to-end`);

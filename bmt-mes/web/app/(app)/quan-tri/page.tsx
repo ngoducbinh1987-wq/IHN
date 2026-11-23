@@ -19,7 +19,7 @@ const OVERRIDE: Record<string, string> = { ADMIN_CANCEL: 'Hủy quy trình', ADM
   ADMIN_SPEC: 'Sửa spec', ADMIN_USER_DELETE: 'Xóa người dùng', ADMIN_RENAME: 'Đổi mã sản phẩm', ADMIN_SPEED: 'Sửa tốc độ máy' };
 
 const DEPTS: [string, string][] = [['BGD', 'Ban giám đốc'], ['KD', 'Kinh doanh'], ['KT', 'Kỹ thuật/QA'], ['KHO', 'Kho'],
-  ['MUA', 'Mua hàng'], ['KTOAN', 'Kế toán'], ['SX', 'Sản xuất'], ['IT', 'Quản trị hệ thống']];
+  ['MUA', 'Mua hàng'], ['KTOAN', 'Kế toán'], ['SX', 'Sản xuất'], ['HCNS', 'Hành chính – Nhân sự'], ['IT', 'Quản trị hệ thống']];
 const ROLES = Object.keys(ROLE_NAMES);
 
 function RoleChecks({ selected, prefix, conflicts }: { selected: string[]; prefix: string; conflicts: C[] }) {

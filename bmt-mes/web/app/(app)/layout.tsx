@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   const c = (counts ?? {}) as Record<string, number | null>;
   const myTurn = c.my_turn, unread = c.unread, maintAll = c.maint_overdue, qcWait = c.qc_wait;
-  const safetyBelow = c.safety_below, poDraft = c.po_draft, paramAlarm = c.param_alarm;
+  const safetyBelow = c.safety_below, poDraft = c.po_draft, paramAlarm = c.param_alarm, reqTodo = c.req_todo;
   // Tính lại tiến độ sau ca: 1 giờ sau khi hết ca, lần đầu TP SX / Kế hoạch SX / Giám đốc mở MES thì MES tính (sau khi trả trang,
   // không làm chậm trang); job máy chủ bmt_replan làm việc này khi đã cấu hình CRON_SECRET + khóa máy chủ
   if (me.roles.some((r) => ['SX_TP', 'SX_KH', 'BGD', 'ADMIN'].includes(r))) {
@@ -78,6 +78,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
   // Ô tick phân quyền: chỉ Quản trị hệ thống thấy
   if (me.is_admin) items.push({ href: '/quan-tri/phan-quyen', label: 'Phân quyền', icon: 'users', group: 'Hệ thống & cài đặt' });
+  // Đề xuất chung: mục chính, mọi tài khoản (anh Bình duyệt 22/11/2026); số = đề xuất đã duyệt chờ tôi xử lý
+  items.push({ href: '/de-xuat-chung', label: 'Đề xuất', icon: 'request', group: 'Đề xuất', solo: true, badge: Number(reqTodo ?? 0) });
   // Hướng dẫn sử dụng: mục chính, mọi tài khoản đều thấy (anh Bình yêu cầu 04/11/2026)
   items.push({ href: '/huong-dan', label: 'Hướng dẫn sử dụng', icon: 'guide', group: 'Hướng dẫn sử dụng', solo: true });
   const menu = items;
